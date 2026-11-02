@@ -51,7 +51,7 @@ def capture(guest, url, destination, settle):
                 manifest["artifacts"].append(name)
             except GuestError as exc:
                 manifest.setdefault("capture_errors", {})[method] = str(exc)
-        manifest["review_required"] = "Inspect screenshot and OCR for product content or challenge; request success alone is not page success."
+        manifest["review_required"] = "Inspect the screenshot and available text for the expected page content; request success alone is not page success."
         return manifest
     except Exception as exc:
         manifest["error"] = str(exc)
@@ -87,7 +87,7 @@ def main():
     tap = sub.add_parser("tap")
     tap.add_argument("x", type=float)
     tap.add_argument("y", type=float)
-    capturing = sub.add_parser("capture", help="Collect native evidence; does not assert product success")
+    capturing = sub.add_parser("capture", help="Collect native evidence; does not assert rendered-page success")
     capturing.add_argument("url")
     capturing.add_argument("--output", type=Path, required=True)
     capturing.add_argument("--settle-seconds", type=float, default=10)

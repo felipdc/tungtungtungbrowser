@@ -24,7 +24,7 @@ are not Safari evidence. Its touch button records trusted input events without
 changing browser APIs.
 
 This local HTTP test does not establish TLS behavior, service-worker coherence,
-public IP/DNS/WebRTC isolation, product rendering or parity with a physical
+public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
 iPhone. Those require separate measurements. A matching canvas hash alone is
 also not a fidelity verdict.
 

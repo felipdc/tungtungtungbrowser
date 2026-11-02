@@ -48,7 +48,7 @@ encodes JPEG. It does not take the screenshot through browser JavaScript.
 
 A foreground bundle identifier and a valid JPEG do not prove that the page
 rendered. The startup report records these separately and keeps visual review
-pending. Product navigation is another check.
+pending. Expected page content must be checked separately.
 
 ## Scope and remaining checks
 
