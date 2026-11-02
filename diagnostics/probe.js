@@ -1,11 +1,32 @@
 'use strict';
+const inputTrace = [];
+const touchButton = document.getElementById('touch-test');
+for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart',
+  'touchend', 'touchcancel', 'mousedown', 'mouseup', 'click']) {
+  touchButton.addEventListener(type, event => {
+    if (type === 'pointerdown' || (type === 'touchstart' &&
+        !inputTrace.some(item => item.type === 'pointerdown'))) inputTrace.length = 0;
+    inputTrace.push({
+      type, isTrusted: event.isTrusted, timeStamp: event.timeStamp,
+      pointerType: event.pointerType ?? null, pointerId: event.pointerId ?? null,
+      width: event.width ?? null, height: event.height ?? null,
+      pressure: event.pressure ?? null, clientX: event.clientX ?? null,
+      clientY: event.clientY ?? null,
+      changedTouches: event.changedTouches ? Array.from(event.changedTouches, touch => ({
+        identifier: touch.identifier, clientX: touch.clientX, clientY: touch.clientY,
+        radiusX: touch.radiusX, radiusY: touch.radiusY, force: touch.force
+      })) : null
+    });
+    if (inputTrace.length > 32) inputTrace.shift();
+  }, {passive: true});
+}
 document.getElementById('touch-test').addEventListener('click', async event => {
   const button = event.currentTarget;
   const observation = {
     capturedAt: new Date().toISOString(), type: event.type, isTrusted: event.isTrusted,
     clientX: event.clientX, clientY: event.clientY,
     screenX: event.screenX, screenY: event.screenY,
-    pointerType: event.pointerType || null
+    pointerType: event.pointerType || null, events: inputTrace.slice()
   };
   button.textContent = 'Touch received';
   try {
