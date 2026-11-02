@@ -16,3 +16,13 @@ root filesystem, and only `/dev/vhost-vsock` passthrough. There is no GPU
 passthrough, privileged mode or host networking. VSOCK CIDs are host-wide;
 use a dedicated host and allocate a distinct CID to each future concurrent
 guest. This runtime has not been evaluated for hostile multiple-tenant use.
+
+## Display capture
+
+The optional PNG backend connects to the VM bundle's `control.sock`. QMP grants
+VM administration access, so restrict the bundle directory to trusted users.
+The controller passes an anonymous, write-only file descriptor with
+`SCM_RIGHTS`; QEMU writes the PNG through `/dev/fdset`, and the controller removes
+the descriptor set before closing the connection. No shared output directory
+or TCP QMP listener is needed. Capture uses the same Linux host as QEMU, either
+inside its container or through the bind-mounted Unix socket on the host.

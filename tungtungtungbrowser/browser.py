@@ -8,6 +8,7 @@ import threading
 import time
 
 from .guest import Guest, GuestError, web_url
+from .display import capture_display
 
 SAFARI = 'com.apple.mobilesafari'
 
@@ -56,11 +57,14 @@ class Browser:
     Keep one controlling Browser per guest. Operations on this object are
     serialized; navigation requests never assert that page content is ready.
     """
-    def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2):
+    def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
+                 qmp_socket=None, display_timeout=15):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         self.guest = guest if guest is not None else Guest(cid, timeout)
         self.input_settle = input_settle
+        self.qmp_socket = qmp_socket
+        self.display_timeout = display_timeout
         self._lock = threading.RLock()
 
     def health(self):
@@ -118,8 +122,11 @@ class Browser:
         return fields[0]
 
     def screenshot(self, path=None, *, overwrite=False):
+        """Capture native JPEG, or host PNG when qmp_socket is configured."""
         with self._lock:
-            result = Screenshot.from_native(self.guest.call('screen.screenshot'))
+            result = (capture_display(self.qmp_socket, timeout=self.display_timeout)
+                      if self.qmp_socket is not None else
+                      Screenshot.from_native(self.guest.call('screen.screenshot')))
             if path is not None:
                 result.save(path, overwrite=overwrite)
             return result

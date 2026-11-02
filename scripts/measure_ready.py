@@ -5,7 +5,6 @@ Run in the same PID namespace as scripts/run_vm.py. Web navigation is measured
 separately with capture; foreground Safari alone does not prove network access.
 """
 import argparse
-import base64
 import json
 from pathlib import Path
 import sys
@@ -13,6 +12,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser import Browser
 
 
 def main():
@@ -20,6 +20,7 @@ def main():
     parser.add_argument('vm', type=Path)
     parser.add_argument('--deadline-seconds', type=float, default=600)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--qmp-socket', type=Path, help='Capture the rendered display as PNG instead of guest JPEG')
     args = parser.parse_args()
     launch = json.loads((args.vm / 'launch.json').read_text())
     if launch['host_boot_id'] != Path('/proc/sys/kernel/random/boot_id').read_text().strip():
@@ -73,13 +74,13 @@ def main():
         return foreground
 
     def screenshot(guest):
-        value = guest.call('screen.screenshot')
-        if value.get('mime_type') != 'image/jpeg' or not value.get('data'):
-            raise GuestError('Screenshot missing')
-        jpeg = base64.b64decode(value['data'], validate=True)
-        if not jpeg.startswith(b'\xff\xd8') or not jpeg.endswith(b'\xff\xd9'):
-            raise GuestError('Screenshot is not framed as JPEG')
-        args.output.with_suffix('.jpg').write_bytes(jpeg)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Safari capture deadline exceeded')
+        shot = Browser(guest=guest, qmp_socket=args.qmp_socket,
+                       display_timeout=min(15, remaining)).screenshot()
+        shot.save(args.output.with_suffix('.png' if args.qmp_socket else '.jpg'))
+        result['screenshot'] = shot.metadata()
 
     try:
         retry('vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
@@ -96,7 +97,7 @@ def main():
         retry('safari_foreground', safari)
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)
-        # Native foreground identity plus a valid JPEG still requires inspection
+        # Native foreground identity plus a valid image still requires inspection
         # for launch screens, dialogs or a blank render before claiming readiness.
         result['screenshot_captured'] = True
     except Exception as exc:

@@ -6,14 +6,15 @@ import sys
 import time
 
 from .guest import Guest, GuestError, web_url
-from .browser import Browser, Screenshot
+from .browser import Browser
 
 
 def emit(value):
     print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
-def capture(guest, url, destination, settle, *, accessibility=False, ocr=False):
+def capture(guest, url, destination, settle, *, accessibility=False, ocr=False,
+            qmp_socket=None, display_timeout=15):
     web_url(url)
     # Create an exclusive evidence directory so a run never overwrites older evidence.
     destination.mkdir(parents=True, exist_ok=False)
@@ -29,10 +30,12 @@ def capture(guest, url, destination, settle, *, accessibility=False, ocr=False):
         manifest["navigation_request"] = guest.open(url)
         time.sleep(settle)
         # Preserve the required screenshot before potentially slow native queries.
-        shot = Screenshot.from_native(guest.call("screen.screenshot"))
-        shot.save(destination / "screenshot.jpg")
+        shot = Browser(guest=guest, qmp_socket=qmp_socket,
+                       display_timeout=display_timeout).screenshot()
+        image_name = "screenshot.png" if qmp_socket is not None else "screenshot.jpg"
+        shot.save(destination / image_name)
         (destination / "screenshot.json").write_text(json.dumps(shot.metadata(), indent=2))
-        manifest["artifacts"].extend(["screenshot.jpg", "screenshot.json"])
+        manifest["artifacts"].extend([image_name, "screenshot.json"])
         queries = [("device.info", "device.json", {}),
                    ("apps.foreground", "foreground.json", {})]
         if accessibility:
@@ -61,6 +64,8 @@ def main():
     parser = argparse.ArgumentParser(prog="tungtungtungbrowser")
     parser.add_argument("--cid", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--qmp-socket", type=Path, help="Use local QMP display capture (PNG) instead of guest JPEG")
+    parser.add_argument("--display-timeout", type=float, default=15, help="QMP capture deadline in seconds (default: 15)")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("health")
     sub.add_parser("device")
@@ -69,7 +74,7 @@ def main():
     going = sub.add_parser("goto", help="Navigate through native Safari URL opening")
     going.add_argument("url")
     going.add_argument("--reuse-tab", action="store_true", help="Experimental: use native address-field input")
-    shot = sub.add_parser("screenshot", help="Save a native JPEG without navigating")
+    shot = sub.add_parser("screenshot", help="Save a native JPEG, or PNG with --qmp-socket, without navigating")
     shot.add_argument("output", type=Path)
     shot.add_argument("--overwrite", action="store_true")
     typing = sub.add_parser("type", help="Enter text through native Unicode HID")
@@ -94,10 +99,13 @@ def main():
     args = parser.parse_args()
     if not 0 < args.timeout <= 300:
         parser.error("timeout must be between 0 and 300 seconds")
+    if not 0 < args.display_timeout <= 300:
+        parser.error("display-timeout must be between 0 and 300 seconds")
     if args.action == "capture" and not 0 <= args.settle_seconds <= 60:
         parser.error("settle-seconds must be between 0 and 60")
     guest = Guest(args.cid, args.timeout)
-    browser = Browser(guest=guest)
+    browser = Browser(guest=guest, qmp_socket=args.qmp_socket,
+                      display_timeout=args.display_timeout)
     try:
         match args.action:
             case "health": emit(guest.health())
@@ -110,7 +118,8 @@ def main():
             case "swipe": emit(browser.swipe(args.x1, args.y1, args.x2, args.y2, seconds=args.seconds))
             case "tap": emit(browser.tap(args.x, args.y))
             case "capture": emit(capture(guest, args.url, args.output, args.settle_seconds,
-                                         accessibility=args.accessibility, ocr=args.ocr))
+                                         accessibility=args.accessibility, ocr=args.ocr,
+                                         qmp_socket=args.qmp_socket, display_timeout=args.display_timeout))
             case "services":
                 emit(guest.call("services.profile") if args.profile == "status" else
                      guest.call("services.profile.apply", profile=args.profile, force=True))

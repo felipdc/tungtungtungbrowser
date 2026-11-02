@@ -52,7 +52,8 @@ docker compose -f runtime/compose.yaml up --build -d
 docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser health
 docker compose -f runtime/compose.yaml exec iphone \
-  python3 scripts/measure_ready.py /vm --output /vm/readiness.json
+  python3 scripts/measure_ready.py /vm --qmp-socket /vm/control.sock \
+  --output /vm/readiness.json
 docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser open 'https://example.com/'
 ```
@@ -65,11 +66,12 @@ page content separately:
 
 ```sh
 docker compose -f runtime/compose.yaml exec iphone \
-  python3 -m tungtungtungbrowser capture 'https://example.com/' \
+  python3 -m tungtungtungbrowser --qmp-socket /vm/control.sock \
+  capture 'https://example.com/' \
   --settle-seconds 30 --output /vm/captures/example-001
 ```
 
-Each capture has an exclusive output directory, a native screenshot, metadata
+Each capture has an exclusive output directory, a screenshot, metadata
 and a manifest. Add `--accessibility` or `--ocr` when you need native text
 diagnostics. These queries can be slow; they run after the screenshot, and
 their failures are recorded without discarding it. A missing or invalid
@@ -142,6 +144,34 @@ foreground. Tab reuse has not passed sustained page-load validation. Both paths
 report a navigation request, not successful page rendering. Screenshots preserve
 existing files unless `overwrite=True` is supplied. One `Browser` object
 serializes its operations; use one controller per guest.
+
+For faster screenshots, capture the virtual display through its local QMP
+socket. This avoids guest JPEG encoding, which can stall at Retina resolution:
+
+```python
+browser = Browser(qmp_socket='/absolute/path/to/your/ios-bundle/control.sock')
+shot = browser.screenshot('/absolute/path/to/captures/example.png')
+print(shot.metadata())
+```
+
+Inside the container, use `/vm/control.sock`. The output file can be anywhere
+the caller can write; the host and container do not need matching output
+paths. The CLI equivalent is `tungtungtungbrowser --qmp-socket /vm/control.sock
+screenshot /vm/captures/example.png`. `--display-timeout` sets a separate
+capture deadline, defaulting to 15 seconds.
+
+Without `qmp_socket`, `screenshot()` returns a native `Screenshot` with `.jpeg`
+bytes. With it, the method returns a `DisplayScreenshot` with `.png` bytes.
+Both support `save()` and `metadata()`. Display capture includes virtual
+display overlays and reports pixel dimensions; its `coordinate_scale` is
+`None` because QEMU cannot establish the guest's screen-point scale. Use
+native device geometry when converting pixels to touch coordinates. A valid
+image alone does not establish browser readiness or successful page loading.
+Capture failures are reported without silently switching backends.
+
+QMP is a VM administration socket: keep the VM directory private and use one
+controller at a time. The SDK opens a short-lived connection for each capture
+and does not expose QMP over the network.
 
 The CLI has corresponding `goto`, `screenshot`, `tap`, `swipe`, `type` and `key`
 commands. `open` retains the lower-level native URL-opening behavior.
