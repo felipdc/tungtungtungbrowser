@@ -13,10 +13,10 @@ services:
     # VSOCK reaches vphoned. No /dev/dri, GPU, KVM, host network or privileged mode.
     devices:
       - /dev/vhost-vsock:/dev/vhost-vsock
-    shm_size: 6g
-    mem_limit: 10g
-    memswap_limit: 10g
-    cpus: 4
+    shm_size: ${TTT_SHM_SIZE:-6g}
+    mem_limit: ${TTT_CONTAINER_MEMORY:-10g}
+    memswap_limit: ${TTT_CONTAINER_MEMORY:-10g}
+    cpus: ${TTT_CONTAINER_CPUS:-4}
     pids_limit: 512
     tmpfs:
       - /tmp:size=64m
@@ -38,13 +38,13 @@ services:
       - --source
       - /runtime
       - --memory-gib
-      - "${TTT_VM_MEMORY_GIB:-4}"
+      - "${TTT_VM_MEMORY_GIB:-3}"
       - --cpus
-      - "${TTT_VM_CPUS:-2}"
+      - "${TTT_VM_CPUS:-4}"
       - --render-threads
-      - "1"
+      - "${TTT_RENDER_THREADS:-1}"
       - --tcg-cache-mib
-      - "${TTT_TCG_CACHE_MIB:-2048}"
+      - "${TTT_TCG_CACHE_MIB:-1024}"
     stop_grace_period: 120s
     labels:
       app: tungtungtungbrowser

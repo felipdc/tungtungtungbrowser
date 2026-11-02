@@ -33,3 +33,24 @@ The current Dockerfiles build for x86_64. An ARM port must update the runtime
 build and architecture-specific downloads and pass native guest verification;
 a different host CPU alone does not establish acceleration for Apple-specific
 CPU instructions.
+
+## Resource settings
+
+Compose reads these variables from your shell or an external `--env-file`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TTT_VM_MEMORY_GIB` | `3` | RAM visible to iOS |
+| `TTT_VM_CPUS` | `4` | Virtual CPUs visible to iOS |
+| `TTT_TCG_CACHE_MIB` | `1024` | QEMU translated-code cache limit |
+| `TTT_RENDER_THREADS` | `1` | Software-renderer worker threads |
+| `TTT_CONTAINER_MEMORY` | `10g` | Whole-container RAM limit; additional swap is disabled |
+| `TTT_CONTAINER_CPUS` | `4` | Whole-container CPU quota |
+| `TTT_SHM_SIZE` | `6g` | Shared-memory mount capacity, charged to container memory as used |
+
+Guest RAM is only part of total memory use. Include the emulator, software
+renderer, shared buffers and filesystem cache when sizing the host. The
+container CPU quota also covers rendering and the controller; increasing
+virtual CPUs does not increase that quota. Keep capacity for the host OS and
+optional proxy container. Smaller values require workload validation and may
+increase startup time or cause guest process termination.
