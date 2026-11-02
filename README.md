@@ -201,6 +201,9 @@ virtual display does not support durable QEMU saved-state migration.
 
 ## Development and licensing
 
+See the [development roadmap](docs/roadmap.md) for planned DOM, wait and
+network APIs. These are future capabilities.
+
 Run `python3 -m unittest discover -s tests -v`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for validation and repository boundaries.
 
