@@ -24,9 +24,13 @@ modules and matching kernel headers. Containers alone cannot supply these
 host kernel features.
 
 Allow **16 GiB host RAM and about 100 GiB free storage for initial builds and
-firmware preparation**. A prepared guest has run with 3 GiB guest RAM, four
+firmware preparation**. A prepared guest has run with 2–3 GiB guest RAM, four
 virtual CPUs and a 1 GiB translation cache, but the total container also holds
-emulator, renderer and filesystem-cache memory. Measure the whole container
+emulator, renderer, shared graphics allocations and filesystem-cache memory.
+The 2 GiB guest profile has reached about 7 GiB of total container memory in
+single-session browsing tests; it is an experimental setting, not a 2 GiB host
+requirement. Linux's `file` memory counter includes shared memory and should
+not be treated as entirely reclaimable cache. Measure the whole container
 for your workload before selecting a smaller host. Initial firmware preparation
 and first-boot migration are separate from ordinary browser startup.
 

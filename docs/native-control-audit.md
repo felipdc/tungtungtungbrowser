@@ -46,7 +46,17 @@ The same vphoned dispatcher handles `screen.screenshot` through
 uses the native screen image path, including `_UICreateScreenUIImage`, and
 encodes JPEG. It does not take the screenshot through browser JavaScript.
 
-A foreground bundle identifier and a valid JPEG do not prove that the page
+When a local QMP socket is configured, `tungtungtungbrowser/display.py` instead
+captures the rendered display through QEMU's `screendump` operation. It passes
+an anonymous write-only file descriptor using `SCM_RIGHTS` and `add-fd`, reads
+the resulting PNG, and removes the descriptor set. The capture bounds its
+deadline and output size and validates PNG structure and checksums. This path
+avoids guest image encoding and preserves the framebuffer's pixel dimensions;
+it does not determine UIKit's coordinate scale. It also includes system dialogs
+and overlays visible on the display. The QMP socket remains a privileged local
+control interface and must not be exposed as a browser-facing endpoint.
+
+A foreground bundle identifier and a valid screenshot do not prove that the page
 rendered. The startup report records these separately and keeps visual review
 pending. Expected page content must be checked separately.
 
