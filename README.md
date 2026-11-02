@@ -52,11 +52,16 @@ docker compose -f runtime/compose.yaml up --build -d
 docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser health
 docker compose -f runtime/compose.yaml exec iphone \
+  python3 scripts/measure_ready.py /vm --output /vm/readiness.json
+docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser open 'https://example.com/'
 ```
 
 The health response confirms the native control daemon. It does not certify
-that Safari has rendered a page. Capture and review page content separately:
+that Safari is ready to receive navigation. The readiness command unlocks the
+guest, launches Safari and verifies its foreground identity, recording timings
+and a screenshot. Cold startup currently takes minutes. Capture and review
+page content separately:
 
 ```sh
 docker compose -f runtime/compose.yaml exec iphone \
