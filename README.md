@@ -115,14 +115,28 @@ python3 -m pip install -e .
 On the Linux runtime host, or inside its iPhone container:
 
 ```python
-from tungtungtungbrowser.guest import Guest
+from tungtungtungbrowser import Browser
 
-phone = Guest(cid=3, timeout=120)
-phone.health()
-phone.call('screen.unlock', timeout=60)
-phone.open('https://example.com/')
-phone.tap(120, 240)
+browser = Browser(cid=3, timeout=120)
+browser.goto('https://example.com/')
+# Wait for your application's expected state before using the captured content.
+browser.screenshot('/absolute/path/to/captures/example.jpg')
+browser.tap(120, 240)
+browser.type_text('hello')
+browser.press('return')
 ```
+
+`goto()` explicitly opens the URL in Safari through the native operating-system
+API. `goto(reuse_tab=True)` is an experimental option that types into the active
+Safari tab's address field and verifies the complete entered URL before
+submitting. It falls back to explicit Safari opening if another app is in the
+foreground. Tab reuse has not passed sustained page-load validation. Both paths
+report a navigation request, not successful page rendering. Screenshots preserve
+existing files unless `overwrite=True` is supplied. One `Browser` object
+serializes its operations; use one controller per guest.
+
+The CLI has corresponding `goto`, `screenshot`, `tap`, `swipe`, `type` and `key`
+commands. `open` retains the lower-level native URL-opening behavior.
 
 The controller uses VSOCK and a narrow native method allowlist. URL navigation
 accepts HTTP(S) and explicitly targets Safari. Read the

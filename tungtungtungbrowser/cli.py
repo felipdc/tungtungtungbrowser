@@ -8,6 +8,7 @@ import sys
 import time
 
 from .guest import Guest, GuestError, web_url
+from .browser import Browser
 
 
 def emit(value):
@@ -69,6 +70,20 @@ def main():
     sub.add_parser("device")
     opening = sub.add_parser("open", help="Open HTTP(S) URL through iOS LaunchServices in Safari")
     opening.add_argument("url")
+    going = sub.add_parser("goto", help="Navigate through native Safari URL opening")
+    going.add_argument("url")
+    going.add_argument("--reuse-tab", action="store_true", help="Experimental: use native address-field input")
+    shot = sub.add_parser("screenshot", help="Save a native JPEG without navigating")
+    shot.add_argument("output", type=Path)
+    shot.add_argument("--overwrite", action="store_true")
+    typing = sub.add_parser("type", help="Enter text through native Unicode HID")
+    typing.add_argument("text")
+    key = sub.add_parser("key", help="Press a native key, such as return or cmd+l")
+    key.add_argument("name")
+    swipe = sub.add_parser("swipe")
+    for coordinate in ("x1", "y1", "x2", "y2"):
+        swipe.add_argument(coordinate, type=float)
+    swipe.add_argument("--seconds", type=float, default=0.5)
     tap = sub.add_parser("tap")
     tap.add_argument("x", type=float)
     tap.add_argument("y", type=float)
@@ -84,12 +99,18 @@ def main():
     if args.action == "capture" and not 0 <= args.settle_seconds <= 60:
         parser.error("settle-seconds must be between 0 and 60")
     guest = Guest(args.cid, args.timeout)
+    browser = Browser(guest=guest)
     try:
         match args.action:
             case "health": emit(guest.health())
             case "device": emit(guest.call("device.info"))
             case "open": emit(guest.open(args.url))
-            case "tap": emit(guest.tap(args.x, args.y))
+            case "goto": emit(browser.goto(args.url, reuse_tab=args.reuse_tab))
+            case "screenshot": emit(browser.screenshot(args.output, overwrite=args.overwrite).metadata())
+            case "type": emit(browser.type_text(args.text))
+            case "key": emit(browser.press(args.name))
+            case "swipe": emit(browser.swipe(args.x1, args.y1, args.x2, args.y2, seconds=args.seconds))
+            case "tap": emit(browser.tap(args.x, args.y))
             case "capture": emit(capture(guest, args.url, args.output, args.settle_seconds))
             case "services":
                 emit(guest.call("services.profile") if args.profile == "status" else

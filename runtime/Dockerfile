@@ -18,6 +18,7 @@ COPY scripts/run_vm.py /app/scripts/run_vm.py
 COPY scripts/measure_ready.py /app/scripts/measure_ready.py
 COPY scripts/serve_probe.py /app/scripts/serve_probe.py
 COPY diagnostics /app/diagnostics
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/tungtungtungbrowser/
 ENV PYTHONDONTWRITEBYTECODE=1 \
     XDG_CACHE_HOME=/vm/cache \
     MESA_SHADER_CACHE_DIR=/vm/cache/mesa \

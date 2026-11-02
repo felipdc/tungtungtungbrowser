@@ -31,7 +31,7 @@ class VsockHTTPConnection(http.client.HTTPConnection):
 ALLOWED_METHODS = frozenset({
     "device.snapshot", "device.info", "device.network", "device.screen",
     "screen.unlock", "screen.screenshot", "apps.launch", "apps.open_url", "apps.foreground",
-    "input.tap", "input.swipe", "input.type", "input.key", "input.button",
+    "input.tap", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
     "ui.tree", "ui.ocr", "services.profile", "services.profile.apply", "time.timezone",
     "system.shutdown",
 })

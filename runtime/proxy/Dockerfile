@@ -13,5 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=download /tmp/sing-box-1.14.4-linux-amd64/sing-box /usr/local/bin/sing-box
 COPY runtime/proxy/entrypoint.py /app/entrypoint.py
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/tungtungtungbrowser/
 ENV PYTHONDONTWRITEBYTECODE=1
 ENTRYPOINT ["python3", "/app/entrypoint.py"]

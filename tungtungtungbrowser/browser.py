@@ -1,0 +1,150 @@
+"""Small synchronous API for native Safari input and screen capture."""
+import base64
+import binascii
+from dataclasses import dataclass
+import math
+from pathlib import Path
+import threading
+import time
+
+from .guest import Guest, GuestError, web_url
+
+SAFARI = 'com.apple.mobilesafari'
+
+
+@dataclass(frozen=True)
+class Screenshot:
+    jpeg: bytes
+    width: int
+    height: int
+    coordinate_scale: float
+
+    @classmethod
+    def from_native(cls, data):
+        if not isinstance(data, dict) or data.get('mime_type') != 'image/jpeg':
+            raise GuestError('Native screenshot did not report image/jpeg')
+        try:
+            jpeg = base64.b64decode(data['data'], validate=True)
+            width, height = data['width'], data['height']
+            scale = data.get('coordinate_scale', 1)
+            if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in (width, height)):
+                raise ValueError('Invalid dimensions')
+            if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(scale) or scale <= 0:
+                raise ValueError('Invalid coordinate scale')
+        except (KeyError, TypeError, ValueError, binascii.Error) as exc:
+            raise GuestError('Native screenshot has invalid image data or geometry') from exc
+        if not jpeg.startswith(b'\xff\xd8') or not jpeg.endswith(b'\xff\xd9'):
+            raise GuestError('Native screenshot has invalid JPEG framing')
+        return cls(jpeg, width, height, scale)
+
+    def save(self, path, *, overwrite=False):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('wb' if overwrite else 'xb') as output:
+            output.write(self.jpeg)
+        return path
+
+    def metadata(self):
+        return {'mime_type': 'image/jpeg', 'bytes': len(self.jpeg),
+                'width': self.width, 'height': self.height,
+                'coordinate_scale': self.coordinate_scale}
+
+
+class Browser:
+    """Control one running iPhone through its native VSOCK daemon.
+
+    Keep one controlling Browser per guest. Operations on this object are
+    serialized; navigation requests never assert that page content is ready.
+    """
+    def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2):
+        if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
+            raise ValueError('input_settle must be between 0 and 10 seconds')
+        self.guest = guest if guest is not None else Guest(cid, timeout)
+        self.input_settle = input_settle
+        self._lock = threading.RLock()
+
+    def health(self):
+        with self._lock:
+            return self.guest.health()
+
+    def device(self):
+        with self._lock:
+            return self.guest.call('device.snapshot')
+
+    def unlock(self):
+        with self._lock:
+            result = self.guest.call('screen.unlock', timeout=60)
+            if result.get('locked') is not False:
+                raise GuestError('Screen remains locked')
+            return result
+
+    def goto(self, url, *, reuse_tab=False):
+        """Request navigation through native Safari URL opening.
+
+        Experimental tab reuse uses native HID events and address-field
+        readback. A different foreground app uses explicit Safari URL opening
+        instead of receiving text. Neither path asserts that content loaded.
+        """
+        url = web_url(url)
+        with self._lock:
+            self.unlock()
+            foreground = self.guest.call('apps.foreground') if reuse_tab else None
+            if (foreground and foreground.get('verified') is True
+                    and foreground.get('bundle_id') == SAFARI):
+                self.guest.call('input.key', name='cmd+l')
+                time.sleep(self.input_settle)
+                self._address_field(foreground)
+                self.guest.call('input.paste', text=url)
+                time.sleep(self.input_settle)
+                if self._address_field(foreground).get('value') != url:
+                    raise GuestError('Safari address field does not contain the requested URL; navigation not submitted')
+                self.guest.call('input.key', name='return')
+                method = 'native_address_bar'
+            else:
+                self.guest.open(url)
+                method = 'native_open_url'
+            return {'url': url, 'browser': SAFARI, 'requested': True,
+                    'method': method, 'navigation_verified': False}
+
+    def _address_field(self, foreground):
+        tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
+        if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):
+            raise GuestError('Cannot verify Safari address-field ownership')
+        fields = [element for element in tree.get('elements', [])
+                  if element.get('identifier') == 'URL'
+                  and element.get('visible') and element.get('enabled')]
+        if len(fields) != 1:
+            raise GuestError('Safari address field is not active; navigation not submitted')
+        return fields[0]
+
+    def screenshot(self, path=None, *, overwrite=False):
+        with self._lock:
+            result = Screenshot.from_native(self.guest.call('screen.screenshot'))
+            if path is not None:
+                result.save(path, overwrite=overwrite)
+            return result
+
+    def tap(self, x, y):
+        with self._lock:
+            return self.guest.tap(x, y)
+
+    def type_text(self, text):
+        if not isinstance(text, str) or not 0 < len(text.encode('utf-8')) <= 65536:
+            raise ValueError('text must contain 1–65536 UTF-8 bytes')
+        with self._lock:
+            return self.guest.call('input.paste', text=text)
+
+    def press(self, key):
+        if not isinstance(key, str) or not key:
+            raise ValueError('key must be a nonempty native key name')
+        with self._lock:
+            return self.guest.call('input.key', name=key)
+
+    def swipe(self, x1, y1, x2, y2, *, seconds=0.5):
+        values = (x1, y1, x2, y2, seconds)
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in values):
+            raise ValueError('Swipe coordinates and duration must be finite numbers')
+        if min(x1, y1, x2, y2) < 0 or not 0.1 <= seconds <= 10:
+            raise ValueError('Swipe needs nonnegative points and 0.1–10 seconds')
+        with self._lock:
+            return self.guest.call('input.swipe', x1=x1, y1=y1, x2=x2, y2=y2, seconds=seconds)

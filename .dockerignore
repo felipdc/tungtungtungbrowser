@@ -11,3 +11,6 @@
 !runtime/Dockerfile
 !runtime/proxy
 !runtime/proxy/*
+
+!LICENSE
+!THIRD_PARTY_NOTICES.md

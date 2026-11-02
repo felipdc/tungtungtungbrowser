@@ -27,6 +27,17 @@ The operation can return success after starting an asynchronous open.
 Therefore the controller's evidence manifest deliberately leaves navigation
 unverified until screenshots and page content have been inspected.
 
+## Reusing a tab
+
+The higher-level `Browser.goto` defaults to explicit native URL opening.
+Its experimental `reuse_tab=True` option uses the pinned native `input.key` and
+`input.paste` methods when Safari is verified in the foreground. It confirms
+Safari's accessibility address field before text entry and reads the URL back
+before pressing Return. IcliKit's `pasteText` emits a Unicode HID event; it does
+not run page code or use the administrative JavaScriptCore bridge. The native
+open-URL path is used when Safari is not the verified foreground app. Tab reuse
+has not passed sustained page-load validation and is not the default.
+
 ## Screen evidence
 
 The same vphoned dispatcher handles `screen.screenshot` through
