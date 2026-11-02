@@ -1,0 +1,48 @@
+# Merge with compose.yaml. The proxy owns networking; iPhone keeps no capabilities.
+services:
+  egress:
+    image: tungtungtungbrowser:egress
+    build:
+      context: ..
+      dockerfile: runtime/proxy/Dockerfile
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW]
+    security_opt: [no-new-privileges:true]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    tmpfs:
+      - /run:size=8m,mode=700
+      - /tmp:size=8m
+    volumes:
+      - type: bind
+        source: ${TTT_PROXY_FILE:?Set TTT_PROXY_FILE to a private proxy configuration}
+        target: /run/secrets/proxy.json
+        read_only: true
+      - type: bind
+        source: ./proxy/resolv.conf
+        target: /etc/resolv.conf
+        read_only: true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, ip, link, show, ttt0]
+      interval: 5s
+      timeout: 2s
+      retries: 6
+    labels:
+      app: tungtungtungbrowser
+  iphone:
+    network_mode: service:egress
+    depends_on:
+      egress:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ./proxy/resolv.conf
+        target: /etc/resolv.conf
+        read_only: true

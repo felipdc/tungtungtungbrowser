@@ -1,0 +1,51 @@
+services:
+  iphone:
+    image: tungtungtungbrowser:cpu
+    build:
+      context: ..
+      dockerfile: runtime/Dockerfile
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp-vsock.json
+    # VSOCK reaches vphoned. No /dev/dri, GPU, KVM, host network or privileged mode.
+    devices:
+      - /dev/vhost-vsock:/dev/vhost-vsock
+    shm_size: 6g
+    mem_limit: 10g
+    memswap_limit: 10g
+    cpus: 4
+    pids_limit: 512
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      REIMS_VGPU_CENSUS_DIR: ${TTT_RENDER_DIAGNOSTICS_DIR:-}
+    volumes:
+      - type: bind
+        source: ${TTT_VM_DIR:?Set TTT_VM_DIR to a prepared iOS bundle}
+        target: /vm
+      - type: bind
+        source: ${TTT_VM_DIR}/cache
+        target: /root/.cache
+      - type: bind
+        source: ${TTT_RUNTIME_DIR:?Set TTT_RUNTIME_DIR to the built pinned vphone-linux checkout}
+        target: /runtime
+        read_only: true
+    command:
+      - /vm
+      - --source
+      - /runtime
+      - --memory-gib
+      - "${TTT_VM_MEMORY_GIB:-4}"
+      - --cpus
+      - "${TTT_VM_CPUS:-2}"
+      - --render-threads
+      - "1"
+      - --tcg-cache-mib
+      - "${TTT_TCG_CACHE_MIB:-2048}"
+    stop_grace_period: 120s
+    labels:
+      app: tungtungtungbrowser
+      renderer: cpu-only

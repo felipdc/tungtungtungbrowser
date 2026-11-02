@@ -1,0 +1,17 @@
+SPDX-License-Identifier: AGPL-3.0-or-later
+Target file copyright: Visual Ehrmanntraut and Christian Inci; see upstream header.
+
+diff --git a/hw/arm/apple-silicon/a13_gxf.c b/hw/arm/apple-silicon/a13_gxf.c
+--- a/hw/arm/apple-silicon/a13_gxf.c
++++ b/hw/arm/apple-silicon/a13_gxf.c
+@@ -143,7 +143,9 @@ static void sprr_perm_el0_write(CPUARMState *env, const ARMCPRegInfo *ri,
+ {
+     // maybe use uint64_t for mask/umask?
+     uint64_t perm = raw_read(env, ri);
+-    uint32_t mask = env->sprr.mprr_el_br_el1[0][0];
++    /* M1 maps UMPRR to C3_0; C3_1 is the privileged mask. */
++    uint32_t mask = env->sprr_cfg.unified_perms
++        ? env->sprr.c3_0 : env->sprr.mprr_el_br_el1[0][0];
+     static unsigned logged;
+ 
+     if (__atomic_fetch_add(&logged, 1, __ATOMIC_RELAXED) < 64) {

@@ -1,0 +1,13 @@
+*
+!tungtungtungbrowser
+!tungtungtungbrowser/*.py
+!scripts
+!scripts/run_vm.py
+!scripts/measure_ready.py
+!scripts/serve_probe.py
+!diagnostics
+!diagnostics/*
+!runtime
+!runtime/Dockerfile
+!runtime/proxy
+!runtime/proxy/*

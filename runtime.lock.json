@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/YahiaAngelo/vphone-linux.git",
+  "commit": "888d17ca17268aaecd277c64f2d95385b184744b",
+  "vphone_cli_version": "2.14.2",
+  "hardware_gpu_allowed": false,
+  "renderer": "lavapipe",
+  "browser": "com.apple.mobilesafari",
+  "page_javascript_injection_allowed": false
+}

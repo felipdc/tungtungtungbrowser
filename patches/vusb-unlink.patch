@@ -1,0 +1,160 @@
+diff --git a/tools/vusb-usbip.py b/tools/vusb-usbip.py
+index fd8a8a9..acc24b0 100755
+--- a/tools/vusb-usbip.py
++++ b/tools/vusb-usbip.py
+@@ -20,6 +20,7 @@ import errno
+ import os
+ import struct
+ import sys
++import time
+ 
+ USBIP_VERSION = 0x0111
+ OP_REQ_IMPORT = 0x8003
+@@ -42,6 +43,7 @@ CODE_DRIVER_RESET = 6
+ REDISCOVER_DELAY = 0.2
+ STAGE_TIMEOUT = 300.0
+ DEBUG = bool(os.environ.get("VUSB_DEBUG"))
++TRACE_STAGES = bool(os.environ.get("VUSB_TRACE_STAGES"))
+ # GET_DESCRIPTOR(DEVICE), wLength 64: the first request of Linux's enumeration after a port reset.
+ ENUMERATION_START = bytes.fromhex("8006000100004000")
+ # QEMU accepts a total vusb chardev message of VUSB_MSG_MAX: a 4-byte length,
+@@ -63,6 +65,11 @@ def log(*args):
+     print(*args, file=sys.stderr, flush=True)
+ 
+ 
++def stage_log(*args):
++    if TRACE_STAGES:
++        log(f"stage[{time.monotonic():.3f}]", *args)
++
++
+ class Stall(Exception):
+     """The guest USB device returned a STALL response."""
+ 
+@@ -118,6 +125,7 @@ class VUSB:
+             code, ep, data = msg[0], msg[1], msg[2:]
+             if code == CODE_DRIVER_RESET:
+                 log("guest re-initialised its USB controller: device unplugged")
++                stage_log("driver reset")
+                 self._unplug()
+             elif code == CODE_RESET:
+                 if self.reset_pending:
+@@ -156,6 +164,7 @@ class VUSB:
+             return data
+ 
+     async def reset(self, timeout=CTRL_TIMEOUT):
++        stage_log("reset begin", timeout)
+         deadline = asyncio.get_running_loop().time() + timeout
+         while not self.reset_responses.empty():
+             self.reset_responses.get_nowait()
+@@ -168,12 +177,14 @@ class VUSB:
+                 await self.send(0, MSG_RESET)
+                 code = await asyncio.wait_for(self.reset_responses.get(), remaining)
+                 if code == CODE_RESET:
++                    stage_log("reset acknowledged")
+                     return
+                 if code == CODE_DRIVER_RESET:
+                     raise OSError(errno.ENODEV, "device unplugged (guest driver reset)")
+                 if code == CODE_NAK:
+                     await asyncio.sleep(0.001)
+         finally:
++            stage_log("reset finished")
+             self.reset_pending = False
+ 
+     async def control(self, setup, out_data=b""):
+@@ -184,7 +195,14 @@ class VUSB:
+                 await self.send(0, MSG_DATA, setup + out_data)
+ 
+             await retry()
+-            return await self._next(self.ctrl, CTRL_TIMEOUT, retry)
++            try:
++                result = await self._next(self.ctrl, CTRL_TIMEOUT, retry)
++                if setup[1] == 6:
++                    stage_log("descriptor", setup.hex(), result[:18].hex())
++                return result
++            except BaseException as exc:
++                stage_log("control failed", setup.hex(), repr(exc))
++                raise
+ 
+     async def transfer(self, ep, direction_in, payload=b"", max_length=None):
+         address = ep | (0x80 if direction_in else 0)
+@@ -209,6 +227,7 @@ class VUSB:
+             return result
+ 
+     async def abort(self, ep, direction_in):
++        stage_log("abort", ep, direction_in)
+         address = ep | (0x80 if direction_in else 0)
+         await self.send(address, MSG_ABORT)
+         try:
+@@ -285,6 +304,7 @@ class USBIPBridge:
+ 
+     async def discover(self, reset_timeout=CTRL_TIMEOUT):
+         """Read the descriptors needed by OP_REP_DEVLIST and OP_REP_IMPORT."""
++        stage_log("discover begin")
+         await self.usb.reset(reset_timeout)
+         setup = lambda value, length: struct.pack("<BBHHH", 0x80, 6, value, 0, length)
+         device = await self.usb.control(setup(0x0100, 18))
+@@ -375,7 +395,7 @@ class USBIPBridge:
+                     task.add_done_callback(lambda done, seq=seqnum:
+                                            self._submit_done(done, seq, tasks))
+                 elif command == CMD_UNLINK:
+-                    rest = await reader.readexactly(20)
++                    rest = await reader.readexactly(44)
+                     await self.handle_unlink(rest, writer)
+                 else:
+                     raise ValueError(f"unsupported USB/IP command {command}")
+@@ -464,7 +484,10 @@ class USBIPBridge:
+                 log(f"USB/IP URB {seqnum} timed out after {URB_TIMEOUT:g}s")
+             status = -errno.ETIMEDOUT
+         except asyncio.CancelledError:
+-            status = -errno.ECONNRESET
++            # UNLINK has its own reply. Keep the endpoint lock while aborting
++            # so a queued URB cannot start before the old transfer is cancelled.
++            await self.usb.abort(ep, direction == 1)
++            return
+         except Exception as e:
+             log(f"USB/IP URB {seqnum} failed: {e}")
+             status = -errno.EIO
+@@ -489,6 +512,9 @@ class USBIPBridge:
+ 
+     async def _send_submit_reply(self, writer, seqnum, devid, direction, ep,
+                                  status, data, actual, start_frame, packets):
++        # A response already being written is complete for UNLINK purposes.
++        # Do not let a late cancellation interrupt a partially written frame.
++        self.pending.pop(seqnum, None)
+         # actual_length: bytes received for IN, bytes sent for OUT (libusb checks it).
+         hdr = struct.pack("!IIIIIiiiii8s", RET_SUBMIT, seqnum, devid,
+                           direction, ep, status, actual, start_frame,
+@@ -496,16 +522,17 @@ class USBIPBridge:
+         await self.write(writer, hdr + (data if direction == 1 else b""))
+ 
+     async def handle_unlink(self, rest, writer):
+-        seqnum, devid, direction, ep, target = struct.unpack("!IIIII", rest)
++        seqnum, devid, direction, ep, target = struct.unpack("!IIIII24x", rest)
+         pending = self.pending.get(target)
+         task = pending[0] if pending else None
+-        status = 0 if task and not task.done() else -errno.ENOENT
+-        await self.write(writer, struct.pack("!IIIIIi", RET_UNLINK, seqnum,
+-                                            devid, direction, ep, status))
+-        if status == 0:
+-            _, target_ep, target_direction = pending
+-            await self.usb.abort(target_ep, target_direction == 1)
++        status = 0
++        if task and not task.done():
+             task.cancel()
++            await asyncio.gather(task, return_exceptions=True)
++            status = -errno.ECONNRESET
++        # Both UNLINK request and response occupy the full 48-byte USB/IP header.
++        await self.write(writer, struct.pack("!IIIIIi24x", RET_UNLINK, seqnum,
++                                            devid, direction, ep, status))
+ 
+     async def follow_stages(self):
+         """Each guest boot stage presents a new device: on every driver reset, end the USB/IP
+@@ -525,7 +552,7 @@ class USBIPBridge:
+                     # buffer, so wait for that one rather than queueing more behind it.
+                     await self.discover(reset_timeout=STAGE_TIMEOUT)
+                 except (OSError, asyncio.TimeoutError, ValueError, Stall) as e:
+-                    log(f"waiting for the next stage's device ({e or type(e).__name__})")
++                    log(f"waiting for the next stage's device ({e!r})")
+                     self.device_record = None
+                     continue
+                 if self.usb.detached.is_set():  # the guest moved on again mid-discovery
