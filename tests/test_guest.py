@@ -15,6 +15,7 @@ class GuestContractTest(unittest.TestCase):
     def setUp(self):
         self.requests = []
         self.reply_error = False
+        self.method_errors = set()
         self.wrong_id = False
         self.locked = False
         test = self
@@ -37,7 +38,7 @@ class GuestContractTest(unittest.TestCase):
                               "data": base64.b64encode(b'\xff\xd8test-fixture\xff\xd9').decode()}
                 self.reply({"type": "response", "id": "wrong" if test.wrong_id else data['id'],
                             **({"error": {"code": "operation_failed", "message": "Safari unavailable"}}
-                               if test.reply_error else {"result": result})})
+                               if test.reply_error or data['method'] in test.method_errors else {"result": result})})
 
             def reply(self, data):
                 encoded = json.dumps(data).encode()
@@ -96,13 +97,36 @@ class GuestContractTest(unittest.TestCase):
             result = capture(self.guest, 'https://example.com/catalog/123', destination, 0)
             self.assertFalse(result['navigation_verified'])
             self.assertFalse(result['page_javascript_injected'])
-            self.assertEqual(len(result['artifacts']), 6)
+            self.assertEqual(len(result['artifacts']), 4)
+            self.assertFalse(any(r['method'].startswith('ui.') for r in self.requests))
             self.assertTrue((destination / 'screenshot.jpg').is_file())
             self.assertNotIn('data', json.loads((destination / 'screenshot.json').read_text()))
             saved = json.loads((destination / 'manifest.json').read_text())
             self.assertIn('finished_at', saved)
             with self.assertRaises(FileExistsError):
                 capture(self.guest, 'https://example.com', destination, 0)
+
+    def test_optional_diagnostic_failure_preserves_required_screenshot(self):
+        self.method_errors = {'ui.tree', 'ui.ocr'}
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / 'run'
+            result = capture(self.guest, 'https://example.com', destination, 0,
+                             accessibility=True, ocr=True)
+            self.assertEqual(set(result['capture_errors']), {'ui.tree', 'ui.ocr'})
+            self.assertTrue((destination / 'screenshot.jpg').is_file())
+            self.assertFalse(result['navigation_verified'])
+            self.assertTrue(result['optional_diagnostics']['accessibility'])
+
+    def test_missing_required_screenshot_fails_with_manifest(self):
+        self.method_errors = {'screen.screenshot'}
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / 'run'
+            with self.assertRaises(GuestError):
+                capture(self.guest, 'https://example.com', destination, 0)
+            saved = json.loads((destination / 'manifest.json').read_text())
+            self.assertIn('error', saved)
+            self.assertFalse((destination / 'screenshot.jpg').exists())
+            self.assertFalse(saved['navigation_verified'])
 
     def test_failed_capture_writes_failure_manifest(self):
         self.reply_error = True

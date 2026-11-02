@@ -1,6 +1,4 @@
 import argparse
-import base64
-import binascii
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -8,20 +6,21 @@ import sys
 import time
 
 from .guest import Guest, GuestError, web_url
-from .browser import Browser
+from .browser import Browser, Screenshot
 
 
 def emit(value):
     print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
-def capture(guest, url, destination, settle):
+def capture(guest, url, destination, settle, *, accessibility=False, ocr=False):
     web_url(url)
     # Create an exclusive evidence directory so a run never overwrites older evidence.
     destination.mkdir(parents=True, exist_ok=False)
     manifest = {"started_at": datetime.now(timezone.utc).isoformat(), "url": url,
                 "browser": "com.apple.mobilesafari", "navigation_verified": False,
-                "page_javascript_injected": False, "artifacts": []}
+                "page_javascript_injected": False, "artifacts": [],
+                "optional_diagnostics": {"accessibility": accessibility, "ocr": ocr}}
     try:
         manifest["health"] = guest.health()
         manifest["unlock"] = guest.call("screen.unlock", timeout=60)
@@ -29,24 +28,21 @@ def capture(guest, url, destination, settle):
             raise GuestError("Screen remains locked")
         manifest["navigation_request"] = guest.open(url)
         time.sleep(settle)
-        for method, name in [("screen.screenshot", "screenshot.json"),
-                             ("device.info", "device.json"), ("apps.foreground", "foreground.json"),
-                             ("ui.tree", "accessibility.json"),
-                             ("ui.ocr", "ocr.json")]:
+        # Preserve the required screenshot before potentially slow native queries.
+        shot = Screenshot.from_native(guest.call("screen.screenshot"))
+        shot.save(destination / "screenshot.jpg")
+        (destination / "screenshot.json").write_text(json.dumps(shot.metadata(), indent=2))
+        manifest["artifacts"].extend(["screenshot.jpg", "screenshot.json"])
+        queries = [("device.info", "device.json", {}),
+                   ("apps.foreground", "foreground.json", {})]
+        if accessibility:
+            queries.append(("ui.tree", "accessibility.json",
+                            {"max_elements": 30, "limit": 30, "visible_only": True}))
+        if ocr:
+            queries.append(("ui.ocr", "ocr.json", {}))
+        for method, name, params in queries:
             try:
-                data = guest.call(method)
-                if method == "screen.screenshot":
-                    if not isinstance(data, dict) or data.get("mime_type") != "image/jpeg":
-                        raise GuestError("Native screenshot did not report image/jpeg")
-                    try:
-                        jpeg = base64.b64decode(data["data"], validate=True)
-                    except (KeyError, TypeError, ValueError, binascii.Error) as exc:
-                        raise GuestError("Native screenshot has invalid base64 data") from exc
-                    if not jpeg.startswith(b'\xff\xd8') or not jpeg.endswith(b'\xff\xd9'):
-                        raise GuestError("Native screenshot has invalid JPEG framing")
-                    (destination / "screenshot.jpg").write_bytes(jpeg)
-                    data = {key: value for key, value in data.items() if key != "data"}
-                    manifest["artifacts"].append("screenshot.jpg")
+                data = guest.call(method, **params)
                 (destination / name).write_text(json.dumps(data, ensure_ascii=False, indent=2))
                 manifest["artifacts"].append(name)
             except GuestError as exc:
@@ -91,6 +87,8 @@ def main():
     capturing.add_argument("url")
     capturing.add_argument("--output", type=Path, required=True)
     capturing.add_argument("--settle-seconds", type=float, default=10)
+    capturing.add_argument("--accessibility", action="store_true", help="Also collect the native accessibility tree; may be slow")
+    capturing.add_argument("--ocr", action="store_true", help="Also run native OCR; may be slow")
     trimming = sub.add_parser("services", help="Inspect or apply the upstream reversible service profile")
     trimming.add_argument("profile", choices=["status", "trimmed", "none"], default="status", nargs="?")
     args = parser.parse_args()
@@ -111,7 +109,8 @@ def main():
             case "key": emit(browser.press(args.name))
             case "swipe": emit(browser.swipe(args.x1, args.y1, args.x2, args.y2, seconds=args.seconds))
             case "tap": emit(browser.tap(args.x, args.y))
-            case "capture": emit(capture(guest, args.url, args.output, args.settle_seconds))
+            case "capture": emit(capture(guest, args.url, args.output, args.settle_seconds,
+                                         accessibility=args.accessibility, ocr=args.ocr))
             case "services":
                 emit(guest.call("services.profile") if args.profile == "status" else
                      guest.call("services.profile.apply", profile=args.profile, force=True))

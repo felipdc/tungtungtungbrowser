@@ -70,8 +70,11 @@ docker compose -f runtime/compose.yaml exec iphone \
 ```
 
 Each capture has an exclusive output directory, a native screenshot, metadata
-and a manifest. Optional accessibility/OCR failures are recorded. Navigation
-remains unverified until the captured content has been checked.
+and a manifest. Add `--accessibility` or `--ocr` when you need native text
+diagnostics. These queries can be slow; they run after the screenshot, and
+their failures are recorded without discarding it. A missing or invalid
+screenshot fails the command and leaves a failure manifest. Navigation remains
+unverified until the captured content has been checked.
 
 Stop through Compose so iOS can flush its filesystem:
 
