@@ -24,6 +24,12 @@ native Safari. Server transport checks alone are not Safari evidence. Its touch
 button records the pointer, touch and mouse event sequence, including trust,
 contact dimensions and pressure, without changing browser APIs.
 
+The `touchConstructor` observation constructs a `Touch` with distinct field
+values and reads them back without dispatching an event. This separates DOM
+field conversion from the native input path. Constructor support or failure
+is recorded; this check does not establish native touch fidelity. Native event
+records also include rotation and any legacy prefixed radius/force properties.
+
 The pinned native input helper has a known contact-geometry defect. On a guest
 reporting a 393 by 852 point display at scale 3, a native tap produced trusted
 touch events with `radiusX: 4260` and `force: 4260`. Trusted event delivery does

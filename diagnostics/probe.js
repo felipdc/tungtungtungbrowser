@@ -14,7 +14,11 @@ for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart',
       clientY: event.clientY ?? null,
       changedTouches: event.changedTouches ? Array.from(event.changedTouches, touch => ({
         identifier: touch.identifier, clientX: touch.clientX, clientY: touch.clientY,
-        radiusX: touch.radiusX, radiusY: touch.radiusY, force: touch.force
+        radiusX: touch.radiusX, radiusY: touch.radiusY, force: touch.force,
+        rotationAngle: touch.rotationAngle,
+        webkitRadiusX: touch.webkitRadiusX ?? null,
+        webkitRadiusY: touch.webkitRadiusY ?? null,
+        webkitForce: touch.webkitForce ?? null
       })) : null
     });
     if (inputTrace.length > 32) inputTrace.shift();
@@ -73,8 +77,21 @@ function observeGraphics() {
   if (release) release.loseContext();
   return result;
 }
+function observeTouchConstructor() {
+  // Construct but do not dispatch: distinguish DOM field conversion from
+  // native HID delivery without replacing any browser method or property.
+  const expected = {identifier: 17, clientX: 23, clientY: 29,
+    screenX: 31, screenY: 37, pageX: 41, pageY: 43,
+    radiusX: 7, radiusY: 11, rotationAngle: 13, force: 0.25};
+  try {
+    const touch = new Touch({...expected, target: touchButton});
+    return {dispatched: false, expected,
+      observed: Object.fromEntries(Object.keys(expected).map(key => [key, touch[key]]))};
+  } catch (error) { return {dispatched: false, error: String(error)}; }
+}
 (async () => {
   const result = {capturedAt: new Date().toISOString(), main: observeNavigator()};
+  result.touchConstructor = observeTouchConstructor();
   result.display = {
     width: screen.width, height: screen.height, availWidth: screen.availWidth,
     availHeight: screen.availHeight, colorDepth: screen.colorDepth,
