@@ -19,9 +19,16 @@ Keep the service out of baseline resource measurements and stop it when finished
 
 The page compares main-frame, dedicated-worker and shared-worker navigator
 values, plus display geometry, WebGL identity and a simple canvas sample.
-Missing or failed observations are recorded. The page has been exercised in native Safari. Server transport checks alone
-are not Safari evidence. Its touch button records trusted input events without
-changing browser APIs.
+Missing or failed observations are recorded. The page has been exercised in
+native Safari. Server transport checks alone are not Safari evidence. Its touch
+button records the pointer, touch and mouse event sequence, including trust,
+contact dimensions and pressure, without changing browser APIs.
+
+The pinned native input helper has a known contact-geometry defect. On a guest
+reporting a 393 by 852 point display at scale 3, a native tap produced trusted
+touch events with `radiusX: 4260` and `force: 4260`. Trusted event delivery does
+not establish realistic contact geometry. A native correction remains under
+investigation; the public controller still uses the pinned helper.
 
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
