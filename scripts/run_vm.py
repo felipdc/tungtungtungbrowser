@@ -74,6 +74,13 @@ def main():
         # runs may opt in explicitly, and the launch record exposes that choice.
         "REIMS_VGPU_CENSUS_DIR": os.environ.get("REIMS_VGPU_CENSUS_DIR", ""),
     }
+    # Match the upstream resolution selection and retain it with resource data.
+    # Guest-reported points and scale still need separate native verification.
+    display_resolution = os.environ.get('GFX_RES')
+    if not display_resolution:
+        display_file = vm / 'gfx-res'
+        display_resolution = display_file.read_text().strip() if display_file.exists() else '1290x2796'
+    env['GFX_RES'] = display_resolution
     qmp = vm / "control.sock"
     if len(os.fsencode(qmp)) > 100:
         parser.error("VM path is too long for a QMP Unix socket")
@@ -110,6 +117,7 @@ def main():
                        "vm": str(vm),
                        "boot_kind": "cold", "memory_gib": args.memory_gib, "cpus": args.cpus,
                        "render_threads": args.render_threads, "renderer": "lavapipe",
+                       "display_resolution": display_resolution,
                        "tcg_cache_mib": args.tcg_cache_mib,
                        "renderer_diagnostics": bool(env["REIMS_VGPU_CENSUS_DIR"]),
                        "network_adapter": "virtio-net-without-control-queue",
