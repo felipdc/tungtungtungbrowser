@@ -77,7 +77,12 @@ docker compose -f runtime/compose.yaml exec iphone \
 The health response confirms the native control daemon. It does not certify
 that Safari is ready to receive navigation. The readiness command unlocks the
 guest, launches Safari and verifies its foreground identity, recording timings
-and a screenshot. Cold startup currently takes minutes. Capture and review
+and a screenshot. Choose a new `.json` output path for each measurement; existing
+reports and screenshots are preserved. The report records the current stage
+during startup. If readiness fails and QMP is configured, it also attempts a
+separate `.failure.png` display capture with a five-second QMP deadline. A failure
+capture does not establish readiness, and its own error does not replace the
+original failure. Cold startup currently takes minutes. Capture and review
 page content separately:
 
 ```sh

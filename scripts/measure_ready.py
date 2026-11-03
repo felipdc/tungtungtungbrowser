@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,13 +16,15 @@ from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser import Browser
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('vm', type=Path)
     parser.add_argument('--deadline-seconds', type=float, default=600)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--qmp-socket', type=Path, help='Capture the rendered display as PNG instead of guest JPEG')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.output.suffix != '.json':
+        parser.error('output must have a .json suffix')
     launch = json.loads((args.vm / 'launch.json').read_text())
     if launch['host_boot_id'] != Path('/proc/sys/kernel/random/boot_id').read_text().strip():
         parser.error('Launch record is from an earlier host boot')
@@ -31,8 +34,29 @@ def main():
     deadline = start + args.deadline_seconds
     result = {'launch': launch, 'navigation_verified': False,
               'safari_foreground_verified': False, 'screenshot_captured': False,
-              'visual_review': 'pending'}
+              'visual_review': 'pending', 'status': 'running', 'stage': 'starting'}
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    screenshot_path = args.output.with_suffix('.png' if args.qmp_socket else '.jpg')
+    failure_path = args.output.with_suffix('.failure.png')
+    for path in (screenshot_path, failure_path):
+        if path.exists() or path.is_symlink():
+            parser.error(f'Output already exists: {path}')
+    # Claim the report before making guest requests. A second observer must
+    # choose another filename, and must not replace earlier evidence.
+    with args.output.open('x') as report:
+        json.dump(result, report, indent=2)
+
+    def checkpoint():
+        result['elapsed_seconds'] = time.monotonic() - start
+        with tempfile.NamedTemporaryFile(mode='w', dir=args.output.parent,
+                                         prefix=args.output.name + '.', delete=False) as report:
+            temporary = Path(report.name)
+            try:
+                json.dump(result, report, indent=2)
+                report.close()
+                temporary.replace(args.output)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def alive():
         stat = Path(f"/proc/{launch['pid']}/stat").read_text().rsplit(')', 1)[1].split()
@@ -40,6 +64,8 @@ def main():
             raise RuntimeError('Recorded PID no longer runs this VM bundle')
 
     def retry(label, operation, timeout=60, retry_timeouts=False):
+        result['stage'] = label
+        checkpoint()
         last_error = None
         while time.monotonic() < deadline:
             alive()
@@ -49,6 +75,7 @@ def main():
                 value = operation(guest)
                 elapsed = time.monotonic() - start
                 result[label + '_seconds'] = elapsed
+                checkpoint()
                 print(json.dumps({'stage': label, 'seconds': elapsed}), flush=True)
                 return value
             except GuestError as exc:
@@ -79,7 +106,7 @@ def main():
             raise TimeoutError('Safari capture deadline exceeded')
         shot = Browser(guest=guest, qmp_socket=args.qmp_socket,
                        display_timeout=min(15, remaining)).screenshot()
-        shot.save(args.output.with_suffix('.png' if args.qmp_socket else '.jpg'))
+        shot.save(screenshot_path)
         result['screenshot'] = shot.metadata()
 
     try:
@@ -87,6 +114,8 @@ def main():
         retry('screen_unlocked', unlock, timeout=90)
         # Request launch once. Foreground polling must not relaunch Safari or
         # rescan its running state for every poll. Native launch can be slow on TCG.
+        result['stage'] = 'safari_launch'
+        checkpoint()
         alive()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -100,12 +129,29 @@ def main():
         # Native foreground identity plus a valid image still requires inspection
         # for launch screens, dialogs or a blank render before claiming readiness.
         result['screenshot_captured'] = True
+        result['status'] = 'complete'
+        result['stage'] = 'complete'
     except Exception as exc:
+        result['status'] = 'failed'
         result['error'] = str(exc)
+        checkpoint()
+        # Do not queue guest-side work after a timed-out native request. QMP
+        # can capture the display independently, even after the boot deadline.
+        # Keep this diagnostic separate from successful readiness evidence.
+        if args.qmp_socket:
+            try:
+                alive()
+                shot = Browser(qmp_socket=args.qmp_socket, display_timeout=5).screenshot()
+                shot.save(failure_path)
+                result['failure_screenshot'] = {
+                    'path': str(failure_path), 'metadata': shot.metadata(),
+                    'elapsed_seconds': time.monotonic() - start,
+                }
+            except Exception as capture_error:
+                result['failure_screenshot_error'] = str(capture_error)
         raise
     finally:
-        result['elapsed_seconds'] = time.monotonic() - start
-        args.output.write_text(json.dumps(result, indent=2))
+        checkpoint()
 
 
 if __name__ == '__main__':
