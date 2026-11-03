@@ -88,6 +88,18 @@ reads; the counters are not an atomic snapshot. If the container process exits
 or changes, sampling fails and preserves the partial recording without a
 terminal success summary.
 
+The configuration also retains the kernel's `cpu.max`,
+`cpuset.cpus.effective`, `memory.max` and `memory.swap.max` values separately
+from Docker's requested limits. A two-core CPU quota can run work across four
+allowed CPUs and throttle it when the period's budget is exhausted; it does
+not pin the container to two CPUs. Missing controller files are recorded as
+`null`, which does not mean unlimited. These values describe this cgroup;
+ancestor quotas, other workloads and host capacity can constrain it further.
+The sampler checks these values before each sample and the terminal summary.
+A detected change fails the measurement while preserving its partial data.
+Transient changes between checks are not detected. Start a new recording after
+changing limits so a resource comparison does not mix configurations.
+
 Convert a resource recording into a comparable JSON report without running
 Docker or contacting the guest:
 

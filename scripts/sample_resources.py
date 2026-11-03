@@ -19,6 +19,17 @@ def counters(path):
             (line.split() for line in path.read_text().splitlines())}
 
 
+def runtime_limits(group):
+    """Keep kernel values distinct from Docker's requested configuration."""
+    result = {}
+    for name in ('cpu.max', 'cpuset.cpus.effective', 'memory.max', 'memory.swap.max'):
+        try:
+            result[name] = (group / name).read_text().strip()
+        except FileNotFoundError:
+            result[name] = None
+    return result
+
+
 def collect(container, output_path, *, seconds, interval,
             proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgroup')):
     if not 0 < interval <= seconds <= 3600:
@@ -35,6 +46,7 @@ def collect(container, output_path, *, seconds, interval,
     if cgroup is None:
         raise ValueError('A cgroup v2 Docker host is required')
     group = cgroup_root.joinpath(cgroup.lstrip('/'))
+    limits = runtime_limits(group)
     host_boot_id = proc_root.joinpath('sys/kernel/random/boot_id').read_text().strip()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # Recordings can contain host/container identifiers; keep new files private.
@@ -50,6 +62,7 @@ def collect(container, output_path, *, seconds, interval,
               'image': inspect['Image'], 'started_at': inspect['State']['StartedAt'],
               'memory_limit_bytes': inspect['HostConfig']['Memory'],
               'cpu_quota_nanocpus': inspect['HostConfig']['NanoCpus'],
+              'cgroup_limits': limits,
               'cgroup': cgroup, 'requested_seconds': seconds,
               'interval_seconds': interval, 'host_boot_id': host_boot_id,
               'host_pid': pid, 'pid_start_ticks': start_ticks,
@@ -59,6 +72,8 @@ def collect(container, output_path, *, seconds, interval,
         while True:
             if proc.joinpath('stat').read_text().rsplit(')', 1)[1].split()[19] != start_ticks:
                 raise RuntimeError('Container process changed during measurement')
+            if runtime_limits(group) != limits:
+                raise RuntimeError('Container resource limits changed during measurement')
             now_ns = time.monotonic_ns()
             memory = int(group.joinpath('memory.current').read_text())
             cpu = counters(group / 'cpu.stat')
@@ -81,6 +96,8 @@ def collect(container, output_path, *, seconds, interval,
             if remaining <= 0:
                 break
             time.sleep(min(interval, remaining))
+        if runtime_limits(group) != limits:
+            raise RuntimeError('Container resource limits changed during measurement')
         emit({'kind': 'summary', 'sampled_peak_bytes': maximum,
               'elapsed_seconds': (time.monotonic_ns() - started_ns) / 1e9,
               'navigation_verified': False})

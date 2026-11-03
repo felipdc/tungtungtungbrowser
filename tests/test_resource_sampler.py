@@ -25,6 +25,10 @@ class ResourceSamplerTest(unittest.TestCase):
         (self.proc / '123/cgroup').write_text('0::/container\n')
         self.write_identity(999)
         self.group.mkdir(parents=True)
+        for name, value in {'cpu.max': '200000 100000',
+                            'cpuset.cpus.effective': '0-3',
+                            'memory.max': '4096', 'memory.swap.max': '0'}.items():
+            (self.group / name).write_text(value + '\n')
         self.write_counters(10_000_000)
         self.output = self.root / 'samples.jsonl'
         self.now = 100_000_000_000
@@ -98,6 +102,29 @@ class ResourceSamplerTest(unittest.TestCase):
         records = self.records()
         self.assertEqual([row['kind'] for row in records], ['configuration', 'sample'])
         self.assertFalse(summarize(records)['measurement_complete'])
+
+    def test_quota_does_not_imply_cpu_affinity(self):
+        self.run_collection()
+        limits = summarize(self.records())['configuration']['cgroup_limits']
+        self.assertEqual(limits['cpu.max'], '200000 100000')
+        self.assertEqual(limits['cpuset.cpus.effective'], '0-3')
+        self.assertEqual(limits['memory.swap.max'], '0')
+
+    def test_limit_change_preserves_incomplete_evidence(self):
+        def change_affinity(seconds):
+            self.sleep(seconds)
+            (self.group / 'cpuset.cpus.effective').write_text('0-1\n')
+
+        with self.assertRaisesRegex(RuntimeError, 'resource limits changed'):
+            self.run_collection(change_affinity)
+        records = self.records()
+        self.assertEqual([row['kind'] for row in records], ['configuration', 'sample'])
+        self.assertFalse(summarize(records)['measurement_complete'])
+
+    def test_unavailable_controller_is_explicit(self):
+        (self.group / 'cpuset.cpus.effective').unlink()
+        self.run_collection()
+        self.assertIsNone(self.records()[0]['cgroup_limits']['cpuset.cpus.effective'])
 
     def test_container_exit_preserves_incomplete_evidence(self):
         def exit_process(seconds):
