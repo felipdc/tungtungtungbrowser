@@ -6,6 +6,7 @@ separately with capture; foreground Safari alone does not prove network access.
 """
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
@@ -32,6 +33,12 @@ def main(argv=None):
         parser.error('Launch record is from an earlier host boot')
     if not 0 < args.deadline_seconds <= 3600:
         parser.error('deadline-seconds must be between 0 and 3600')
+    maintenance = launch.get('clock_maintenance', {})
+    if not isinstance(maintenance, dict):
+        parser.error('Invalid launcher clock configuration')
+    managed_clock = maintenance.get('enabled') is True
+    if managed_clock and args.sync_clock:
+        parser.error('The VM launcher manages time; omit --sync-clock')
     start = launch['started_monotonic']
     deadline = start + args.deadline_seconds
     result = {'launch': launch, 'navigation_verified': False,
@@ -130,7 +137,45 @@ def main(argv=None):
         shot.save(screenshot_path)
         result['screenshot'] = shot.metadata()
 
+    def wait_for_managed_clock():
+        # Initial correction can move guest wall time by many minutes. Observe
+        # the launcher's own result before sending input or launching apps.
+        # This observer does not send another health or time request while waiting.
+        result['stage'] = 'managed_clock_ready'
+        checkpoint()
+        path = Path(maintenance['state_file'])
+        if path.parent.resolve() != args.vm.resolve():
+            raise GuestError('Managed clock state must belong to this VM bundle')
+        while time.monotonic() < deadline:
+            alive()
+            state = json.loads(path.read_text())
+            if state.get('launch_started_unix') != launch['started_unix']:
+                raise GuestError('Managed clock state belongs to another launch')
+            if state != result.get('managed_clock_state'):
+                result['managed_clock_state'] = state
+                checkpoint()
+            status = state.get('status')
+            if status == 'waiting_for_interval':
+                response = state.get('last_response')
+                if (not isinstance(response, dict)
+                        or response.get('automatic') is not True
+                        or type(response.get('changed')) is not bool
+                        or not all(isinstance(response.get(key), (int, float))
+                                   and not isinstance(response[key], bool)
+                                   and math.isfinite(response[key])
+                                   for key in ('time', 'offset'))):
+                    raise GuestError('Managed clock has no valid automatic-time response')
+                result['managed_clock_ready_seconds'] = time.monotonic() - start
+                checkpoint()
+                return
+            if status not in {'prepared', 'waiting_for_guest', 'offering_time'}:
+                raise GuestError(f'Managed clock is {status}: inspect its retained state before input')
+            time.sleep(min(1, max(0, deadline - time.monotonic())))
+        raise TimeoutError('Managed clock readiness deadline exceeded')
+
     try:
+        if managed_clock:
+            wait_for_managed_clock()
         retry('vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
         if args.sync_clock:
             result['stage'] = 'clock_sync'

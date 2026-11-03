@@ -71,6 +71,7 @@ export TTT_TCG_CACHE_MIB=1024
 docker compose -f runtime/compose.yaml up --build -d
 docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser health
+# Omit --sync-clock if launcher clock maintenance is enabled.
 docker compose -f runtime/compose.yaml exec iphone \
   python3 scripts/measure_ready.py /vm --qmp-socket /vm/control.sock \
   --sync-clock --output /vm/readiness.json
@@ -210,16 +211,13 @@ python3 -m venv .venv
 python3 -m pip install -e .
 ```
 
-On the Linux runtime host, or inside its iPhone container:
+On the Linux runtime host, or inside its iPhone container, after completing
+the startup readiness command:
 
 ```python
 from tungtungtungbrowser import Browser
 
 browser = Browser(cid=3, timeout=120)
-browser.sync_clock()  # Offer host time when the guest cannot reach NTP.
-launch = browser.launch()
-if not launch['frontmost_verified']:
-    raise RuntimeError('Inspect the device: Safari foreground was not confirmed')
 browser.goto('https://example.com/')
 # Wait for your application's expected state before using the captured content.
 browser.screenshot('/absolute/path/to/captures/example.jpg')
@@ -277,11 +275,20 @@ That file retains the last response, offer count and any failure with mode
 the launcher waits for an in-flight clock exchange before requesting native
 shutdown, and sends no further clock offers.
 
-Maintenance runs independently of readiness. Check that its state includes a
-successful automatic-time response before a time-sensitive workload; an enabled
-setting alone does not establish synchronization. Omit readiness's `--sync-clock`
-when using launcher maintenance, and do not start another periodic clock process
-for that guest. Include maintenance in the resource measurements for that setup.
+The readiness command detects launcher maintenance and waits for its successful
+automatic-time response before sending health, unlock or app-launch requests.
+It reads the state file belonging to the current VM launch, records that state
+and retains the original boot deadline. A failed, stopped or manual-time worker,
+stale launch state, or invalid response stops readiness before native input.
+This orders the initial correction, which can move guest time by many minutes,
+before startup actions. The worker continues its periodic offers afterward.
+
+Omit readiness's `--sync-clock` when using launcher maintenance; combining them
+is rejected before guest requests. Do not start another periodic clock process
+for that guest. For direct SDK control, finish the readiness command first: an
+enabled setting alone does not establish synchronization, and `Browser.launch()`
+does not read the launcher's state file. Include maintenance in the resource
+measurements for that setup.
 
 For a guest whose launcher does not manage the clock, a separate foreground
 process remains available:

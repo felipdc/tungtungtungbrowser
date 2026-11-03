@@ -9,6 +9,9 @@ export TTT_VM_DIR=/absolute/path/to/your/ios-bundle
 export TTT_RUNTIME_DIR=/absolute/path/to/built/vphone-linux
 export TTT_PROXY_FILE=/absolute/path/to/private/proxy.json
 docker compose -f runtime/compose.yaml -f runtime/compose.proxy.yaml up --build -d
+docker compose -f runtime/compose.yaml -f runtime/compose.proxy.yaml exec iphone \
+  python3 scripts/measure_ready.py /vm --qmp-socket /vm/control.sock \
+  --output /vm/readiness.json
 ```
 
 Create the private file outside the repository with mode `0600`. The following
@@ -47,7 +50,10 @@ this worker and stops it before native guest shutdown. Use an accurately
 synchronized host clock. `TTT_CLOCK_INTERVAL_SECONDS` accepts 10–3,600 seconds,
 or `0` to disable maintenance. Manual guest time is preserved; a failed offer
 stops maintenance and remains recorded in the unique state file identified by
-`launch.json`. Inspect its native response before time-sensitive browsing.
+`launch.json`. Run `measure_ready.py` before browsing; it detects maintenance
+and waits for a successful automatic-time response from this launch before
+unlocking the guest or launching Safari. This prevents the initial correction
+from overlapping those startup actions and preserves the original boot deadline.
 Do not also run a separate clock loop or readiness's `--sync-clock` step for
 the same guest. See the [clock behavior](../../README.md#python-and-native-control)
 for lifecycle and failure details.
