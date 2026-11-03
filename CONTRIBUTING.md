@@ -19,6 +19,9 @@ For resource changes, record guest and container limits, whole-cgroup peak
 memory, CPU usage and OOM events during a real browser workload. Separate cold
 boot, warm application launch and in-memory resume timings. Keep the original
 launch clock when retrying observers.
+Use the [CPU profiling guide](docs/cpu-profiling.md) when translated guest
+code dominates a host profile. Keep profile dumps and derived reports outside
+the source tree, and separate instrumented diagnosis from performance runs.
 
 Update `runtime.lock.json` deliberately and review upstream license changes.
 Document patches with their target revision, reason, validation and applicable
