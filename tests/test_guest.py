@@ -1,4 +1,5 @@
 import http.client
+import errno
 import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -6,12 +7,77 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import contextlib
 import io
 
 from tungtungtungbrowser.cli import capture, capture_logs, main
-from tungtungtungbrowser.guest import Guest, GuestError, SCREEN_NOTIFICATIONS
+from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, SCREEN_NOTIFICATIONS
+
+
+class GuestTransportTest(unittest.TestCase):
+    def test_vsock_reset_before_connect_is_distinct_from_an_unknown_action_outcome(self):
+        sock = Mock()
+        cause = ConnectionResetError(errno.ECONNRESET, 'Connection reset by peer')
+        sock.connect.side_effect = cause
+        with patch('tungtungtungbrowser.guest.socket.socket', return_value=sock):
+            with self.assertRaises(GuestTransportError) as raised:
+                Guest().open('https://example.com/')
+        error = raised.exception
+        self.assertIsInstance(error, GuestError)
+        self.assertEqual(error.phase, 'connect')
+        self.assertEqual(error.errno, errno.ECONNRESET)
+        self.assertFalse(error.request_may_have_been_sent)
+        self.assertIs(error.__cause__, cause)
+        sock.connect.assert_called_once_with((3, 1339))
+        sock.sendall.assert_not_called()
+        sock.close.assert_called_once()
+
+    def test_errors_after_connect_preserve_uncertainty_without_retrying(self):
+        for phase, failure in [('send_request', 'request'), ('receive_headers', 'getresponse'),
+                               ('read_body', 'read')]:
+            with self.subTest(phase=phase):
+                connection = Mock()
+                operation = (connection.getresponse.return_value.read if failure == 'read'
+                             else getattr(connection, failure))
+                operation.side_effect = TimeoutError('timed out')
+                guest = Guest(connection_factory=lambda: connection)
+                with self.assertRaises(GuestTransportError) as raised:
+                    guest.open('https://example.com/')
+                self.assertEqual(raised.exception.phase, phase)
+                self.assertTrue(raised.exception.request_may_have_been_sent)
+                self.assertNotIn('https://example.com/', str(raised.exception))
+                connection.request.assert_called_once()
+                operation.assert_called_once()
+                connection.close.assert_called_once()
+
+    def test_disconnect_after_server_received_navigation_is_reported_as_uncertain(self):
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                # The action was received, but no response headers reach the client.
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            guest = Guest(connection_factory=lambda: http.client.HTTPConnection(
+                '127.0.0.1', server.server_port, timeout=2))
+            with self.assertRaises(GuestTransportError) as raised:
+                guest.open('https://example.com/')
+            self.assertEqual(raised.exception.phase, 'receive_headers')
+            self.assertTrue(raised.exception.request_may_have_been_sent)
+            self.assertEqual([r['method'] for r in seen], ['apps.open_url'])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
 
 class GuestContractTest(unittest.TestCase):

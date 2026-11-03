@@ -11,6 +11,17 @@ class GuestError(RuntimeError):
     pass
 
 
+class GuestTransportError(GuestError):
+    """A failed exchange; later phases leave the native action's outcome unknown."""
+    def __init__(self, phase, cause):
+        self.phase = phase
+        self.errno = getattr(cause, 'errno', None)
+        # This describes this exchange only, not earlier steps of a Browser
+        # operation. Sending can fail after some or all request bytes arrived.
+        self.request_may_have_been_sent = phase != 'connect'
+        super().__init__(f'vphoned transport failed during {phase}: {cause}')
+
+
 class VsockHTTPConnection(http.client.HTTPConnection):
     def __init__(self, cid=3, timeout=30):
         if not 3 <= cid < 2**32 - 1:
@@ -19,13 +30,17 @@ class VsockHTTPConnection(http.client.HTTPConnection):
         self.cid = cid
 
     def connect(self):
-        self.sock = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
-        self.sock.settimeout(self.timeout)
-        # vphoned's credit window is 512 KiB; Linux's default is smaller.
-        # CPython converts integer VSOCK options to the kernel's uint64_t ABI.
-        for option in (socket.SO_VM_SOCKETS_BUFFER_MAX_SIZE, socket.SO_VM_SOCKETS_BUFFER_SIZE):
-            self.sock.setsockopt(socket.AF_VSOCK, option, 4 * 1024 * 1024)
-        self.sock.connect((self.cid, self.port))
+        try:
+            self.sock = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
+            self.sock.settimeout(self.timeout)
+            # vphoned's credit window is 512 KiB; Linux's default is smaller.
+            # CPython converts integer VSOCK options to the kernel's uint64_t ABI.
+            for option in (socket.SO_VM_SOCKETS_BUFFER_MAX_SIZE, socket.SO_VM_SOCKETS_BUFFER_SIZE):
+                self.sock.setsockopt(socket.AF_VSOCK, option, 4 * 1024 * 1024)
+            self.sock.connect((self.cid, self.port))
+        except OSError as exc:
+            self.close()
+            raise GuestTransportError('connect', exc) from exc
 
 
 ALLOWED_METHODS = frozenset({
@@ -75,12 +90,15 @@ class Guest:
 
     def request(self, method, path, data=None):
         connection = self.connection_factory()
+        phase = 'send_request'
         try:
             body = None if data is None else json.dumps(data, allow_nan=False).encode()
             connection.request(method, path, body=body, headers={
                 "Host": "localhost", "Content-Type": "application/json", "Connection": "close"})
+            phase = 'receive_headers'
             response = connection.getresponse()
             # Screenshots are base64 JPEG; bound accidental oversized responses.
+            phase = 'read_body'
             payload = response.read(32 * 1024 * 1024 + 1)
             if len(payload) > 32 * 1024 * 1024:
                 raise GuestError("Guest response exceeds 32 MiB")
@@ -94,7 +112,9 @@ class Guest:
                 suffix = f": {detail[:2000]}" if isinstance(detail, str) else ""
                 raise GuestError(f"vphoned HTTP status {response.status}{suffix}")
             return value
-        except (OSError, http.client.HTTPException, ValueError) as exc:
+        except (OSError, http.client.HTTPException) as exc:
+            raise GuestTransportError(phase, exc) from exc
+        except ValueError as exc:
             raise GuestError(f"vphoned transport failed: {exc}") from exc
         finally:
             connection.close()

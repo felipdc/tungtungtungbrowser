@@ -224,6 +224,15 @@ report a navigation request, not successful page rendering. Screenshots preserve
 existing files unless `overwrite=True` is supplied. One `Browser` object
 serializes its operations; use one controller per guest.
 
+Transport failures raise `GuestTransportError`, a subclass of `GuestError`.
+Its `phase` identifies `connect`, `send_request`, `receive_headers`, or
+`read_body`; `errno` retains the operating-system error number when available.
+`request_may_have_been_sent` is false for a failed VSOCK connection and true
+for later failures, where the native action's outcome is unknown. This flag
+describes the failed exchange only: an operation such as `goto()` may already
+have completed earlier steps. No transport failure automatically repeats the
+request. Inspect the guest before repeating an action with an unknown outcome.
+
 For faster screenshots, capture the virtual display through its local QMP
 socket. This avoids guest JPEG encoding, which can stall at Retina resolution:
 
