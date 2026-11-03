@@ -106,6 +106,33 @@ the same pointer and touch discrepancy. This narrows the issue beyond Safari's
 application UI to the shared native WebKit touch path. It still does not
 identify an exact faulty function or establish parity with a physical iPhone.
 
+A physical reference subsequently supplied three normal taps from an iPhone 15
+whose owner reported iOS 27.0.1. An identical diagnostic page in both browsers
+recorded these values; the VM reported iOS 26.6.2 and Safari 26.6.1:
+
+| Observation | Physical taps | Calibrated VM contact |
+| --- | --- | --- |
+| Touch start radii X / Y | about `24.1702 / 24.1702` | `5 / 0` |
+| Touch start force | `0` | `5`, with zero requested pressure |
+| Pointer down width / height | about `48.3404 / 48.3404` | `10 / 10` |
+| Pointer pressure | `0` | `0` |
+| Pointer up width / height | `0 / 0` | `10 / 10` |
+
+The absolute contact sizes intentionally differ between a finger and the
+calibrated input. Compare field consistency, not equality to one person's
+contact size. Both screens reported 393 × 852 points at scale 3, and both
+constructor controls returned the requested radii and force. Using the same
+page rules out a difference between diagnostic recorders; differing OS versions
+and devices still prevent attribution to one exact cause.
+
+An isolated change to the private native helper cleared both HID contact radii
+on release. The VM then reported pointer-up dimensions `0 / 0`, matching this
+physical observation, while touch-end retained its previous radii. Touch-start
+`radiusY: 0` and `force: 5` persisted, along with a force-change event on release.
+This separates a native input release issue from the remaining touch-field
+discrepancy. It is an experimental helper result, not a fix in the public
+controller or a claim of complete input fidelity.
+
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
 iPhone. Those require separate measurements. A matching canvas hash alone is
