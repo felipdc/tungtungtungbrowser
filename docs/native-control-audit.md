@@ -38,6 +38,37 @@ not run page code or use the administrative JavaScriptCore bridge. The native
 open-URL path is used when Safari is not the verified foreground app. Tab reuse
 has not passed sustained page-load validation and is not the default.
 
+## Native time and startup ordering
+
+Source review and live ordering checks on 2026-11-03.
+
+The pinned daemon's
+[`GuestScreenUnlock.swift`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestScreenUnlock.swift)
+calculates unlock deadlines with Foundation `Date`. Moving the guest wall clock
+forward while this operation is running can therefore expire its deadline.
+The native operation may send several Home-button events within that deadline;
+the controller's once-only rule concerns the unlock RPC, not the number of
+events generated inside the daemon.
+
+When launcher clock maintenance is enabled, `scripts/measure_ready.py` waits
+for the launcher's first completed automatic-time offer before making its own
+health, unlock or app-launch requests. It validates the launch identity and
+retains the original boot deadline. A stale, failed or manual-time state stops
+readiness before input. The observer does not send a duplicate clock offer.
+Periodic offers can continue after this initial barrier; it does not replace
+the daemon's wall-clock deadlines with monotonic deadlines.
+
+One live cold-start check completed the initial correction before unlock and
+subsequently obtained native Safari foreground verification. Its first capture
+still contained incomplete page rendering and address-bar artifacts, so this
+checks startup ordering rather than page readiness or improved startup speed.
+
+The launcher also joins its clock worker before requesting native shutdown.
+The final clock state and native shutdown result are recorded in `exit.json`.
+This sequencing has been exercised on a live guest: the worker reached
+`stopped` before shutdown was requested, and iOS exited without forced
+termination. This does not establish behavior for every shutdown failure.
+
 ## Screen evidence
 
 The same vphoned dispatcher handles `screen.screenshot` through
