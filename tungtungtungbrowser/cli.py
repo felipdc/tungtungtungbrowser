@@ -99,6 +99,7 @@ def main(argv=None):
     sub.add_parser("health")
     sub.add_parser("device")
     sub.add_parser("screen-state", help="Read native startup, lock and display notifications without input")
+    sub.add_parser("home", help="Send one native Home-button event; inspect the display separately")
     logs = sub.add_parser("logs", help="Save a bounded capture of native unified logs")
     logs.add_argument("--output", type=Path, required=True)
     logs.add_argument("--seconds", type=float, default=2)
@@ -147,6 +148,7 @@ def main(argv=None):
             case "health": emit(guest.health())
             case "device": emit(guest.call("device.info"))
             case "screen-state": emit(browser.screen_state())
+            case "home": emit(browser.home())
             case "logs": emit(capture_logs(guest, args.output, seconds=args.seconds,
                                            process=args.process, level=args.level,
                                            max_lines=args.max_lines))

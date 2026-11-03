@@ -80,6 +80,14 @@ class Browser:
         with self._lock:
             return self.guest.screen_state()
 
+    def home(self):
+        """Send one native Home-button event; rendered Home is not verified."""
+        with self._lock:
+            result = self.guest.call('input.button', name='home')
+            if not isinstance(result, dict) or result.get('button') != 'home':
+                raise GuestError('Native Home button was not acknowledged')
+            return {**result, 'home_screen_verified': False}
+
     def unlock(self):
         with self._lock:
             result = self.guest.call('screen.unlock', timeout=60)

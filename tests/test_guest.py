@@ -40,6 +40,8 @@ class GuestContractTest(unittest.TestCase):
                 result = {"accepted": True}
                 if data['method'] == 'screen.unlock':
                     result = {"locked": test.locked, "screen_off": False}
+                if data['method'] == 'input.button':
+                    result = {'button': data['params']['name']}
                 if data['method'] == 'logs.syslog':
                     result = test.log_result
                 if data['method'] == 'notify.state':
@@ -82,6 +84,14 @@ class GuestContractTest(unittest.TestCase):
         self.guest.shutdown()
         self.assertEqual(self.requests[0]['method'], 'system.shutdown')
         self.assertEqual(self.requests[0]['params'], {'force': True})
+
+    def test_home_cli_uses_one_native_button_and_does_not_claim_rendered_home(self):
+        stdout = io.StringIO()
+        with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), contextlib.redirect_stdout(stdout):
+            main(['home'])
+        self.assertEqual(json.loads(stdout.getvalue()), {'button': 'home', 'home_screen_verified': False})
+        self.assertEqual([(r['method'], r['params']) for r in self.requests],
+                         [('input.button', {'name': 'home'})])
 
     def test_screen_state_cli_reads_notifications_without_input_or_readiness_claim(self):
         stdout = io.StringIO()

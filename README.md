@@ -123,6 +123,13 @@ the operation without retries or partial success. An unlocked notification can
 precede the rendered Home screen; `visual_readiness_verified` stays `false`.
 Review a screenshot and verify the application separately before sending input.
 
+Use `Browser().home()` or `python3 -m tungtungtungbrowser home` to send the
+native Home-button event. This makes one request and returns the acknowledgement
+with `home_screen_verified: false`. Capture the display afterward to check the
+result. Keyboard commands such as `press('cmd+h')` use a separate keyboard input
+path and may not take the device to Home. A failed or timed-out Home request is
+not repeated automatically; inspect the device before sending more input.
+
 For native startup and app-launch diagnostics, capture a short interval of
 the guest's unified log:
 

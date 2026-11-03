@@ -2,6 +2,7 @@ import base64
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 from tungtungtungbrowser import Browser, GuestError, Screenshot
 
@@ -38,6 +39,18 @@ class NativeFixture:
 
 
 class BrowserContractTest(unittest.TestCase):
+    def test_home_failure_or_malformed_acknowledgement_never_repeats_input(self):
+        for result in [None, {}, {'button': 'wake'}, GuestError('transport timed out')]:
+            with self.subTest(result=result):
+                guest = Mock()
+                if isinstance(result, Exception):
+                    guest.call.side_effect = result
+                else:
+                    guest.call.return_value = result
+                with self.assertRaises(GuestError):
+                    Browser(guest=guest).home()
+                guest.call.assert_called_once_with('input.button', name='home')
+
     def test_default_navigation_explicitly_targets_safari_without_input(self):
         guest = NativeFixture()
         result = Browser(guest=guest).goto('https://example.com/')
