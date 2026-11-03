@@ -9,13 +9,17 @@ this repository.
 
 - [ ] Make cold startup and Safari readiness reliable, with measured timings.
 - [ ] Resolve periodic clock-offer timeouts under slow native inspection while
-      preserving once-only requests and recorded failure outcomes.
+      preserving once-only requests and recorded failure outcomes. The separate
+      30-second offer timeout has accepted native replies taking 20.0 and 5.6
+      seconds; sustained reliability and clock accuracy still need validation.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
       URL opens do not silently grow the browsing session. Compare resource
       changes with the same tab state and preserve session data.
+      Automatic address-field focus recovery has passed a native local-page
+      check; slow foreground and accessibility queries remain a latency issue.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
 - [ ] Validate repeated navigation, worker consistency, native TLS and proxy
       failure/recovery behavior.

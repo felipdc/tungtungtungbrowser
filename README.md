@@ -323,9 +323,12 @@ submitting. It requires native accessibility evidence that the field is editing;
 if needed, it makes one focus attempt using the verified field's frame. Missing
 or unconfirmed fields stop the operation before text entry. It selects existing
 text before entering the URL and never repeats a failed input request. It falls
-back to explicit Safari opening if another app is in the foreground. Local page
-checks preserved the active tab and saved-tab count; automatic refocusing and
-sustained page-load validation remain incomplete. See the
+back to explicit Safari opening if another app is in the foreground. A local page
+check exercised automatic refocusing; local and external HTTPS checks preserved
+the active tab and saved-tab count. Native inspection can take tens of seconds,
+and sustained page-load
+validation remains incomplete. The CLI equivalent is
+`python3 -m tungtungtungbrowser goto 'https://example.com/' --reuse-tab`. See the
 [native control audit](docs/native-control-audit.md#reusing-a-tab). Both paths
 report a navigation request, not successful page rendering. Screenshots preserve
 existing files unless `overwrite=True` is supplied. One `Browser` object

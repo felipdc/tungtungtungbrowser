@@ -63,10 +63,34 @@ automatic focus branch. A separate manual focus-and-navigation sequence
 passed. A native Tab-key perturbation also left editing active. A native
 Escape-key cancellation removed the URL field, and the SDK stopped without
 sending text or Return. Unit tests cover successful automatic focus, failed or
-unconfirmed focus, and invalid geometry. Live automatic focus recovery remains
-unverified. These functional checks ran after clock maintenance had failed;
-they establish neither timing accuracy nor memory savings or sustained external
+unconfirmed focus, and invalid geometry. These initial functional checks ran
+after clock maintenance had failed; they establish neither timing accuracy nor
+memory savings or sustained external
 page reliability.
+
+A subsequent cold boot used the published controller and the longer clock
+timeout described below. Its first local navigation exercised automatic focus
+recovery: Command-L exposed a nonediting field, one native tap changed its
+editing trait, and the SDK verified the complete new URL before Return. The
+page displayed the expected canvas, returned both worker results, and reported
+no WebGL error or lost context. Saved-tab count remained 32 and the active tab
+ID was unchanged. The navigation request itself took 83.9 seconds, including
+a 26.5-second foreground query and a 37.5-second accessibility query. This is
+functional validation, not a fast navigation result.
+
+Tab metadata came from sequential read-only copies of Safari's database and
+WAL, with successful SQLite integrity checks. Those copies are not an atomic
+snapshot, and the saved title and URL lagged the displayed local navigation.
+The rendered page and its new callback established the navigation result;
+database metadata alone did not.
+
+A subsequent external HTTPS navigation in that same tab took 32.0 seconds to
+submit. Expected page content was visible in the captures at 90, 210 and 330
+seconds after submission. The final database copy retained the same 32 tabs
+and active tab ID, with the expected page title and URL. Clock maintenance
+had completed 12 offers and remained active at the end of those captures.
+These two navigations establish a bounded local and external page check;
+they do not establish sustained workload reliability or memory savings.
 
 ## Native time and startup ordering
 
@@ -123,10 +147,16 @@ startup health checks at five seconds through a separate client. It still
 sends each request once and joins the clock worker before shutdown. A local
 HTTP transport regression test accepts a valid clock reply arriving after
 five seconds, preserves it during stop, and confirms there was only one offer.
-This corrects the timeout mismatch; it does not yet establish that slow native
-inspection is reliable or explain the earlier guest timeout. Resource trials
-using the previous launcher do not validate this change; native validation of
-the longer timeout is pending.
+
+A native run with these settings completed a clock offer in 20.004 seconds
+during Safari startup and another in 5.612 seconds during address-bar
+navigation. Both responses exceeded the former five-second timeout and were
+retained without repeating the request. The same run reached verified Safari
+foreground at 255.9 seconds; its first image was still a blank page. It also
+completed the slow foreground and accessibility queries described above while
+clock maintenance remained active. This validates accepting slow native replies
+in that run. It does not prove clock accuracy between offers, rule out future
+timeouts, explain every earlier failure, or establish faster cold startup.
 
 ## Screen evidence
 
