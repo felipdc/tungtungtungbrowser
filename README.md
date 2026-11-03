@@ -55,6 +55,9 @@ the commands below if you already have a compatible VM bundle. See the
 Use a VM bundle you created with the pinned runtime. It must contain `Disk.img`,
 `nvram.bin`, `ecid`, `config.plist` and the other upstream boot assets. Stop its
 previous emulator cleanly before starting it here; one process may own a disk.
+Check [filesystem access](docs/setup.md#filesystem-access) when the bundle was
+created under a different user. The restricted container needs explicit access
+to its mounted files even though its default UID is 0.
 
 ```sh
 export TTT_VM_DIR=/absolute/path/to/your/ios-bundle

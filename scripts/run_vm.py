@@ -6,8 +6,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -15,6 +17,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECONDS,
                                      HEALTH_RPC_TIMEOUT_SECONDS)
+
+
+def check_vm_access(vm, source):
+    """Exercise filesystem access without writing guest data or starting QEMU."""
+    operation = 'inspect'
+    path = vm
+    try:
+        for name, writable, required in (
+                ('Disk.img', True, True), ('nvram.bin', True, True),
+                ('ecid', False, True), ('config.plist', False, True),
+                ('SEPStorage', True, False), ('gfx-res', False, False),
+                ('.tungtungtungbrowser.lock', True, False),
+                ('console.log', True, False), ('launch.json', True, False),
+                ('exit.json', True, False)):
+            path = vm / name
+            if not required and not path.exists():
+                continue
+            operation = 'open for reading and writing' if writable else 'open for reading'
+            # No O_CREAT or O_TRUNC: checking a disk must never alter its bytes.
+            fd = os.open(path, os.O_RDWR if writable else os.O_RDONLY)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise ValueError('expected a regular file')
+            finally:
+                os.close(fd)
+        for path in (vm, vm / 'cache', vm / 'cache/mesa'):
+            if path != vm and not path.exists():
+                continue
+            operation = 'create and remove a temporary file in'
+            with tempfile.NamedTemporaryFile(prefix='.ttt-access-', dir=path):
+                pass
+        path = source / 'run-vphone.sh'
+        operation = 'read and execute'
+        with path.open('rb'):
+            pass
+        if not os.access(path, os.X_OK, effective_ids=True):
+            raise PermissionError('runtime launcher is not executable')
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f'Cannot {operation} {path}: {exc}. Runtime UID={os.geteuid()} '
+            f'GID={os.getegid()}. Check bind-mount ownership and read/write access '
+            'for that identity; root with dropped capabilities cannot bypass '
+            'file permissions. See docs/setup.md#filesystem-access.') from exc
 
 
 def stop_guest(process, guest, grace_seconds, *, clock=None):
@@ -47,6 +92,8 @@ def stop_guest(process, guest, grace_seconds, *, clock=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("vm", type=Path)
+    parser.add_argument('--check-access', action='store_true',
+                        help='Check mounted filesystem access and exit without starting the guest')
     parser.add_argument("--source", type=Path, default=Path(os.environ.get("TTT_RUNTIME_DIR", str(Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "tungtungtungbrowser/vphone-linux"))))
     parser.add_argument("--memory-gib", type=int, choices=range(2, 9), default=3)
     parser.add_argument("--cpus", type=int, choices=range(1, 9), default=4)
@@ -58,7 +105,10 @@ def main():
                         default=os.environ.get('TTT_CLOCK_INTERVAL_SECONDS', '0'),
                         help="Native clock maintenance: 0 disables it; otherwise 10–3600 seconds")
     args = parser.parse_args()
-    vm, source = args.vm.resolve(strict=True), args.source.resolve(strict=True)
+    try:
+        vm, source = args.vm.resolve(strict=True), args.source.resolve(strict=True)
+    except OSError as exc:
+        parser.error(f'Cannot resolve VM or runtime directory: {exc}')
     if not 3 <= args.cid < 2**32 - 1:
         parser.error("CID must be between 3 and 4294967294")
     if not 1 <= args.shutdown_timeout_seconds <= 110:
@@ -67,9 +117,15 @@ def main():
         parser.error("Clock interval must be 0 or between 10 and 3600 seconds")
     if ',' in str(vm) or ',' in str(source):
         parser.error("QEMU paths cannot contain commas")
-    for name in ("Disk.img", "nvram.bin", "ecid", "config.plist"):
-        if not (vm / name).is_file():
-            parser.error(f"Missing VM file: {name}")
+    try:
+        check_vm_access(vm, source)
+    except RuntimeError as exc:
+        parser.error(str(exc))
+    if args.check_access:
+        print(json.dumps({'filesystem_access': 'passed', 'vm': str(vm),
+                          'source': str(source), 'uid': os.geteuid(), 'gid': os.getegid(),
+                          'guest_started': False}))
+        return
     candidates = sorted(Path('/usr/share/vulkan/icd.d').glob('lvp_icd*.json'))
     if not candidates:
         parser.error("Mesa lavapipe is required; hardware GPUs are not supported")

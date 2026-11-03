@@ -46,6 +46,47 @@ The optional [ARM64 memory-access check](../native/README.md#arm64-linux-memory-
 can test some native instruction requirements before a runtime build. Passing
 it does not establish ARM runtime support or guest compatibility.
 
+## Filesystem access
+
+The default container runs as UID 0 with all Linux capabilities dropped. It
+still needs permission to traverse the mounted VM directory, read its metadata,
+write the disk and NVRAM, and create logs and renderer cache files. UID 0 in this
+configuration cannot bypass a private directory owned by another user. Mounting
+a bundle created under a different account can therefore fail before boot.
+
+With the guest stopped, build the image and check access using the same Compose
+files and environment as your runtime:
+
+```sh
+docker compose -f runtime/compose.yaml build iphone
+docker compose -f runtime/compose.yaml run --rm --no-deps iphone \
+  /vm --source /runtime --check-access
+```
+
+The check opens existing disk/state files without writing or truncating them,
+creates and removes a temporary file in the bundle and any existing cache
+directories, and checks the runtime launcher. It reports the container UID/GID
+and failing path. Normal startup performs this check too. It does not start
+QEMU, validate firmware, verify runtime libraries, or establish that another
+emulator has released the disk. A successful check covers filesystem access
+only; retain the separate native readiness and page-rendering checks.
+
+Correct access on a dedicated, stopped runtime bundle. For the default UID 0
+container under rootful Docker **without user-namespace remapping**, ownership
+can be assigned on the host with:
+
+```sh
+sudo chown -R 0:0 -- "$TTT_VM_DIR"
+```
+
+This changes ownership of the bundle and its existing caches and reports. Keep
+the original preparation bundle separately if its owner still needs to manage
+it without elevated privileges. Rootless Docker and user-namespace remapping
+use different host IDs; use the mapped identity for that daemon. The runtime
+checkout also needs readable files and traversable directories. Rerun the
+container check after correcting access; the launcher does not change ownership
+or permissions automatically.
+
 ## Resource settings
 
 Compose reads these variables from your shell or an external `--env-file`:
