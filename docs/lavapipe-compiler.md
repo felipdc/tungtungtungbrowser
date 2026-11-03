@@ -87,3 +87,34 @@ in this workload and justify separate native-browser measurements. Browser
 validation must include cold and warm renderer caches, native screenshots,
 canvas, workers, WebGL, external HTTPS, whole-container memory and CPU usage.
 Keep guest state and resource limits explicit when comparing runs.
+
+## First native-browser trial
+
+The first native run with `nopt` did not meet the browser acceptance criteria.
+On the experimental four-core host profile with a 6.5 GiB container limit,
+2 GiB guest RAM, two application CPUs and a 1 GiB translation cache, Safari
+foreground identity was verified at 248.7 seconds after launch. This confirms
+application identity, not loaded page content.
+
+Two optional address-bar navigation attempts stopped before pasting a URL or
+pressing Return: one received a truncated accessibility tree without the URL
+field identifier; the other received a native accessibility error. A separate
+native URL open then rendered the local fixture. Its canvas checksum matched
+the baseline, and WebGL reported no error or lost context, but both dedicated
+and shared workers exceeded their 15-second response deadlines. No new external
+acceptance navigation was requested after this failure. Native diagnostics also
+recorded a background PosterBoard launch watchdog termination during startup;
+there was no newly listed Safari or WebContent crash report.
+
+The 900-second resource recording completed without container memory-limit
+events, host/container OOM kills or CPU throttling. It covered startup, the
+failed navigation attempts and the beginning of the explicit local URL open;
+the local fixture results arrived after that window. Navigation paths, timing,
+persisted tab state and compiler-cache keys differed from the preceding default
+run, so its resource totals are not a comparison of equivalent browsing work.
+
+Keep the default compiler configuration. This result does not isolate the cause
+of the worker or accessibility failures, and the standalone compute timings
+do not establish a browser startup or memory improvement. A future experiment
+needs a controlled default comparison and successful browser checks before
+progressing to a warm-cache performance comparison.

@@ -14,8 +14,9 @@ this repository.
       seconds; sustained reliability and clock accuracy still need validation.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
       The [renderer compiler experiment](lavapipe-compiler.md) has passed a
-      standalone compute check; native browser performance and fidelity remain
-      separate adoption requirements.
+      standalone compute check, but its first native run exceeded both worker
+      deadlines. The compiler setting remains unadopted; native browser
+      performance and fidelity are separate adoption requirements.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
