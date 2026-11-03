@@ -19,6 +19,25 @@ def counters(path):
             (line.split() for line in path.read_text().splitlines())}
 
 
+def memory_pressure(group):
+    """Read cumulative PSI stall microseconds; unavailable is not zero."""
+    try:
+        lines = (group / 'memory.pressure').read_text().splitlines()
+    except FileNotFoundError:
+        return None
+    result = {}
+    for line in lines:
+        kind, *fields = line.split()
+        values = dict(field.split('=', 1) for field in fields)
+        total = int(values['total'])
+        if kind not in ('some', 'full') or kind in result or total < 0:
+            raise ValueError('Malformed memory.pressure counters')
+        result[kind] = total
+    if result.keys() != {'some', 'full'}:
+        raise ValueError('Missing memory.pressure counters')
+    return result
+
+
 def runtime_limits(group):
     """Keep kernel values distinct from Docker's requested configuration."""
     result = {}
@@ -82,6 +101,7 @@ def collect(container, output_path, *, seconds, interval,
                       'elapsed_seconds': (now_ns - started_ns) / 1e9,
                       'memory_bytes': memory,
                       'memory_stat': counters(group / 'memory.stat'), 'cpu_stat': cpu,
+                      'memory_pressure_usec': memory_pressure(group),
                       'memory_events': counters(group / 'memory.events')}
             peak = group / 'memory.peak'
             if peak.exists():

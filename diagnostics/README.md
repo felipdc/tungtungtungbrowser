@@ -122,6 +122,18 @@ reports the largest sample gap and memory-event deltas; pre-existing OOM events
 remain visible in the starting counters. Memory components are reported
 separately: `file` includes `shmem`, and component peaks cannot be added.
 
+When available, each sample also records cumulative `memory.pressure` stall
+microseconds. The report's `memory_pressure` field gives counter deltas and
+the percentage of the observed interval spent stalled. `some` means at least
+one task was stalled on memory; `full` means all non-idle tasks were stalled
+simultaneously. These times overlap and must not be added. Memory stalls can
+increase page latency even when OOM counters stay at zero. See the
+[Linux PSI documentation](https://docs.kernel.org/accounting/psi.html).
+Missing pressure files and older recordings yield `available: false` and
+`null` measurements, not zero pressure. A single sample retains availability
+but cannot establish stall percentages. Decreasing counters or pressure data
+that appears or disappears within a recording fail the summary.
+
 A recording with no terminal summary produces an incomplete report and exit
 status 2. Invalid records or decreasing counters fail with status 1. Complete
 recordings return 0. A single sample cannot establish CPU utilization. Existing

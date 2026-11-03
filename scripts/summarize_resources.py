@@ -49,6 +49,12 @@ def summarize(records):
             for group in (cpu, events):
                 for key, value in group.items():
                     number(value, key, integer=True)
+            pressure = record.get('memory_pressure_usec')
+            if pressure is not None:
+                if not isinstance(pressure, dict) or pressure.keys() != {'some', 'full'}:
+                    raise ValueError('Memory pressure needs some and full counters')
+                for key, value in pressure.items():
+                    number(value, f'memory_pressure_usec.{key}', integer=True)
             if previous is not None:
                 gap = elapsed - previous['elapsed_seconds']
                 if gap <= 0:
@@ -59,6 +65,12 @@ def summarize(records):
                         raise ValueError(f'{group} counters changed during measurement')
                     if any(value < previous[group][key] for key, value in record[group].items()):
                         raise ValueError(f'{group} counter decreased; cannot combine runs')
+                prior_pressure = previous.get('memory_pressure_usec')
+                if (pressure is None) != (prior_pressure is None):
+                    raise ValueError('Memory pressure availability changed during measurement')
+                if pressure is not None and any(
+                        value < prior_pressure[key] for key, value in pressure.items()):
+                    raise ValueError('Memory pressure counter decreased; cannot combine runs')
             stats = record.get('memory_stat', {})
             if not isinstance(stats, dict):
                 raise ValueError('memory_stat must be an object')
@@ -92,6 +104,9 @@ def summarize(records):
                  for key, value in previous['cpu_stat'].items()}
     event_delta = {key: value - first['memory_events'][key]
                    for key, value in previous['memory_events'].items()}
+    pressure_delta = None if first.get('memory_pressure_usec') is None else {
+        key: value - first['memory_pressure_usec'][key]
+        for key, value in previous['memory_pressure_usec'].items()}
     return {
         'measurement_complete': terminal is not None,
         'configuration': configuration,
@@ -110,11 +125,18 @@ def summarize(records):
             'average_cores_used': cpu_delta['usage_usec'] / 1e6 / duration if duration else None,
         },
         'memory_events': {'at_start': first['memory_events'], 'deltas': event_delta},
+        'memory_pressure': {
+            'available': pressure_delta is not None,
+            'counter_deltas_usec': pressure_delta,
+            'stall_percent': None if pressure_delta is None or not duration else {
+                key: value / 1e6 / duration * 100 for key, value in pressure_delta.items()},
+        },
         'navigation_verified': False,
         'notes': [
             'Container lifetime peak may predate this observation window.',
             'Memory component peaks are not additive; file includes shmem.',
             'CPU and event deltas cover the first through last recorded sample.',
+            'Memory PSI some/full stall times overlap and must not be added.',
         ] + ([] if terminal else ['No terminal summary: measurement ended incompletely.']),
     }
 

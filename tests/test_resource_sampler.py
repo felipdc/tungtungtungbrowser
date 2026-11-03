@@ -126,6 +126,30 @@ class ResourceSamplerTest(unittest.TestCase):
         self.run_collection()
         self.assertIsNone(self.records()[0]['cgroup_limits']['cpuset.cpus.effective'])
 
+    def test_memory_stalls_are_recorded_even_without_oom(self):
+        pressure = self.group / 'memory.pressure'
+        pressure.write_text('some avg10=0.00 avg60=0.00 avg300=0.00 total=500000\n'
+                            'full avg10=0.00 avg60=0.00 avg300=0.00 total=100000\n')
+
+        def add_stalls(seconds):
+            self.sleep(seconds)
+            pressure.write_text('some avg10=7.00 avg60=2.00 avg300=1.00 total=2500000\n'
+                                'full avg10=3.00 avg60=1.00 avg300=0.50 total=600000\n')
+
+        self.run_collection(add_stalls)
+        result = summarize(self.records())
+        self.assertEqual(result['memory_events']['deltas']['oom'], 0)
+        self.assertEqual(result['memory_pressure']['counter_deltas_usec'],
+                         {'some': 2_000_000, 'full': 500_000})
+        self.assertEqual(result['memory_pressure']['stall_percent'], {'some': 20, 'full': 5})
+
+    def test_missing_pressure_is_not_reported_as_zero_stalls(self):
+        self.run_collection()
+        result = summarize(self.records())['memory_pressure']
+        self.assertFalse(result['available'])
+        self.assertIsNone(result['counter_deltas_usec'])
+        self.assertIsNone(result['stall_percent'])
+
     def test_container_exit_preserves_incomplete_evidence(self):
         def exit_process(seconds):
             self.sleep(seconds)

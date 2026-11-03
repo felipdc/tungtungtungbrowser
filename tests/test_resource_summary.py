@@ -49,6 +49,24 @@ class ResourceSummaryTest(unittest.TestCase):
         self.assertIsNone(one['cpu']['average_cores_used'])
         self.assertEqual(one['observed_seconds'], 0)
 
+    def test_pressure_uses_observed_interval_and_supports_older_recordings(self):
+        rows = complete_run()
+        self.assertFalse(summarize(rows)['memory_pressure']['available'])
+        for row, some, full in zip(rows[1:-1], [100, 300_100, 1_000_100],
+                                   [50, 50, 250_050]):
+            row['memory_pressure_usec'] = {'some': some, 'full': full}
+        result = summarize(rows)['memory_pressure']
+        self.assertTrue(result['available'])
+        self.assertEqual(result['stall_percent'], {'some': 10, 'full': 2.5})
+        self.assertIsNone(summarize(rows[:2])['memory_pressure']['stall_percent'])
+        for invalid in (None, {'some': 0, 'full': 50}, {'some': 300_100},
+                        {'some': True, 'full': 50}, {'some': -1, 'full': 50}):
+            with self.subTest(pressure=invalid):
+                bad = copy.deepcopy(rows)
+                bad[2]['memory_pressure_usec'] = invalid
+                with self.assertRaises(ValueError):
+                    summarize(bad)
+
     def test_resets_and_invalid_measurements_cannot_look_complete(self):
         def bad_time(rows): rows[2]['elapsed_seconds'] = 0
         def cpu_reset(rows): rows[2]['cpu_stat']['usage_usec'] = 1
