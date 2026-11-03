@@ -17,6 +17,35 @@ Each submission creates a separate directory containing browser observations,
 the rendered canvas PNG and the HTTP request headers received by the server.
 Keep the service out of baseline resource measurements and stop it when finished.
 
+To distinguish local HTTP delivery from later browser work, enable a bounded
+request journal when starting the server:
+
+```sh
+python3 scripts/serve_probe.py --output /vm/browser-observations \
+  --request-log /vm/diagnostics/probe-requests-001.jsonl \
+  --max-request-records 1000
+```
+
+The journal creates a new file with mode `0600` and preserves existing files.
+It records handled GET/POST responses with a route label, method, status,
+planned response-body size, UTC request time, host monotonic start/end times,
+and whether writing the response completed. Route labels contain only the
+known asset name, `collect`, `input`, or `unrecognized`; URLs, random route
+tokens, query strings, headers, peer addresses and submitted bodies are omitted.
+The separate observation directories still contain the diagnostic data and
+headers described above, so keep all artifacts outside the source repository.
+
+Records are appended as response handlers finish; concurrent requests can be
+recorded in a different order than they arrived. The default limit is
+1,000 response records, configurable from 1 to 100,000; one `limit_reached`
+record is added if another response arrives. Further requests are served
+without growing the journal. Logging is disabled when `--request-log` is absent.
+The monotonic clock can be compared with the emulator's launch clock on the
+same host and boot. A completed socket write proves only server-side delivery
+progress: inspect the observation callback and screenshot to verify browser
+execution and rendering. This is local test-server instrumentation, not a
+browser network-interception API or an external-site navigation measurement.
+
 The page compares main-frame, dedicated-worker and shared-worker navigator
 values, plus display geometry, WebGL identity and a simple canvas sample.
 Missing or failed observations are recorded. The page has been exercised in
