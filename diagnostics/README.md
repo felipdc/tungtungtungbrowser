@@ -53,6 +53,23 @@ native Safari. Server transport checks alone are not Safari evidence. Its touch
 button records the pointer, touch and mouse event sequence, including trust,
 contact dimensions and pressure, without changing browser APIs.
 
+Each worker observation includes a `measurement` with its outcome, elapsed
+milliseconds and configured timeout. The default remains 15,000 milliseconds.
+For a separate slow-start diagnostic, append `?worker_timeout_ms=60000` to the
+printed page URL. Accepted values are integers from 1,000 to 120,000; an invalid
+value records a configuration error without creating workers. Timing starts
+before constructing the worker and includes script loading and its response.
+It uses the page's `performance.now()` clock, which cannot be aligned directly
+with host monotonic timestamps. A busy page can run a timeout callback late.
+The probe terminates its dedicated worker or closes its shared-worker port
+after the first response, error or timeout; closing a port does not establish
+that the shared-worker process exited.
+
+Keep extended-timeout runs separate from the default measurement. A response
+with a longer allowance does not erase an earlier timeout or prove that the
+worker met the original deadline. A saved canvas image also does not prove
+that it remained visible in the final screenshot.
+
 In the WebGL observation, `available` means `getContext` returned an object.
 The separate `contextLost` and numeric `error` values describe its state after
 the capability reads and before the probe releases its own context. A lost

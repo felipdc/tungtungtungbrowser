@@ -40,24 +40,29 @@ document.getElementById('touch-test').addEventListener('click', async event => {
     button.textContent = 'Touch recorded';
   } catch (error) { button.textContent = 'Touch save failed: ' + error; }
 });
-function workerObservation(shared) {
+function workerObservation(shared, timeoutMilliseconds) {
   return new Promise(resolve => {
-    let worker, port, timer;
-    const finish = value => {
+    const started = performance.now();
+    let worker, port, timer, settled = false;
+    const finish = (value, outcome) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       if (shared && port) port.close();
       else if (worker) worker.terminate();
-      resolve(value);
+      resolve({...value, measurement: {outcome, timeoutMilliseconds,
+        elapsedMilliseconds: performance.now() - started}});
     };
-    timer = setTimeout(() => finish({error: 'Worker did not answer within 15 seconds'}), 15000);
+    timer = setTimeout(() => finish({error: 'Worker did not answer within ' +
+      timeoutMilliseconds + ' milliseconds'}, 'timeout'), timeoutMilliseconds);
     try {
       worker = shared ? new SharedWorker('probe-worker.js') : new Worker('probe-worker.js');
       port = shared ? worker.port : worker;
-      port.onmessage = event => finish(event.data);
-      worker.onerror = event => finish({error: event.message || 'Worker error'});
+      port.onmessage = event => finish(event.data, 'response');
+      worker.onerror = event => finish({error: event.message || 'Worker error'}, 'error');
       if (shared) port.start();
       port.postMessage('observe');
-    } catch (error) { finish({error: String(error)}); }
+    } catch (error) { finish({error: String(error)}, 'error'); }
   });
 }
 function observeGraphics() {
@@ -115,9 +120,17 @@ function observeTouchConstructor() {
     context.beginPath(); context.arc(42, 56, 16, 0, Math.PI * 2); context.fill();
     result.canvasPNG = canvas.toDataURL('image/png');
   } catch (error) { result.canvasError = String(error); }
-  [result.dedicatedWorker, result.sharedWorker] = await Promise.all([
-    workerObservation(false), workerObservation(true)
-  ]);
+  const timeoutMilliseconds = Number(new URL(location.href).searchParams.get('worker_timeout_ms') ?? 15000);
+  if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 1000 || timeoutMilliseconds > 120000) {
+    result.dedicatedWorker = result.sharedWorker = {
+      error: 'worker_timeout_ms must be an integer between 1000 and 120000',
+      measurement: {outcome: 'invalid_configuration'}
+    };
+  } else {
+    [result.dedicatedWorker, result.sharedWorker] = await Promise.all([
+      workerObservation(false, timeoutMilliseconds), workerObservation(true, timeoutMilliseconds)
+    ]);
+  }
   result.serviceWorker = {tested: false, reason: 'Separate secure-origin test required'};
   result.networkIsolation = {tested: false};
   const output = document.getElementById('output');
