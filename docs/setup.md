@@ -54,3 +54,50 @@ container CPU quota also covers rendering and the controller; increasing
 virtual CPUs does not increase that quota. Keep capacity for the host OS and
 optional proxy container. Smaller values require workload validation and may
 increase startup time or cause guest process termination.
+
+### Experimental smaller profile
+
+A prepared guest has completed native Safari startup, local canvas/WebGL and
+worker checks, and an external HTTPS browsing observation with these settings
+on a 16 GiB Linux host:
+
+```sh
+export TTT_VM_MEMORY_GIB=2
+export TTT_VM_CPUS=2
+export TTT_TCG_CACHE_MIB=1024
+export TTT_RENDER_THREADS=1
+export TTT_CONTAINER_MEMORY=6656m
+export TTT_CONTAINER_CPUS=4
+```
+
+Apply settings after a clean guest shutdown, using the same Compose files and
+VM bundle as your existing configuration. Verify `shutdown.forced_termination`
+is `false` in the bundle's `exit.json` before recreating the container. Keep the
+native display geometry unchanged when comparing memory measurements.
+
+This profile reduces the container limit from the default 10 GiB to 6.5 GiB;
+it does not establish a matching reduction in actual memory consumption. The
+host still needs capacity for its OS and any proxy. Two virtual guest CPUs
+also do not make this a two-core host profile: the container retains a four-core
+CPU quota for emulation, rendering and control.
+
+These settings remain experimental. Separate observations have included a
+native launch response timeout, worker timeouts, and loss of visible page
+content. A successful run does not erase those failures. Build and firmware
+preparation requirements remain separate, and an 8 GiB host is still under
+validation. The default Compose limits have not changed.
+
+For your workload, record the following before adopting a smaller configuration:
+
+1. Run `measure_ready.py` with a new report path and review its screenshot.
+   Native foreground identity and page readiness are separate checks.
+2. Navigate to the local diagnostics and review worker results and the rendered
+   canvas, then exercise your external pages through the intended proxy.
+3. Use `sample_resources.py --host-memory` for both startup and browsing. Start
+   the startup recording as soon as the container runs. Review whole-container
+   memory, host available memory, pressure, swap, OOM events and CPU throttling.
+4. Keep failed results and repeat with a clean guest start. Record whether the
+   host was rebooted too: a guest restart can retain the host's filesystem cache.
+
+See the [diagnostic commands and limitations](../diagnostics/README.md) for
+recording and interpreting these measurements.
