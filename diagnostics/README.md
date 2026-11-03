@@ -133,6 +133,31 @@ This separates a native input release issue from the remaining touch-field
 discrepancy. It is an experimental helper result, not a fix in the public
 controller or a claim of complete input fidelity.
 
+A subsequent standalone `WKWebView` check varied the native HID contact fields
+without changing WebKit methods or injecting page scripts. Each row below is
+one trusted tap, with both HID radii cleared on release:
+
+| Requested major / minor radius | Requested pressure | UIKit major radius / force | DOM touch-start X / Y / force | Pointer-down width / height / pressure |
+| --- | --- | --- | --- | --- |
+| `5 / 5` | `0` | `5 / 0` | `5 / 0 / 5` | `10 / 10 / 0` |
+| `11 / 7` | `0` | `11 / 0` | `11 / 0 / 11` | `22 / 22 / 0` |
+| `7 / 3` | `0.25` | approximately `7 / 0` | approximately `7 / 0 / 7` | approximately `14 / 14 / 0` |
+
+UIKit's radius and force readings agreed before and after normal event dispatch.
+All three pointer-up events had zero dimensions. The page's touch-start force
+tracked the major radius; changing the requested minor radius did not correct
+the zero Y radius. UIKit reported `maximumPossibleForce: 0` throughout, and the
+nonzero requested pressure did not produce nonzero UIKit force. That row does
+not establish pressure support.
+
+This diagnostic ran after the browser resource recordings. Its first app launch
+stayed blank while the container reached its 6.5 GiB memory limit. A separate
+launch rendered successfully after the diagnostic limit was raised to 6.75 GiB.
+The original failed launch was retained. These taps are not evidence of stable
+operation at the baseline memory limit, and the field discrepancy remains
+unresolved. Native event capture alone does not establish the exact conversion
+or property-read path responsible for it.
+
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
 iPhone. Those require separate measurements. A matching canvas hash alone is

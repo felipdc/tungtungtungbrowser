@@ -25,6 +25,11 @@ this repository.
       Automatic address-field focus recovery has passed a native local-page
       check; slow foreground and accessibility queries remain a latency issue.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
+      Calibrated contacts of different sizes still produce touch force values
+      that follow the radius while UIKit and pointer pressure remain zero.
+      Compare property reads for constructed and native Touch objects through
+      the same recorder before attributing the remaining discrepancy to a
+      particular native conversion.
 - [ ] Validate repeated navigation, worker consistency, native TLS and proxy
       failure/recovery behavior.
 

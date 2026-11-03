@@ -128,3 +128,14 @@ fixture. The controller preserved the active tab and saved-tab count. This is a
 bounded recovery check. Persisted guest state and controller code differed, so
 it does not isolate the cause of the earlier failures or establish a performance
 improvement.
+
+The default recovery run also completed an external HTTPS page check, with
+reviewed content visible at the 90-second capture and retained in later captures.
+Its 900-second startup/local-page recording peaked at 6.456 GiB and averaged
+2.182 CPU cores; the separate 600-second external-page recording peaked at
+6.425 GiB and averaged 1.928 cores. Both windows had zero container memory-limit
+events, host/container OOM kills and CPU throttling. The minimum sampled host
+available memory in the latter window was about 0.915 GiB. These are bounded
+observations with little container headroom, not a validated minimum host size
+or evidence of a resource reduction. Later diagnostic-app work used a different
+memory limit and is excluded from these measurement windows.
