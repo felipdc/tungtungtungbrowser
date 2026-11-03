@@ -60,6 +60,22 @@ A foreground bundle identifier and a valid screenshot do not prove that the page
 rendered. The startup report records these separately and keeps visual review
 pending. Expected page content must be checked separately.
 
+## Native TLS observation
+
+A passive capture on the guest's network interface on 2026-11-03 UTC recorded
+a ClientHello for the HTTPS origin requested through native Safari navigation.
+It offered `h2` and `http/1.1` through ALPN and advertised protocol versions
+`0x0304` and `0x0303` among its supported-version values. The experiment did
+not install a TLS interception certificate or modify page scripts. Packet
+captures, destination details and deployment configuration remain outside
+this source repository.
+
+This establishes a guest-side handshake observation. It does not establish
+which application protocol was negotiated, what the destination observed
+after the configured network route, or equivalence with a physical iPhone.
+Those require separate measurements. An accepted native open request and a
+completed handshake also do not prove that the requested page rendered.
+
 ## Scope and remaining checks
 
 The source search of `VPhoneDaemon`, `VPhoneGuestComponents` and the firmware
