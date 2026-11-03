@@ -47,3 +47,24 @@ on the Docker host to sample whole-cgroup memory, CPU, throttling and OOM
 counters. Keep the output outside the checkout. `scripts/measure_ready.py`
 uses the VM launch clock for daemon, unlock and foreground/screenshot timing;
 rendered-page verification remains a separate step.
+
+Convert a resource recording into a comparable JSON report without running
+Docker or contacting the guest:
+
+```sh
+python3 scripts/summarize_resources.py /path/to/resources.jsonl \
+  --output /path/to/resource-report.json
+```
+
+The report distinguishes the peak observed during sampling from the container's
+lifetime peak. CPU usage is calculated from cumulative CPU time over the actual
+observation duration, so delayed samples do not receive equal weight. It also
+reports the largest sample gap and memory-event deltas; pre-existing OOM events
+remain visible in the starting counters. Memory components are reported
+separately: `file` includes `shmem`, and component peaks cannot be added.
+
+A recording with no terminal summary produces an incomplete report and exit
+status 2. Invalid records or decreasing counters fail with status 1. Complete
+recordings return 0. A single sample cannot establish CPU utilization. Existing
+output files are never overwritten; omit `--output` to print JSON to stdout.
+Resource reports do not verify page rendering or establish a minimum host size.
