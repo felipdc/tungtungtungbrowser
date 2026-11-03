@@ -115,6 +115,10 @@ docker compose -f runtime/compose.yaml stop
 The launcher records cold-start parameters in `launch.json` and shutdown
 results in `exit.json` inside the VM bundle. It holds a disk lease throughout
 QEMU's lifetime. Upstream launchers do not honor that lease, so keep one owner.
+Check `shutdown.forced_termination` in `exit.json`: `true` means the host sent
+a termination signal after the guest's shutdown grace period. QEMU can return
+exit code `0` in that case; that code alone does not establish a clean iOS
+shutdown. Preserve the stopped VM bundle before investigating a failed shutdown.
 
 For a read-only startup diagnostic, use
 `python3 -m tungtungtungbrowser --timeout 30 screen-state` inside the container,
