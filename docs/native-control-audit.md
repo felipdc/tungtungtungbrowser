@@ -240,7 +240,29 @@ clock accuracy. Constructed Touch objects returned the expected values through
 all four property-reading paths. Native contacts retained the same unexpected
 radius and force values through every path, including prototype getters. The
 remaining field discrepancy is therefore not explained by the recorder's read
-order; its native cause is still unresolved.
+order.
+
+Read-only inspection of the tested guest's compiled frameworks found a more
+specific discrepancy. The pointer-event constructor reads the two native radii
+and pressure correctly. The touch-event handler instead routes the second
+radius into `Touch.radiusX`, rotation into `Touch.radiusY`, and the first radius
+into `Touch.force`. An isolated AArch64 instruction probe reproduced that
+mapping, including the observed equal-radius, zero-pressure cases. A candidate
+change to two loads restored the expected mapping for those cases, a distinct
+value case and a released contact. This establishes an instruction-level repair
+candidate; it has not been installed or validated in Safari. Native HID radius
+scaling, release geometry and stylus/twist behavior remain separate issues.
+
+The framework metadata agrees between WebCore and WebKit, but metadata alone
+does not establish stock provenance. An attempted comparison with the original
+System snapshot failed in the read-only filesystem reader. Keep that limitation
+and the original instruction bytes with the private evidence. Also check the
+platform conditionals when consulting upstream source:
+[`Touch.h`](https://github.com/WebKit/WebKit/blob/b3cbb6622217b135a0d82e81adf30ab65d6ad0a2/Source/WebCore/dom/Touch.h)
+selects `WebKitAdditions/TouchIOS.h` for iOS. The generic `Touch.cpp` constructor
+is not the implementation of that path. Any repair must verify the actual
+framework build and original bytes, preserve rollback data, and pass a native
+Safari test before adoption.
 
 ## Screen evidence
 

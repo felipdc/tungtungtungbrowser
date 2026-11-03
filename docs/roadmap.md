@@ -30,8 +30,11 @@ this repository.
       The diagnostic now reads constructed and native Touch objects through
       the same literal, indexed and prototype-getter paths. A native Safari
       check reproduced the field discrepancy through all those readers while
-      constructed controls remained correct. Isolate the native conversion;
-      changing the recorder's read order does not resolve the discrepancy.
+      constructed controls remained correct. Compiled-framework inspection and
+      an isolated AArch64 probe identified an incorrect field mapping in the
+      native touch handler. A two-load repair candidate remains uninstalled;
+      validate it in Safari with the original failure evidence preserved.
+      HID contact scaling and release geometry still need separate correction.
 - [ ] Verify native touchscreen registration during readiness. A USB device
       can be present in the emulator while iOS has no main-screen digitizer;
       an acknowledged input request then has no UI effect. Validate detection
