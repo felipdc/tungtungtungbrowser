@@ -48,6 +48,20 @@ diagnostics. The container health check verifies the local tunnel, not remote
 proxy availability or geographic targeting. Verify those through the browser
 and verify failure behavior before relying on a new proxy configuration.
 
+An unchanged gateway and a healthy tunnel do not establish that the upstream
+exit IP stayed the same. Proxy services can expire sticky sessions or replace
+an unavailable residential peer. Choose session behavior and a lifetime that
+cover the entire browsing experiment, and record the observed exit address and
+country before and after each comparison. Keep these observations outside the
+repository. A host-side request through the shared namespace checks that route;
+it does not replace a native Safari observation or a browser leak test.
+
+If the exit changes between runtime trials, preserve the page results and
+record the network change before attributing a failure to an emulator or
+resource setting. Do not replace the egress container underneath a running
+iPhone. Stop the guest cleanly, apply the private proxy configuration, and
+recreate both containers together so they share the new network namespace.
+
 The router is limited to 256 MiB and half a CPU. Include its resource use when
 measuring the complete browser deployment. Credentials are mounted as a private
 file and are not included in source or image layers.
