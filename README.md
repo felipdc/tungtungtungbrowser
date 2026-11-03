@@ -85,8 +85,12 @@ and checks foreground identity separately. A launch acknowledgement does not
 establish readiness. If readiness fails and QMP is configured, it also attempts a
 separate `.failure.png` display capture with a five-second QMP deadline. A failure
 capture does not establish readiness, and its own error does not replace the
-original failure. Cold startup currently takes minutes. Capture and review
-page content separately:
+original failure. Unlock input and the Safari launch request are each sent once.
+An unlock error, including a connection reset or a reply that still reports a
+locked screen, stops the measurement before Safari launch. Inspect the retained
+report and display before starting another readiness command; a failed transport
+does not establish whether the guest received the action. Cold startup currently
+takes minutes. Capture and review page content separately:
 
 ```sh
 docker compose -f runtime/compose.yaml exec iphone \

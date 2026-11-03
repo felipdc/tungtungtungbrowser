@@ -94,6 +94,25 @@ def main(argv=None):
             raise GuestError('Screen remains locked')
         return value
 
+    def unlock_once():
+        # A reset or malformed reply can occur after the guest received input,
+        # just as a timeout can. Do not repeat this state-changing operation on
+        # any failure; retain the stage and capture the display for inspection.
+        result['stage'] = 'screen_unlocked'
+        checkpoint()
+        alive()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Screen unlock deadline exceeded')
+        try:
+            unlock(Guest(launch['cid'], timeout=min(90, remaining)))
+        except GuestError as exc:
+            raise GuestError(f'screen_unlocked: {exc}; not retrying native input automatically') from exc
+        result['screen_unlocked_seconds'] = time.monotonic() - start
+        checkpoint()
+        print(json.dumps({'stage': 'screen_unlocked',
+                          'seconds': result['screen_unlocked_seconds']}), flush=True)
+
     def safari(guest):
         foreground = guest.call('apps.foreground')
         if foreground.get('bundle_id') != 'com.apple.mobilesafari' or foreground.get('verified') is not True:
@@ -111,7 +130,7 @@ def main(argv=None):
 
     try:
         retry('vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
-        retry('screen_unlocked', unlock, timeout=90)
+        unlock_once()
         # Request launch once. Foreground polling must not relaunch Safari or
         # rescan its running state for every poll. Native launch can be slow on TCG.
         result['stage'] = 'safari_launch'

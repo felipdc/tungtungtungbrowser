@@ -98,6 +98,27 @@ class ReadinessTest(unittest.TestCase):
         self.assertTrue(Path(result['failure_screenshot']['path']).exists())
         self.browser.assert_called_once_with(qmp_socket=self.vm / 'control.sock', display_timeout=5)
 
+    def test_unlock_disconnect_does_not_repeat_input_or_launch_safari(self):
+        self.guest.call.side_effect = GuestError('Connection reset by peer')
+        with self.assertRaisesRegex(GuestError, 'not retrying native input'):
+            self.run_measurement()
+        self.guest.call.assert_called_once_with('screen.unlock', timeout=60)
+        result = self.report()
+        self.assertEqual(result['stage'], 'screen_unlocked')
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('Connection reset by peer', result['error'])
+        self.assertNotIn('screen_unlocked_seconds', result)
+        self.assertTrue(Path(result['failure_screenshot']['path']).exists())
+
+    def test_locked_unlock_reply_requires_inspection_before_more_input(self):
+        self.guest.call.side_effect = None
+        self.guest.call.return_value = {'locked': True}
+        with self.assertRaisesRegex(GuestError, 'Screen remains locked'):
+            self.run_measurement()
+        self.guest.call.assert_called_once_with('screen.unlock', timeout=60)
+        self.assertFalse(self.report()['safari_foreground_verified'])
+        self.assertNotIn('safari_launch_response', self.report())
+
     def test_unverified_launch_response_survives_foreground_timeout(self):
         self.launch_response = {'pid': 0, 'frontmost_verified': False}
         self.failure_method = 'apps.foreground'
