@@ -36,10 +36,24 @@ owner's contents and that freeing a host-pointer import preserves its caller's
 storage. The test checks allocated file blocks, not the file's logical length.
 
 This establishes reclamation for the tested allocations. It does not establish
-a percentage reduction in whole-browser memory, faster startup, long-session
-stability, or native Safari compatibility. Those measurements remain pending.
-Live graphics allocations still require their memory. Keep the default runtime
-available for comparison and rollback.
+a percentage reduction in whole-browser memory, faster startup, or long-session
+stability. Live graphics allocations still require their memory. Keep the
+default runtime available for comparison and rollback.
+
+A subsequent native guest experiment loaded the verified patched library and
+showed matching allocated backing-file bytes and mapped resident bytes in two
+snapshots. Its cold Safari launch response nevertheless exceeded the 120-second
+limit. A later read-only foreground check found Safari without repeating the
+launch; subsequent warm canvas, WebGL and worker checks passed. The canvas hash
+matched the earlier driver, and the workers responded in 7.1 and 7.2 seconds.
+The external-page acceptance check failed to retain the requested content.
+
+That 15-minute diagnostic recording peaked at 6.26 GiB of sampled container
+memory, with no memory-limit events, OOM kills or CPU throttling. Its workload
+included a failed startup observation and an unsuccessful external navigation;
+it is not a like-for-like successful-browsing comparison. A native comparison
+against the rebuilt unpatched driver, repeatable startup and successful external
+page checks are still required before adopting this patch as a default.
 
 ## Reproducing the build
 
@@ -81,8 +95,16 @@ platforms. Follow [Mesa's build instructions](https://docs.mesa3d.org/meson.html
 and resolve the configuration checks before compiling. Vulkan headers and the
 loader development library are also needed for the regression test.
 
-Apply this repository's patch to the source, then rebuild the same target and
-copy it to `candidate-libvulkan_lvp.so`. Keep both libraries, the source archives,
+Apply this repository's patch to the source, then rebuild the same target:
+
+```sh
+patch --batch --fuzz=0 -p1 -d mesa-25.0.7 \
+  -i /path/to/repository/patches/lavapipe-release-backing.patch
+ninja -C build -j2 src/gallium/targets/lavapipe/libvulkan_lvp.so
+cp build/src/gallium/targets/lavapipe/libvulkan_lvp.so candidate-libvulkan_lvp.so
+```
+
+Keep both libraries, the source archives,
 the compiler and dependency versions, and the build configuration outside the
 repository. Do not install either library over the system driver to run the test.
 

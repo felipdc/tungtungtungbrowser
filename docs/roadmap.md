@@ -9,6 +9,10 @@ this repository.
 
 - [ ] Make cold startup and Safari readiness reliable, with measured timings.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
+- [ ] Measure saved-tab accumulation and graphics-preview memory. Support
+      explicit tab ownership and native navigation within an existing tab so
+      repeated URL opens do not silently grow the browsing session. Compare
+      resource changes with the same tab state and preserve session data.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
 - [ ] Validate repeated navigation, worker consistency, native TLS and proxy
       failure/recovery behavior.
