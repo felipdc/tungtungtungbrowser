@@ -89,6 +89,16 @@ touch events with `radiusX: 4260` and `force: 4260`. Trusted event delivery does
 not establish realistic contact geometry. A native correction remains under
 investigation; the public controller still uses the pinned helper.
 
+A private native calibration narrowed this discrepancy without replacing any
+browser properties. For a five-point contact with zero requested pressure, a
+native UIKit diagnostic app reported `majorRadius: 5` and `force: 0`. On the
+same running guest, Safari's pointer event reported width and height `10` with
+pressure `0`, while its touch event reported `radiusX: 5`, `radiusY: 0` and
+`force: 5`. The constructor check still returned its requested values. These
+observations distinguish the native UIKit fields, pointer events and touch
+events; they do not identify the faulty conversion or establish a fix. Correct
+pointer dimensions alone must not be reported as corrected touch fidelity.
+
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
 iPhone. Those require separate measurements. A matching canvas hash alone is
