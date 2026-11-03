@@ -99,6 +99,13 @@ observations distinguish the native UIKit fields, pointer events and touch
 events; they do not identify the faulty conversion or establish a fix. Correct
 pointer dimensions alone must not be reported as corrected touch fidelity.
 
+A further private diagnostic reproduced these fields in a standalone
+`WKWebView`. For the same event, its native window observed `majorRadius: 5`
+and `force: 0` before and after normal UIKit dispatch, while the page recorded
+the same pointer and touch discrepancy. This narrows the issue beyond Safari's
+application UI to the shared native WebKit touch path. It still does not
+identify an exact faulty function or establish parity with a physical iPhone.
+
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
 iPhone. Those require separate measurements. A matching canvas hash alone is

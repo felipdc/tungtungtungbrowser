@@ -41,6 +41,17 @@ proxy. Other UDP traffic is rejected, so QUIC and general UDP are unavailable.
 IPv6 is disabled. Safari retains its native TLS connection to the destination;
 this setup does not install an interception certificate.
 
+Because UDP NTP is blocked, this overlay enables native host-time offers every
+60 seconds after the guest control daemon becomes healthy. The launcher owns
+this worker and stops it before native guest shutdown. Use an accurately
+synchronized host clock. `TTT_CLOCK_INTERVAL_SECONDS` accepts 10–3,600 seconds,
+or `0` to disable maintenance. Manual guest time is preserved; a failed offer
+stops maintenance and remains recorded in the unique state file identified by
+`launch.json`. Inspect its native response before time-sensitive browsing.
+Do not also run a separate clock loop or readiness's `--sync-clock` step for
+the same guest. See the [clock behavior](../../README.md#python-and-native-control)
+for lifecycle and failure details.
+
 The firewall drops external traffic by default. Only marked router connections
 to the configured proxy gateway are allowed. The iPhone cannot set that mark.
 Docker's embedded resolver is blocked. Loopback remains available for private

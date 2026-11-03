@@ -259,8 +259,32 @@ or automatic time is unavailable or disabled. Failed requests are not retried.
 This is a single synchronization, so run it again after a host suspend or VM
 pause if needed. It does not create a background clock service.
 
-For longer sessions where the guest cannot reach NTP, optionally run periodic
-native clock offers in a separate foreground process:
+For longer sessions where the guest cannot reach NTP, the VM launcher can own
+periodic native clock offers. Set `TTT_CLOCK_INTERVAL_SECONDS=60` before starting
+Compose, or pass `--clock-interval-seconds 60` to `scripts/run_vm.py`. The proxy
+Compose overlay enables this interval by default because it blocks UDP NTP.
+The base Compose file defaults to `0` (disabled). Intervals from 10 to 3,600
+seconds are accepted; `0` explicitly disables maintenance in either setup.
+
+The launcher waits for daemon health, offers host time, then waits the interval
+after each successful response. Its health checks may retry during startup;
+failed clock offers are never retried. Manual guest time remains untouched and
+ends maintenance. A clock failure is recorded without restarting the guest.
+Use an accurately synchronized host clock and review `clock_maintenance` in
+`launch.json`: it identifies a unique `clock-*.json` state file in the VM bundle.
+That file retains the last response, offer count and any failure with mode
+`0600`. The final state is also recorded in `exit.json`. When stopping the VM,
+the launcher waits for an in-flight clock exchange before requesting native
+shutdown, and sends no further clock offers.
+
+Maintenance runs independently of readiness. Check that its state includes a
+successful automatic-time response before a time-sensitive workload; an enabled
+setting alone does not establish synchronization. Omit readiness's `--sync-clock`
+when using launcher maintenance, and do not start another periodic clock process
+for that guest. Include maintenance in the resource measurements for that setup.
+
+For a guest whose launcher does not manage the clock, a separate foreground
+process remains available:
 
 ```sh
 docker compose -f runtime/compose.yaml exec iphone \
@@ -270,7 +294,7 @@ docker compose -f runtime/compose.yaml exec iphone \
 This sends an initial offer, then waits the specified interval after each
 successful response. It prints one flushed JSON line per response, preserving
 the native offset and change result. Intervals from 10 to 3,600 seconds are
-accepted. Requests never overlap; a transport error or invalid native response
+accepted. Requests never overlap within this process; a transport error or invalid native response
 ends the process with an error instead of retrying. Manual time remains
 untouched. A successful offer is a point-in-time result, not a guarantee of
 accuracy between offers.

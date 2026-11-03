@@ -38,6 +38,9 @@ services:
       app: tungtungtungbrowser
   iphone:
     network_mode: service:egress
+    environment:
+      # UDP NTP is unavailable in this namespace. Offer host time through iOS timed.
+      TTT_CLOCK_INTERVAL_SECONDS: ${TTT_CLOCK_INTERVAL_SECONDS:-60}
     depends_on:
       egress:
         condition: service_healthy

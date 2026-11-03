@@ -47,6 +47,7 @@ Compose reads these variables from your shell or an external `--env-file`:
 | `TTT_CONTAINER_MEMORY` | `10g` | Whole-container RAM limit; additional swap is disabled |
 | `TTT_CONTAINER_CPUS` | `4` | Whole-container CPU quota |
 | `TTT_SHM_SIZE` | `6g` | Shared-memory mount capacity, charged to container memory as used |
+| `TTT_CLOCK_INTERVAL_SECONDS` | `0`; proxy overlay: `60` | Native time offers owned by the launcher; `0` disables, otherwise 10–3,600 seconds |
 
 Guest RAM is only part of total memory use. Include the emulator, software
 renderer, shared buffers and filesystem cache when sizing the host. The

@@ -2,11 +2,15 @@
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import unittest
+from pathlib import Path
 
 from scripts.run_vm import stop_guest
 from tungtungtungbrowser.guest import GuestError
+from tungtungtungbrowser.clock import ClockMaintenance
 
 
 class LifecycleTest(unittest.TestCase):
@@ -63,6 +67,49 @@ while True: signal.pause()
         self.assertGreaterEqual(time.monotonic() - start, 0.15)
         self.assertEqual(code, 77)
         self.assertTrue(report['forced_termination'])
+
+    def test_pending_clock_reply_finishes_before_native_shutdown(self):
+        entered, release = threading.Event(), threading.Event()
+        order = []
+        process = self.process
+
+        class NativeGuest:
+            def health(self):
+                pass
+
+            def sync_clock(self):
+                order.append('clock request')
+                entered.set()
+                if not release.wait(2):
+                    raise RuntimeError('test clock gate was not released')
+                order.append('clock reply')
+                return {'automatic': True, 'changed': True, 'time': 123, 'offset': 2}
+
+            def shutdown(self):
+                order.append('shutdown')
+                process.send_signal(signal.SIGUSR1)
+                return {'accepted': True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            guest = NativeGuest()
+            clock = ClockMaintenance(guest, Path(directory) / 'clock.json', 60,
+                                     launch_started_unix=time.time())
+            clock.start()
+            self.assertTrue(entered.wait(2))
+            outcome = []
+            stopping = threading.Thread(target=lambda: outcome.append(
+                stop_guest(process, guest, 1, clock=clock)))
+            stopping.start()
+            self.assertTrue(clock.stopping.wait(2))
+            self.assertEqual(order, ['clock request'])
+            self.assertIsNone(process.poll())
+            release.set()
+            stopping.join(2)
+            self.assertFalse(stopping.is_alive())
+            self.assertEqual(order, ['clock request', 'clock reply', 'shutdown'])
+            self.assertEqual(outcome[0][0], 0)
+            self.assertFalse(outcome[0][1]['forced_termination'])
+            self.assertFalse(clock.thread.is_alive())
 
 
 if __name__ == '__main__':

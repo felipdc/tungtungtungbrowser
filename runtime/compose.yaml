@@ -22,6 +22,7 @@ services:
       - /tmp:size=64m
     environment:
       REIMS_VGPU_CENSUS_DIR: ${TTT_RENDER_DIAGNOSTICS_DIR:-}
+      TTT_CLOCK_INTERVAL_SECONDS: ${TTT_CLOCK_INTERVAL_SECONDS:-0}
     volumes:
       - type: bind
         source: ${TTT_VM_DIR:?Set TTT_VM_DIR to a prepared iOS bundle}
@@ -45,7 +46,8 @@ services:
       - "${TTT_RENDER_THREADS:-1}"
       - --tcg-cache-mib
       - "${TTT_TCG_CACHE_MIB:-1024}"
-    stop_grace_period: 120s
+    # Also allow the bounded clock request to finish before native shutdown.
+    stop_grace_period: 150s
     labels:
       app: tungtungtungbrowser
       renderer: cpu-only

@@ -9,13 +9,17 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser.clock import ClockMaintenance
 
 
-def stop_guest(process, guest, grace_seconds):
+def stop_guest(process, guest, grace_seconds, *, clock=None):
     """Ask iOS to flush/shut down before escalating; preserve the observed outcome."""
+    if clock is not None:
+        clock.stop()
     deadline = time.monotonic() + grace_seconds
     report = {'requested_unix': time.time(), 'forced_termination': False}
     try:
@@ -49,12 +53,17 @@ def main():
     parser.add_argument("--tcg-cache-mib", type=int, choices=(256, 512, 1024, 2048), default=1024)
     parser.add_argument("--cid", type=int, default=3)
     parser.add_argument("--shutdown-timeout-seconds", type=float, default=90)
+    parser.add_argument("--clock-interval-seconds", type=float,
+                        default=os.environ.get('TTT_CLOCK_INTERVAL_SECONDS', '0'),
+                        help="Native clock maintenance: 0 disables it; otherwise 10–3600 seconds")
     args = parser.parse_args()
     vm, source = args.vm.resolve(strict=True), args.source.resolve(strict=True)
     if not 3 <= args.cid < 2**32 - 1:
         parser.error("CID must be between 3 and 4294967294")
     if not 1 <= args.shutdown_timeout_seconds <= 110:
         parser.error("Shutdown timeout must be between 1 and 110 seconds")
+    if args.clock_interval_seconds != 0 and not 10 <= args.clock_interval_seconds <= 3600:
+        parser.error("Clock interval must be 0 or between 10 and 3600 seconds")
     if ',' in str(vm) or ',' in str(source):
         parser.error("QEMU paths cannot contain commas")
     for name in ("Disk.img", "nvram.bin", "ecid", "config.plist"):
@@ -102,6 +111,12 @@ def main():
                 signal.signal(sig, request_stop)
             start_clock = time.monotonic()
             start_wall = time.time()
+            clock = None
+            if args.clock_interval_seconds:
+                clock = ClockMaintenance(Guest(args.cid, timeout=5),
+                                         vm / ('clock-' + uuid.uuid4().hex + '.json'),
+                                         args.clock_interval_seconds,
+                                         launch_started_unix=start_wall)
             process = subprocess.Popen([str(source / 'run-vphone.sh'), str(vm),
                                         '-qmp', f'unix:{qmp},server=on,wait=off',
                                         '-netdev', 'user,id=ttt-net,ipv6=off',
@@ -121,23 +136,33 @@ def main():
                        "tcg_cache_mib": args.tcg_cache_mib,
                        "renderer_diagnostics": bool(env["REIMS_VGPU_CENSUS_DIR"]),
                        "network_adapter": "virtio-net-without-control-queue",
+                       "clock_maintenance": {
+                           "enabled": clock is not None,
+                           "interval_seconds": args.clock_interval_seconds,
+                           "state_file": str(clock.path) if clock is not None else None},
                        "cid": args.cid, "qmp": str(qmp), "safari_ready": False}
             (vm / 'launch.json').write_text(json.dumps(started, indent=2))
             print(json.dumps(started), flush=True)
+            if clock is not None:
+                clock.start()
             shutdown = None
-            while process.poll() is None:
-                if stop_requested:
-                    code, shutdown = stop_guest(process, Guest(args.cid, timeout=min(5, args.shutdown_timeout_seconds)),
-                                                args.shutdown_timeout_seconds)
-                    break
-                try:
-                    process.wait(timeout=0.25)
-                except subprocess.TimeoutExpired:
-                    pass
+            try:
+                while process.poll() is None:
+                    if stop_requested:
+                        code, shutdown = stop_guest(process, Guest(args.cid, timeout=min(5, args.shutdown_timeout_seconds)),
+                                                    args.shutdown_timeout_seconds, clock=clock)
+                        break
+                    try:
+                        process.wait(timeout=0.25)
+                    except subprocess.TimeoutExpired:
+                        pass
+            finally:
+                clock_state = clock.stop() if clock is not None else None
             code = process.returncode
             (vm / 'exit.json').write_text(json.dumps({
                 "exit_code": code, "finished_unix": time.time(),
-                "started_unix": start_wall, "shutdown": shutdown}, indent=2))
+                "started_unix": start_wall, "shutdown": shutdown,
+                "clock_maintenance": clock_state}, indent=2))
             raise SystemExit(code if code >= 0 else 128 - code)
 
 
