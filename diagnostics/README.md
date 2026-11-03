@@ -77,6 +77,17 @@ counters. Keep the output outside the checkout. `scripts/measure_ready.py`
 uses the VM launch clock for daemon, unlock and foreground/screenshot timing;
 rendered-page verification remains a separate step.
 
+The sampler creates a new file with mode `0600` and records the host boot ID,
+container process identity and `CLOCK_MONOTONIC` start time. Each sample includes
+`monotonic_ns`, allowing resource observations to be aligned with launch,
+request-journal or profiling timestamps from the same host boot, even if UTC
+time changes. Divide nanoseconds by one billion when comparing with
+`launch.json`'s `started_monotonic` seconds. Clocks from a different host or boot
+cannot be compared this way. The timestamp precedes the sequential counter
+reads; the counters are not an atomic snapshot. If the container process exits
+or changes, sampling fails and preserves the partial recording without a
+terminal success summary.
+
 Convert a resource recording into a comparable JSON report without running
 Docker or contacting the guest:
 
