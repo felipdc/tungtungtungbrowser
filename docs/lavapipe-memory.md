@@ -51,9 +51,26 @@ The external-page acceptance check failed to retain the requested content.
 That 15-minute diagnostic recording peaked at 6.26 GiB of sampled container
 memory, with no memory-limit events, OOM kills or CPU throttling. Its workload
 included a failed startup observation and an unsuccessful external navigation;
-it is not a like-for-like successful-browsing comparison. A native comparison
-against the rebuilt unpatched driver, repeatable startup and successful external
-page checks are still required before adopting this patch as a default.
+it is not a like-for-like successful-browsing comparison.
+
+A follow-up native control loaded the rebuilt **unpatched** library, made with
+the same build flags. It reached Safari foreground verification in 225.7 seconds;
+its first image still showed a loading page. The local canvas hash matched and
+both workers responded within 8.9 seconds. The external page's expected content
+was visible at 92.5 seconds after navigation and retained at 212.7 and 332.8
+seconds. Its 15-minute recording peaked at 6.01 GiB; the separate seven-minute
+external-page recording peaked at 6.37 GiB and averaged 1.92 CPU cores. Neither
+recording had memory-limit events, OOM kills or CPU throttling.
+
+The control's final graphics snapshot had 149 MiB more allocated backing than
+mapped resident bytes; the patched trial's two snapshots had no such difference.
+These non-atomic snapshots support the backing-retention finding. They do not
+establish whole-browser savings: the trials kept persistent browsing state,
+restored different active pages at startup, and had different external-page
+outcomes. Matching the subsequent navigation times does not remove those
+limitations or establish that the patch caused the failed trial. Repeatable
+startup and successful external-page checks with the patched driver remain
+required before adopting it as a default.
 
 ## Reproducing the build
 
