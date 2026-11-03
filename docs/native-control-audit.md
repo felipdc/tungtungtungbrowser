@@ -54,7 +54,28 @@ the native field frame, makes one native tap at its center, and checks the
 field again before sending text. The tree must identify the same Safari
 process, with exactly one visible, enabled URL field. Invalid geometry,
 unconfirmed focus, failed input or mismatched URL readback stops the operation;
-none triggers an automatic retry.
+none repeats native input.
+
+A later trial returned a truncated accessibility tree after 48 seconds. Its
+editing element had the old URL value and expected frame, but an empty
+identifier and label. The controller stopped before text entry or Return.
+A separate read-only inspection later returned the `URL` identifier and editing
+trait for the same Safari process. The omitted identifier was not accepted as
+proof of ownership, and the original failed navigation remains a failed result.
+
+For a completed response marked `truncated: true` with no usable URL field,
+the controller now permits one additional read after `input_settle`. Both
+responses must identify the expected native Safari process. It does not repeat
+Command-L, a tap, text entry or Return as part of that read. Ambiguous fields,
+owner mismatches, untruncated missing fields and transport errors stop without
+another query. A second incomplete response still stops before further input.
+The configured transport timeout applies separately to each read; this is a
+bounded query count, not an overall navigation deadline. Contract tests cover
+recovery, exhaustion, transport failure, owner changes and ambiguous results.
+The first live follow-up with this change received a different native
+accessibility-query error and stopped before typing; it did not exercise the
+automatic recheck branch. Immediate native recovery through that branch is
+still unverified.
 
 Two local navigations through the updated SDK rendered the expected canvas,
 returned both worker results, and preserved the saved-tab count and active

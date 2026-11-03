@@ -168,13 +168,21 @@ class Browser:
                     'method': method, 'navigation_verified': False}
 
     def _address_field(self, foreground, *, require_editing=True):
-        tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
-        if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):
-            raise GuestError('Cannot verify Safari address-field ownership')
-        fields = [element for element in tree.get('elements', [])
-                  if element.get('identifier') == 'URL'
-                  and element.get('visible') and element.get('enabled')]
-        if len(fields) != 1:
+        for attempt in range(2):
+            tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
+            if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):
+                raise GuestError('Cannot verify Safari address-field ownership')
+            fields = [element for element in tree.get('elements', [])
+                      if element.get('identifier') == 'URL'
+                      and element.get('visible') and element.get('enabled')]
+            if len(fields) == 1:
+                break
+            # A completed but truncated native query can omit field attributes.
+            # Make at most one more read; never infer identity from its value,
+            # retry a failed transport, or repeat the preceding native input.
+            if not fields and tree.get('truncated') is True and attempt == 0:
+                time.sleep(self.input_settle)
+                continue
             raise GuestError('Safari address field is not active; navigation not submitted')
         field = fields[0]
         traits = field.get('traits')

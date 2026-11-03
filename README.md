@@ -321,7 +321,13 @@ API. `goto(reuse_tab=True)` is an experimental option that types into the active
 Safari tab's address field and verifies the complete entered URL before
 submitting. It requires native accessibility evidence that the field is editing;
 if needed, it makes one focus attempt using the verified field's frame. Missing
-or unconfirmed fields stop the operation before text entry. It selects existing
+or unconfirmed fields stop the operation before text entry. A completed native
+tree response marked `truncated: true` with no usable URL field gets at most
+one additional read after the input settling interval. The controller still
+requires the URL identifier and matching Safari process; it does not infer
+field identity from its text. Each read uses the configured request timeout.
+Ambiguous fields, a different owner, and transport errors stop immediately.
+It selects existing
 text before entering the URL and never repeats a failed input request. It falls
 back to explicit Safari opening if another app is in the foreground. A local page
 check exercised automatic refocusing; local and external HTTPS checks preserved

@@ -20,6 +20,7 @@ class NativeFixture:
         self.editing = True
         self.focus_on_tap = True
         self.address_frame = {'x': 46, 'y': 770, 'width': 213, 'height': 48}
+        self.address_trees = []
 
     def call(self, method, **params):
         self.calls.append((method, params))
@@ -32,6 +33,11 @@ class NativeFixture:
         if method == 'input.paste' and not self.drop_text:
             self.address_value = params['text']
         if method == 'ui.tree':
+            if self.address_trees:
+                tree = self.address_trees.pop(0)
+                if isinstance(tree, Exception):
+                    raise tree
+                return tree
             return {'source': 'ax', 'pid': 301, 'elements': [
                 {'identifier': 'URL', 'visible': True, 'enabled': True, 'value': self.address_value,
                  'traits': 146031247360 if self.editing else 146029150208,
@@ -132,6 +138,53 @@ class BrowserContractTest(unittest.TestCase):
         with self.assertRaisesRegex(GuestError, 'address field'):
             Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn('input.paste', [method for method, _ in guest.calls])
+
+    def test_truncated_missing_identifier_gets_one_read_without_repeating_input(self):
+        guest = NativeFixture()
+        guest.address_trees = [{'source': 'ax', 'pid': 301, 'truncated': True,
+                               'elements': [{'identifier': '', 'visible': True,
+                                             'enabled': True, 'traits': 146031247360,
+                                             'value': 'https://example.org/'}]}]
+        result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+        self.assertEqual(result['method'], 'native_address_bar')
+        names = [method for method, _ in guest.calls]
+        self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
+        self.assertEqual(names.count('ui.tree'), 3)  # Two before typing; one URL readback.
+        self.assertEqual(names.count('input.paste'), 1)
+        self.assertNotIn('input.tap', names)
+        self.assertEqual(names[:5], ['screen.unlock', 'apps.foreground', 'input.key',
+                                     'ui.tree', 'ui.tree'])
+
+    def test_incomplete_field_recheck_is_bounded_and_does_not_mask_transport_or_owner_failure(self):
+        incomplete = {'source': 'ax', 'pid': 301, 'truncated': True, 'elements': []}
+        for second in [incomplete, GuestError('read timed out'),
+                       {'source': 'ax', 'pid': 999, 'truncated': True, 'elements': []}]:
+            with self.subTest(second=second):
+                guest = NativeFixture()
+                guest.address_trees = [incomplete, second]
+                with self.assertRaises(GuestError):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                names = [method for method, _ in guest.calls]
+                self.assertEqual(names.count('ui.tree'), 2)
+                self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
+                self.assertNotIn('input.tap', names)
+                self.assertNotIn('input.paste', names)
+                self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
+
+    def test_complete_missing_field_ambiguous_fields_and_wrong_owner_are_not_requeried(self):
+        field = {'identifier': 'URL', 'visible': True, 'enabled': True,
+                 'traits': 146031247360, 'value': 'https://example.org/'}
+        for tree in [{'source': 'ax', 'pid': 301, 'truncated': False, 'elements': []},
+                     {'source': 'ax', 'pid': 301, 'truncated': True, 'elements': [field, field]},
+                     {'source': 'ax', 'pid': 999, 'truncated': True, 'elements': []}]:
+            with self.subTest(tree=tree):
+                guest = NativeFixture()
+                guest.address_trees = [tree]
+                with self.assertRaises(GuestError):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                names = [method for method, _ in guest.calls]
+                self.assertEqual(names.count('ui.tree'), 1)
+                self.assertNotIn('input.paste', names)
 
     def test_dropped_input_is_not_submitted_as_a_wrong_url(self):
         guest = NativeFixture()
