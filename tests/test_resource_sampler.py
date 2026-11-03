@@ -56,7 +56,7 @@ class ResourceSamplerTest(unittest.TestCase):
         self.now += round(seconds * 1e9)
         self.write_counters(20_000_000)
 
-    def run_collection(self, sleep=None):
+    def run_collection(self, sleep=None, *, host_memory=False):
         with ExitStack() as stack:
             stack.enter_context(patch('scripts.sample_resources.subprocess.check_output',
                                       return_value=self.inspect))
@@ -69,6 +69,7 @@ class ResourceSamplerTest(unittest.TestCase):
             clock.now.side_effect = [datetime(2026, 1, 1, 12, tzinfo=timezone.utc),
                                      datetime(2026, 1, 1, 11, tzinfo=timezone.utc)]
             collect('fixture', self.output, seconds=10, interval=10,
+                    include_host_memory=host_memory,
                     proc_root=self.proc, cgroup_root=self.root / 'cgroup')
 
     def records(self):
@@ -164,6 +165,76 @@ class ResourceSamplerTest(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.run_collection()
         self.assertEqual(self.output.read_bytes(), b'previous evidence\n')
+
+    def write_host(self, available=6000, swap_free=2000, oom=3, pressure=500000):
+        (self.proc / 'meminfo').write_text(
+            f'MemTotal: 8000 kB\nMemAvailable: {available} kB\n'
+            f'SwapTotal: 2000 kB\nSwapFree: {swap_free} kB\n')
+        (self.proc / 'vmstat').write_text(f'oom_kill {oom}\n')
+        (self.proc / 'pressure').mkdir(exist_ok=True)
+        (self.proc / 'pressure/memory').write_text(
+            f'some avg10=0.00 total={pressure}\nfull avg10=0.00 total=100000\n')
+
+    def test_host_headroom_distinguishes_host_pressure_from_container_health(self):
+        self.write_host()
+
+        def host_under_pressure(seconds):
+            self.sleep(seconds)
+            self.write_host(available=500, swap_free=1000, oom=4, pressure=2500000)
+
+        self.run_collection(host_under_pressure, host_memory=True)
+        result = summarize(self.records())
+        self.assertEqual(result['memory_events']['deltas']['oom_kill'], 0)
+        self.assertEqual(result['host_memory'], {
+            'recorded': True, 'total_bytes': 8000 * 1024,
+            'minimum_sampled_available_bytes': 500 * 1024,
+            'maximum_sampled_swap_used_bytes': 1000 * 1024,
+            'oom_kills_at_start': 3, 'oom_kills_delta': 1,
+            'pressure_counter_deltas_usec': {'some': 2000000, 'full': 0},
+            'pressure_stall_percent': {'some': 20, 'full': 0},
+        })
+
+    def test_host_memory_is_optional_and_missing_pressure_is_explicit(self):
+        self.run_collection()
+        self.assertEqual(summarize(self.records())['host_memory'], {'recorded': False})
+        self.output.unlink()
+        self.write_host()
+        (self.proc / 'pressure/memory').unlink()
+        self.run_collection(host_memory=True)
+        report = summarize(self.records())['host_memory']
+        self.assertTrue(report['recorded'])
+        self.assertIsNone(report['pressure_counter_deltas_usec'])
+        self.assertIsNone(report['pressure_stall_percent'])
+
+    def test_host_failure_preserves_partial_recording(self):
+        self.write_host()
+
+        def lose_host_counters(seconds):
+            self.sleep(seconds)
+            (self.proc / 'meminfo').write_text('MemTotal: 8000 kB\n')
+
+        with self.assertRaisesRegex(ValueError, 'Missing host memory'):
+            self.run_collection(lose_host_counters, host_memory=True)
+        report = summarize(self.records())
+        self.assertFalse(report['measurement_complete'])
+        self.assertTrue(report['host_memory']['recorded'])
+        self.assertIsNone(report['host_memory']['pressure_stall_percent'])
+
+    def test_host_summary_rejects_missing_samples_and_reset_counters(self):
+        self.write_host()
+        self.run_collection(host_memory=True)
+        for field in ('oom_kills', 'pressure_usec', 'missing'):
+            with self.subTest(field=field):
+                records = self.records()
+                last = records[-2]['host_memory']
+                if field == 'missing':
+                    del records[-2]['host_memory']
+                elif field == 'pressure_usec':
+                    last[field]['some'] = 0
+                else:
+                    last[field] = 0
+                with self.assertRaises(ValueError):
+                    summarize(records)
 
 
 if __name__ == '__main__':

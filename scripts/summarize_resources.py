@@ -19,11 +19,43 @@ def number(value, name, *, integer=False):
     return value
 
 
+def validate_host_memory(host, prior):
+    if not isinstance(host, dict):
+        raise ValueError('Missing requested host memory sample')
+    memory = host.get('memory_bytes')
+    if not isinstance(memory, dict) or memory.keys() != {
+            'MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree'}:
+        raise ValueError('Host memory needs total, available and swap counters')
+    for key, value in memory.items():
+        number(value, f'host_memory.{key}', integer=True)
+    number(host.get('oom_kills'), 'host_memory.oom_kills', integer=True)
+    if memory['MemAvailable'] > memory['MemTotal'] or memory['SwapFree'] > memory['SwapTotal']:
+        raise ValueError('Host available memory or swap exceeds total')
+    pressure = host.get('pressure_usec')
+    if pressure is not None:
+        if not isinstance(pressure, dict) or pressure.keys() != {'some', 'full'}:
+            raise ValueError('Host pressure needs some and full counters')
+        for key, value in pressure.items():
+            number(value, f'host_memory.pressure_usec.{key}', integer=True)
+    if prior is not None:
+        if memory['MemTotal'] != prior['memory_bytes']['MemTotal']:
+            raise ValueError('Host total memory changed during measurement')
+        if host['oom_kills'] < prior['oom_kills']:
+            raise ValueError('Host OOM counter decreased; cannot combine runs')
+        before = prior.get('pressure_usec')
+        if (pressure is None) != (before is None):
+            raise ValueError('Host memory pressure availability changed during measurement')
+        if pressure is not None and any(value < before[key] for key, value in pressure.items()):
+            raise ValueError('Host pressure counter decreased; cannot combine runs')
+
+
 def summarize(records):
     configuration = first = previous = terminal = None
     count = 0
     sampled_peak = container_peak = maximum_gap = 0
     component_peaks = {}
+    minimum_host_available = None
+    maximum_host_swap_used = 0
     # These are separate memory.stat counters, not independent allocations.
     components = ('anon', 'file', 'shmem', 'kernel', 'pagetables', 'slab')
     for record in records:
@@ -36,9 +68,21 @@ def summarize(records):
             if configuration is not None or count:
                 raise ValueError('Configuration must appear once, before samples')
             configuration = record
+            if not isinstance(record.get('include_host_memory', False), bool):
+                raise ValueError('include_host_memory must be a boolean')
         elif kind == 'sample':
             if configuration is None:
                 raise ValueError('Missing configuration before samples')
+            if configuration.get('include_host_memory', False):
+                host = record.get('host_memory')
+                validate_host_memory(host, previous.get('host_memory') if previous else None)
+                available = host['memory_bytes']['MemAvailable']
+                minimum_host_available = (available if minimum_host_available is None else
+                                          min(minimum_host_available, available))
+                maximum_host_swap_used = max(maximum_host_swap_used,
+                    host['memory_bytes']['SwapTotal'] - host['memory_bytes']['SwapFree'])
+            elif 'host_memory' in record:
+                raise ValueError('Host memory sample was not declared in configuration')
             elapsed = number(record.get('elapsed_seconds'), 'elapsed_seconds')
             memory = number(record.get('memory_bytes'), 'memory_bytes', integer=True)
             cpu = record.get('cpu_stat')
@@ -107,6 +151,23 @@ def summarize(records):
     pressure_delta = None if first.get('memory_pressure_usec') is None else {
         key: value - first['memory_pressure_usec'][key]
         for key, value in previous['memory_pressure_usec'].items()}
+    host_summary = {'recorded': False}
+    if minimum_host_available is not None:
+        first_host, last_host = first['host_memory'], previous['host_memory']
+        host_pressure = None if first_host.get('pressure_usec') is None else {
+            key: value - first_host['pressure_usec'][key]
+            for key, value in last_host['pressure_usec'].items()}
+        host_summary = {
+            'recorded': True,
+            'total_bytes': first_host['memory_bytes']['MemTotal'],
+            'minimum_sampled_available_bytes': minimum_host_available,
+            'maximum_sampled_swap_used_bytes': maximum_host_swap_used,
+            'oom_kills_at_start': first_host['oom_kills'],
+            'oom_kills_delta': last_host['oom_kills'] - first_host['oom_kills'],
+            'pressure_counter_deltas_usec': host_pressure,
+            'pressure_stall_percent': None if host_pressure is None or not duration else {
+                key: value / 1e6 / duration * 100 for key, value in host_pressure.items()},
+        }
     return {
         'measurement_complete': terminal is not None,
         'configuration': configuration,
@@ -131,12 +192,15 @@ def summarize(records):
             'stall_percent': None if pressure_delta is None or not duration else {
                 key: value / 1e6 / duration * 100 for key, value in pressure_delta.items()},
         },
+        'host_memory': host_summary,
         'navigation_verified': False,
         'notes': [
             'Container lifetime peak may predate this observation window.',
             'Memory component peaks are not additive; file includes shmem.',
             'CPU and event deltas cover the first through last recorded sample.',
             'Memory PSI some/full stall times overlap and must not be added.',
+            'Host memory, swap, OOM and pressure include all host workloads; '
+            'sampled headroom can miss shorter dips.',
         ] + ([] if terminal else ['No terminal summary: measurement ended incompletely.']),
     }
 

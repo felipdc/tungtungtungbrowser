@@ -19,10 +19,10 @@ def counters(path):
             (line.split() for line in path.read_text().splitlines())}
 
 
-def memory_pressure(group):
+def read_pressure(path):
     """Read cumulative PSI stall microseconds; unavailable is not zero."""
     try:
-        lines = (group / 'memory.pressure').read_text().splitlines()
+        lines = path.read_text().splitlines()
     except FileNotFoundError:
         return None
     result = {}
@@ -38,6 +38,30 @@ def memory_pressure(group):
     return result
 
 
+def memory_pressure(group):
+    return read_pressure(group / 'memory.pressure')
+
+
+def host_memory(proc_root):
+    """Read host headroom separately from the container's memory accounting."""
+    wanted = {'MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree'}
+    memory = {}
+    for line in (proc_root / 'meminfo').read_text().splitlines():
+        key, value = line.split(':', 1)
+        if key in wanted:
+            amount, unit = value.split()
+            if unit != 'kB' or key in memory or int(amount) < 0:
+                raise ValueError('Malformed host memory counters')
+            memory[key] = int(amount) * 1024
+    if memory.keys() != wanted:
+        raise ValueError('Missing host memory counters')
+    oom_kills = counters(proc_root / 'vmstat')['oom_kill']
+    if oom_kills < 0:
+        raise ValueError('Malformed host OOM counter')
+    return {'memory_bytes': memory, 'oom_kills': oom_kills,
+            'pressure_usec': read_pressure(proc_root / 'pressure/memory')}
+
+
 def runtime_limits(group):
     """Keep kernel values distinct from Docker's requested configuration."""
     result = {}
@@ -49,7 +73,7 @@ def runtime_limits(group):
     return result
 
 
-def collect(container, output_path, *, seconds, interval,
+def collect(container, output_path, *, seconds, interval, include_host_memory=False,
             proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgroup')):
     if not 0 < interval <= seconds <= 3600:
         raise ValueError('Require 0 < interval <= seconds <= 3600')
@@ -85,7 +109,8 @@ def collect(container, output_path, *, seconds, interval,
               'cgroup': cgroup, 'requested_seconds': seconds,
               'interval_seconds': interval, 'host_boot_id': host_boot_id,
               'host_pid': pid, 'pid_start_ticks': start_ticks,
-              'clock': 'CLOCK_MONOTONIC', 'started_monotonic_ns': started_ns})
+              'clock': 'CLOCK_MONOTONIC', 'started_monotonic_ns': started_ns,
+              'include_host_memory': include_host_memory})
         previous = None
         maximum = 0
         while True:
@@ -103,6 +128,8 @@ def collect(container, output_path, *, seconds, interval,
                       'memory_stat': counters(group / 'memory.stat'), 'cpu_stat': cpu,
                       'memory_pressure_usec': memory_pressure(group),
                       'memory_events': counters(group / 'memory.events')}
+            if include_host_memory:
+                sample['host_memory'] = host_memory(proc_root)
             peak = group / 'memory.peak'
             if peak.exists():
                 sample['peak_bytes_since_container_created'] = int(peak.read_text())
@@ -129,10 +156,13 @@ def main():
     parser.add_argument('--seconds', type=float, default=120)
     parser.add_argument('--interval', type=float, default=5)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--host-memory', action='store_true',
+                        help='Also record host memory headroom, swap, OOM and pressure')
     args = parser.parse_args()
     if not 0 < args.interval <= args.seconds <= 3600:
         parser.error('Require 0 < interval <= seconds <= 3600')
-    collect(args.container, args.output, seconds=args.seconds, interval=args.interval)
+    collect(args.container, args.output, seconds=args.seconds, interval=args.interval,
+            include_host_memory=args.host_memory)
     print(args.output)
 
 

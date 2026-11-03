@@ -101,6 +101,29 @@ counters. Keep the output outside the checkout. `scripts/measure_ready.py`
 uses the VM launch clock for daemon, unlock and foreground/screenshot timing;
 rendered-page verification remains a separate step.
 
+Add `--host-memory` when evaluating a smaller host:
+
+```sh
+python3 scripts/sample_resources.py CONTAINER_ID --seconds 600 \
+  --host-memory --output /path/to/resources-with-host.jsonl
+```
+
+This also reads host `MemTotal`, `MemAvailable`, swap usage, OOM kills and
+memory pressure through `/proc`. The summary reports the lowest sampled
+available memory, highest sampled swap usage and counter deltas for the same
+observation window. These host counters include every workload on the machine;
+an OOM kill or memory stall cannot be attributed to this container from those
+counters alone. Container memory usage and host available memory are separate
+measurements and should not be added. Shorter headroom dips between samples
+can be missed. Use this on the Docker host, since container-visible `/proc`
+values may not describe that container's own limits.
+
+Host measurements are opt-in. Older recordings report `host_memory.recorded`
+as `false`. Missing host pressure support is recorded as `null`, while a missing
+required memory or OOM counter fails collection and preserves partial evidence.
+The summary rejects missing requested samples, counter resets and changes in
+host total memory. Zero OOM kills alone do not establish sufficient headroom.
+
 The sampler creates a new file with mode `0600` and records the host boot ID,
 container process identity and `CLOCK_MONOTONIC` start time. Each sample includes
 `monotonic_ns`, allowing resource observations to be aligned with launch,
