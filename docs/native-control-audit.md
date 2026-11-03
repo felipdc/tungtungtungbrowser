@@ -124,9 +124,9 @@ sends each request once and joins the clock worker before shutdown. A local
 HTTP transport regression test accepts a valid clock reply arriving after
 five seconds, preserves it during stop, and confirms there was only one offer.
 This corrects the timeout mismatch; it does not yet establish that slow native
-inspection is reliable or explain the earlier guest timeout. The current
-renderer experiment retains the previous launcher for a consistent comparison;
-native validation of the longer timeout is pending.
+inspection is reliable or explain the earlier guest timeout. Resource trials
+using the previous launcher do not validate this change; native validation of
+the longer timeout is pending.
 
 ## Screen evidence
 

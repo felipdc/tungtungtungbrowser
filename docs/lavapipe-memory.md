@@ -72,6 +72,31 @@ limitations or establish that the patch caused the failed trial. Repeatable
 startup and successful external-page checks with the patched driver remain
 required before adopting it as a default.
 
+## Released pipeline cache experiment
+
+The pinned renderer's
+[`kept.rs`](https://github.com/YahiaAngelo/metal2vulkan/blob/cd1a08ae5442065a11af0fb79d1bdc35c1f0e1b9/crates/metal2vulkan-runtime/src/pipeline/kept.rs)
+retains up to 256 released pipeline **variant instances** for reuse. One instance
+can hold multiple Vulkan pipelines. `M2V_KEPT_PIPELINES` accepts a positive
+integer at first use; zero falls back to 256. A smaller limit may release
+compiler objects sooner, but can require more compilation when states recur.
+It does not shrink guest RAM or QEMU's translation cache.
+
+A subsequent trial set this limit to 64 with the rebuilt unpatched driver,
+the same runtime image, 2 GiB guest RAM, 1 GiB translation cache, four host CPU
+quota and 6.5 GiB container limit. Native Safari foreground verification took
+229.6 seconds. Local canvas, WebGL and both worker checks passed. The external
+page's expected content was visible at 93.0 seconds after navigation and retained
+at 213.2 and 333.4 seconds.
+
+The 15-minute recording peaked at 6.06 GiB. The separate seven-minute browsing
+recording peaked at 6.48 GiB and averaged 1.87 CPU cores, with no memory-limit
+events, OOM kills or CPU throttling. The earlier 256-instance control peaked at
+6.37 GiB during browsing. The trials retained persistent session state and
+restored different active pages, so these numbers do not isolate the cache's
+effect. They provide no demonstrated whole-container memory or startup gain.
+The default cache limit remains unchanged.
+
 ## Reproducing the build
 
 Build outside this repository, in an environment whose runtime libraries match
