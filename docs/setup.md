@@ -70,6 +70,14 @@ export TTT_CONTAINER_MEMORY=6656m
 export TTT_CONTAINER_CPUS=4
 ```
 
+The observations used the upstream reversible `trimmed` service profile and
+the readiness command's `--sync-clock` option. The native display remained
+1179 × 2556 at scale 3. The environment variables above do not apply a service
+profile or change display geometry. Inspect the current profile with
+`python3 -m tungtungtungbrowser services status` inside the running guest
+container; the [resource instructions](../README.md#proxy-resources-and-diagnostics)
+describe applying and restoring it. Record that state with your measurements.
+
 Apply settings after a clean guest shutdown, using the same Compose files and
 VM bundle as your existing configuration. Verify `shutdown.forced_termination`
 is `false` in the bundle's `exit.json` before recreating the container. Keep the
