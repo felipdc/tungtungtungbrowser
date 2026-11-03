@@ -97,6 +97,12 @@ completed native foreground verification but its local workers missed their
 15-second deadline. Treat native readiness and usable page execution as
 separate observations.
 
+A later seven-minute browsing recording reached the 6.5 GiB hard limit and
+recorded `memory.events` `max` events, with no OOM kill or CPU throttling. The
+page remained visible in a separate later capture, while limit events continued
+to accumulate. Successful rendering and the absence of OOM kills therefore do
+not establish adequate memory headroom for a long-lived session at this limit.
+
 One 420-second browsing recording on the 8 GiB host retained about 1.10 GiB
 of available host memory at its lowest sampled point, with no host or container
 OOM kills, CPU throttling or swap use. This is evidence for that prepared guest
