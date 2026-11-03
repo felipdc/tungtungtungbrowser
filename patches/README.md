@@ -1,5 +1,10 @@
 # Pinned runtime patches
 
+`lavapipe-release-backing.patch` is an optional Mesa 25.0.7 experiment that
+discards an ordinary allocation's backing pages before its file range can be
+reused. It is not applied by the default runtime build. See the
+[driver comparison, regression test and remaining validation](../docs/lavapipe-memory.md).
+
 `vusb-unlink.patch` applies to the `vphone-linux` revision in
 `runtime.lock.json`. The creation script checks/applies it before starting
 the USB bridge and runs `scripts/check_usbip_protocol.py` against that source.

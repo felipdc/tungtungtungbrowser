@@ -1,0 +1,39 @@
+--- a/src/gallium/drivers/llvmpipe/lp_texture.c
++++ b/src/gallium/drivers/llvmpipe/lp_texture.c
+@@ -31,11 +31,16 @@
+   */
+ 
+ #include <stdio.h>
++#include <errno.h>
+ 
+ #include "pipe/p_context.h"
+ #include "pipe/p_defines.h"
+ 
+ #include "util/detect_os.h"
++
++#if DETECT_OS_LINUX
++#include <fcntl.h>
++#endif
+ #include "util/simple_mtx.h"
+ #include "util/u_inlines.h"
+ #include "util/u_cpu_detect.h"
+@@ -1352,6 +1357,19 @@
+    struct llvmpipe_screen *screen = llvmpipe_screen(pscreen);
+ 
+    if (mem->fd) {
++      /* Release the backing pages while this allocation still owns its range.
++       * Unmapping alone leaves them resident in the screen's shared memfd.
++       * Do this before returning the range to mem_heap, since another thread
++       * may immediately allocate and write it. Unsupported filesystems retain
++       * the previous behavior; reclamation is only a memory optimization.
++       * Imported/exported memory uses the separate free_memory_fd path.
++       */
++      int ret;
++      do {
++         ret = fallocate(mem->fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
++                         mem->offset, mem->size);
++      } while (ret == -1 && errno == EINTR);
++
+       mtx_lock(&screen->mem_mutex);
+       util_vma_heap_free(&screen->mem_heap, mem->offset, mem->size);
+       mtx_unlock(&screen->mem_mutex);

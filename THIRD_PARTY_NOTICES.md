@@ -12,6 +12,7 @@ No emulator, renderer, proxy executable, firmware or prepared VM is committed.
 | reims-vgpu and metal2vulkan | Linked by the separately built emulator | Upstream GPL-2.0-or-later / LGPL-3.0-or-later alternatives; see [runtime licensing](https://github.com/YahiaAngelo/vphone-linux/blob/888d17ca17268aaecd277c64f2d95385b184744b/docs/LICENSING.md) |
 | vphone-cli and Icli | Upstream native guest tooling | Their upstream license files govern the downloaded release and source |
 | Moby syscall profile | `runtime/seccomp-vsock.json` derives from the Moby profile | Apache-2.0, retained in [runtime/LICENSE.moby-profiles](runtime/LICENSE.moby-profiles) |
+| Mesa llvmpipe `lp_texture.c` | Optional `patches/lavapipe-release-backing.patch` modifies this file | MIT-style license; copyright 2006 VMware, retained in [LICENSES/MIT-Mesa-lp_texture.txt](LICENSES/MIT-Mesa-lp_texture.txt). Other downloaded Mesa files retain their own notices. |
 | sing-box | Downloaded by the optional proxy Docker build | GPL-3.0-or-later; [upstream license](https://github.com/SagerNet/sing-box/blob/v1.14.4/LICENSE) |
 | Firmware and guest assets | Obtained separately by the user's setup tools | Their respective vendor licenses; not covered by this project's license |
 
