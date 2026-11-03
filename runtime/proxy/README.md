@@ -38,7 +38,14 @@ HTTPS verifies the certificate against `host` while connecting to `address`.
 Refresh that address and recreate the whole Compose project when it changes.
 The iPhone must be recreated whenever the egress network namespace is replaced.
 
-The router pins sing-box and verifies its release SHA-256. Its TUN sends TCP
+The router pins [sing-box 1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)
+and verifies a separate release SHA-256 for `amd64` and `arm64`. The image
+selects the binary for its Debian architecture and rejects other architectures.
+Both images have passed native builds and a `sing-box version` execution.
+The ARM image still needs the same end-to-end proxy and native Safari checks
+as the x86 deployment; building it does not establish ARM iPhone runtime support.
+
+Its TUN sends TCP
 through the proxy. DNS is intercepted and sent as HTTPS through the same
 proxy. Other UDP traffic is rejected, so QUIC and general UDP are unavailable.
 IPv6 is disabled. Safari retains its native TLS connection to the destination;
