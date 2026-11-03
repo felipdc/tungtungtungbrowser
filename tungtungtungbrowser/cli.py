@@ -97,6 +97,7 @@ def main(argv=None):
     parser.add_argument("--display-timeout", type=float, default=15, help="QMP capture deadline in seconds (default: 15)")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("health")
+    sub.add_parser("sync-clock", help="Offer the host's time once; preserve manual guest time settings")
     sub.add_parser("device")
     sub.add_parser("screen-state", help="Read native startup, lock and display notifications without input")
     sub.add_parser("home", help="Send one native Home-button event; inspect the display separately")
@@ -147,6 +148,7 @@ def main(argv=None):
     try:
         match args.action:
             case "health": emit(guest.health())
+            case "sync-clock": emit(browser.sync_clock())
             case "device": emit(guest.call("device.info"))
             case "screen-state": emit(browser.screen_state())
             case "home": emit(browser.home())

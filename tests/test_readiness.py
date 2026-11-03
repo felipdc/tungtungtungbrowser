@@ -60,8 +60,10 @@ class ReadinessTest(unittest.TestCase):
             'apps.foreground': {'bundle_id': 'com.apple.mobilesafari', 'verified': True},
         }[method]
 
-    def run_measurement(self, *, qmp=True):
+    def run_measurement(self, *, qmp=True, sync_clock=False):
         argv = [str(self.vm), '--output', str(self.output)]
+        if sync_clock:
+            argv += ['--sync-clock']
         if qmp:
             argv += ['--qmp-socket', str(self.vm / 'control.sock')]
         measure_ready.main(argv)
@@ -84,6 +86,46 @@ class ReadinessTest(unittest.TestCase):
         ])
         self.assertTrue(self.output.with_suffix('.png').exists())
         self.assertNotIn('failure_screenshot', result)
+        self.guest.sync_clock.assert_not_called()
+
+    def test_explicit_clock_sync_precedes_unlock_and_keeps_launch_clock(self):
+        response = {'time': 1800000000.0, 'automatic': True, 'changed': True, 'offset': 600.0}
+
+        def sync():
+            self.assertEqual(self.report()['stage'], 'clock_sync')
+            self.assertEqual(self.calls, [])
+            return response
+
+        self.guest.sync_clock.side_effect = sync
+        self.run_measurement(sync_clock=True)
+        self.guest.sync_clock.assert_called_once_with()
+        result = self.report()
+        self.assertEqual(result['clock_sync_response'], response)
+        self.assertGreaterEqual(result['clock_sync_seconds'], 10)
+        self.assertEqual(result['launch'], self.launch)
+        self.assertEqual(result['status'], 'complete')
+
+    def test_clock_sync_timeout_stops_before_input_and_captures_display(self):
+        self.guest.sync_clock.side_effect = GuestError('timed out')
+        with self.assertRaisesRegex(GuestError, 'timed out'):
+            self.run_measurement(sync_clock=True)
+        self.guest.sync_clock.assert_called_once_with()
+        self.assertFalse(self.calls)
+        result = self.report()
+        self.assertEqual(result['stage'], 'clock_sync')
+        self.assertEqual(result['status'], 'failed')
+        self.assertNotIn('clock_sync_seconds', result)
+        self.assertTrue(Path(result['failure_screenshot']['path']).exists())
+
+    def test_clock_sync_preserves_manual_time_and_requires_inspection(self):
+        response = {'time': 1700000000.0, 'automatic': False, 'changed': False, 'offset': 100000000.0}
+        self.guest.sync_clock.return_value = response
+        with self.assertRaisesRegex(GuestError, 'requires automatic guest time'):
+            self.run_measurement(sync_clock=True)
+        self.guest.sync_clock.assert_called_once_with()
+        self.assertFalse(self.calls)
+        self.assertEqual(self.report()['clock_sync_response'], response)
+        self.assertEqual(self.report()['status'], 'failed')
 
     def test_unlock_timeout_captures_display_without_repeating_guest_work(self):
         self.failure_method = 'screen.unlock'

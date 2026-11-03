@@ -127,6 +127,8 @@ class GuestContractTest(unittest.TestCase):
         self.notification_override = None
         self.log_result = {"source": "unified_log", "entries": [{"message": "private native event"}],
                            "count": 1, "truncated": True, "seconds": 2}
+        self.clock_result = {'time': 1800000000.0, 'automatic': True,
+                             'changed': True, 'offset': 120.0}
         test = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -148,6 +150,8 @@ class GuestContractTest(unittest.TestCase):
                     result = {'pid': 301, 'frontmost_verified': True}
                 if data['method'] == 'logs.syslog':
                     result = test.log_result
+                if data['method'] == 'time.clock':
+                    result = test.clock_result
                 if data['method'] == 'notify.state':
                     name = data['params']['name']
                     result = (test.notification_override if test.notification_override is not None
@@ -188,6 +192,33 @@ class GuestContractTest(unittest.TestCase):
         self.guest.shutdown()
         self.assertEqual(self.requests[0]['method'], 'system.shutdown')
         self.assertEqual(self.requests[0]['params'], {'force': True})
+
+    def test_clock_sync_offers_host_time_without_changing_manual_mode(self):
+        self.clock_result.update(automatic=False, changed=False)
+        stdout = io.StringIO()
+        with patch('tungtungtungbrowser.guest.time.time', return_value=1800000000.0), \
+                patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), \
+                contextlib.redirect_stdout(stdout):
+            main(['sync-clock'])
+        self.assertEqual(json.loads(stdout.getvalue()), self.clock_result)
+        self.assertEqual([(r['method'], r['params']) for r in self.requests],
+                         [('time.clock', {'time': 1800000000.0})])
+
+    def test_clock_sync_failure_or_malformed_reply_is_not_retried(self):
+        for result in [{}, [], dict(self.clock_result, time=True),
+                       dict(self.clock_result, offset='120'),
+                       dict(self.clock_result, automatic='true'),
+                       dict(self.clock_result, changed=1)]:
+            with self.subTest(result=result):
+                self.clock_result = result
+                self.requests.clear()
+                with self.assertRaisesRegex(GuestError, 'Invalid native clock'):
+                    self.guest.sync_clock()
+                self.assertEqual(len(self.requests), 1)
+        with patch.object(self.guest, 'call', side_effect=GuestError('timed out')) as call:
+            with self.assertRaisesRegex(GuestError, 'timed out'):
+                self.guest.sync_clock()
+            call.assert_called_once()
 
     def test_home_cli_uses_one_native_button_and_does_not_claim_rendered_home(self):
         stdout = io.StringIO()

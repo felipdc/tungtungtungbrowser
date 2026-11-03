@@ -3,6 +3,7 @@ import http.client
 import json
 import math
 import socket
+import time
 import uuid
 from urllib.parse import urlsplit
 
@@ -48,7 +49,7 @@ ALLOWED_METHODS = frozenset({
     "screen.unlock", "screen.screenshot", "apps.launch", "apps.open_url", "apps.foreground",
     "input.tap", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
     "ui.tree", "ui.ocr", "services.profile", "services.profile.apply", "time.timezone",
-    "system.shutdown",
+    "system.shutdown", "time.clock",
     "logs.syslog", "notify.state",
 })
 
@@ -158,6 +159,19 @@ class Guest:
 
     def shutdown(self):
         return self.call("system.shutdown", force=True)
+
+    def sync_clock(self):
+        """Offer the host's current time once; preserve manual guest clock settings."""
+        result = self.call('time.clock', time=time.time())
+        if (not isinstance(result, dict)
+                or not all(isinstance(result.get(k), (int, float))
+                           and not isinstance(result[k], bool) and math.isfinite(result[k])
+                           for k in ('time', 'offset'))
+                or type(result.get('changed')) is not bool
+                or 'automatic' not in result
+                or (result['automatic'] is not None and type(result['automatic']) is not bool)):
+            raise GuestError('Invalid native clock synchronization response')
+        return result
 
     def screen_state(self):
         """Read native notifications without waking, unlocking or querying UI.

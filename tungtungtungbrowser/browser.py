@@ -80,6 +80,11 @@ class Browser:
         with self._lock:
             return self.guest.screen_state()
 
+    def sync_clock(self):
+        """Offer host time through native timed, retaining its automatic/manual mode."""
+        with self._lock:
+            return self.guest.sync_clock()
+
     def home(self):
         """Send one native Home-button event; rendered Home is not verified."""
         with self._lock:

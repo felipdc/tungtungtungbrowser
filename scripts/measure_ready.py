@@ -22,6 +22,8 @@ def main(argv=None):
     parser.add_argument('--deadline-seconds', type=float, default=600)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--qmp-socket', type=Path, help='Capture the rendered display as PNG instead of guest JPEG')
+    parser.add_argument('--sync-clock', action='store_true',
+                        help='Offer host time once before unlock; requires automatic guest time')
     args = parser.parse_args(argv)
     if args.output.suffix != '.json':
         parser.error('output must have a .json suffix')
@@ -130,6 +132,19 @@ def main(argv=None):
 
     try:
         retry('vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
+        if args.sync_clock:
+            result['stage'] = 'clock_sync'
+            checkpoint()
+            alive()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Clock synchronization deadline exceeded')
+            result['clock_sync_response'] = Guest(launch['cid'], timeout=min(30, remaining)).sync_clock()
+            checkpoint()
+            if result['clock_sync_response']['automatic'] is not True:
+                raise GuestError('Clock synchronization requires automatic guest time; inspect the guest clock settings')
+            result['clock_sync_seconds'] = time.monotonic() - start
+            checkpoint()
         unlock_once()
         # Request launch once. Foreground polling must not relaunch Safari or
         # rescan its running state for every poll. Native launch can be slow on TCG.

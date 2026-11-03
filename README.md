@@ -69,7 +69,7 @@ docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser health
 docker compose -f runtime/compose.yaml exec iphone \
   python3 scripts/measure_ready.py /vm --qmp-socket /vm/control.sock \
-  --output /vm/readiness.json
+  --sync-clock --output /vm/readiness.json
 docker compose -f runtime/compose.yaml exec iphone \
   python3 -m tungtungtungbrowser open 'https://example.com/'
 ```
@@ -207,6 +207,7 @@ On the Linux runtime host, or inside its iPhone container:
 from tungtungtungbrowser import Browser
 
 browser = Browser(cid=3, timeout=120)
+browser.sync_clock()  # Offer host time when the guest cannot reach NTP.
 launch = browser.launch()
 if not launch['frontmost_verified']:
     raise RuntimeError('Inspect the device: Safari foreground was not confirmed')
@@ -232,6 +233,22 @@ not silently retried. `visual_readiness_verified` and `navigation_verified`
 remain `false` even when native foreground identity is confirmed. Inspect the
 display and verify page content separately. Unlock failure prevents launch,
 and a failed or malformed launch response stops without further guest actions.
+
+For a guest whose network cannot carry NTP, use `Browser().sync_clock()` or
+`python3 -m tungtungtungbrowser sync-clock` before browsing. This makes one native
+request offering the host's current UTC time to iOS `timed`; it does not change
+the time zone or browser APIs. Use an accurately synchronized host clock. The
+guest can restore stale time on boot even when its virtual RTC was correct;
+see the [upstream clock investigation](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/Research/Guest/host_clock_sync.md).
+
+The result retains native `time`, `automatic`, `changed` and the pre-correction
+`offset` in seconds (host minus guest). Manual guest time is preserved: when
+`automatic` is `false`, an offer leaves that clock alone. The readiness command's
+optional `--sync-clock` step runs once after daemon health and before unlock,
+records its response and timing, and stops before input if synchronization fails
+or automatic time is unavailable or disabled. Failed requests are not retried.
+This is a single synchronization, so run it again after a host suspend or VM
+pause if needed. It does not create a background clock service.
 
 `goto()` explicitly opens the URL in Safari through the native operating-system
 API. `goto(reuse_tab=True)` is an experimental option that types into the active
