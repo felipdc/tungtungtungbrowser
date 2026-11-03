@@ -34,6 +34,18 @@ not be treated as entirely reclaimable cache. Measure the whole container
 for your workload before selecting a smaller host. Initial firmware preparation
 and first-boot migration are separate from ordinary browser startup.
 
+## Get the source
+
+```sh
+git clone https://github.com/felipdc/tungtungtungbrowser.git
+cd tungtungtungbrowser
+```
+
+Use the [setup guide](docs/setup.md) to prepare a Linux host and VM, or follow
+the commands below if you already have a compatible VM bundle. See the
+[roadmap](docs/roadmap.md) for planned APIs and the
+[contribution guide](CONTRIBUTING.md) for development checks.
+
 ## Start with a prepared VM
 
 Use a VM bundle you created with the pinned runtime. It must contain `Disk.img`,
