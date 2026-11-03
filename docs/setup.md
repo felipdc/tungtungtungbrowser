@@ -34,6 +34,10 @@ build and architecture-specific downloads and pass native guest verification;
 a different host CPU alone does not establish acceleration for Apple-specific
 CPU instructions.
 
+The optional [ARM64 memory-access check](../native/README.md#arm64-linux-memory-access-check)
+can test some native instruction requirements before a runtime build. Passing
+it does not establish ARM runtime support or guest compatibility.
+
 ## Resource settings
 
 Compose reads these variables from your shell or an external `--env-file`:

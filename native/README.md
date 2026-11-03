@@ -1,4 +1,6 @@
-# Restore transport workaround
+# Native diagnostics and workarounds
+
+## Restore transport workaround
 
 `usbmuxd_send_fix.c` normalizes positive error returns from `usbmuxd_send`
 to negative errno. It is preloaded only by the host firmware creation script.
@@ -20,3 +22,32 @@ installed library and with `LD_PRELOAD` to reproduce the difference. A full
 iOS 26.6.2 restore completed with the shim enabled on 2026-11-02 at 16:08 UTC;
 the host returned `DONE` and resumed at CFW installation. The socket-pair
 check separately verifies the disconnect-error path.
+
+## ARM64 Linux memory-access check
+
+The optional [ARM memory check](check_arm_memory.c) probes four instructions
+used by the graphics runtime's ARM implementation: `ldar`, `ldapr`, `stlr`, and
+`ldsetal`. It checks the Linux ATOMICS, LRCPC and USCAT capability bits, then
+checks the returned or stored values at every byte offset from 0 through 12
+inside a 16-byte-aligned granule. Each four-byte operation runs in a separate
+child with a two-second alarm and core dumps disabled. A fault or wrong result
+fails the check; missing required capabilities skip execution and also fail.
+
+On an ARM64 Linux host with a compiler supporting ARMv8.4-A:
+
+```sh
+TTT_ARM_CHECK_DIR=$(mktemp -d)
+cc -std=c11 -O2 -Wall -Wextra -Werror -march=armv8.4-a \
+  native/check_arm_memory.c -o "$TTT_ARM_CHECK_DIR/check"
+timeout 30s "$TTT_ARM_CHECK_DIR/check" > "$TTT_ARM_CHECK_DIR/result.json"
+```
+
+Require exit status zero, `case_count: 52`, and
+`all_values_correct_without_fault: true`. A tool or system-call error can leave
+partial output. Keep the result outside the repository. This program uses only
+its own anonymous memory and requires no GPU, guest or elevated privileges.
+
+This is a host compatibility probe, not a concurrency test. It does not prove
+atomicity under concurrent access, memory ordering, accesses crossing a granule,
+guest page-size compatibility, successful runtime compilation, iOS startup or
+Safari fidelity. ARM runtime support still requires those separate checks.
