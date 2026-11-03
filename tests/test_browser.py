@@ -2,7 +2,7 @@ import base64
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from tungtungtungbrowser import Browser, GuestError, Screenshot
 
@@ -39,6 +39,43 @@ class NativeFixture:
 
 
 class BrowserContractTest(unittest.TestCase):
+    def test_launch_preserves_native_foreground_result_without_navigation_or_polling(self):
+        for native in [{'pid': 301, 'frontmost_verified': True},
+                       {'pid': 0, 'frontmost_verified': False, 'warning': 'Foreground unknown'}]:
+            with self.subTest(native=native):
+                guest = Mock()
+                guest.call.side_effect = [{'locked': False}, native]
+                result = Browser(guest=guest).launch()
+                self.assertEqual(guest.call.call_args_list, [
+                    call('screen.unlock', timeout=60),
+                    call('apps.launch', bundle_id='com.apple.mobilesafari')])
+                guest.open.assert_not_called()
+                self.assertEqual({k: result[k] for k in native}, native)
+                self.assertFalse(result['navigation_verified'])
+                self.assertFalse(result['visual_readiness_verified'])
+
+    def test_launch_does_not_continue_after_failed_unlock_or_repeat_uncertain_actions(self):
+        for replies in [[{'locked': True}], [None], [GuestError('unlock timed out')],
+                        [{'locked': False}, GuestError('launch connection reset')]]:
+            with self.subTest(replies=replies):
+                guest = Mock()
+                guest.call.side_effect = replies
+                with self.assertRaises(GuestError):
+                    Browser(guest=guest).launch()
+                self.assertEqual(guest.call.call_count, len(replies))
+                guest.open.assert_not_called()
+
+    def test_malformed_launch_reply_never_becomes_foreground_success(self):
+        for reply in [None, {}, {'pid': True, 'frontmost_verified': True},
+                      {'pid': -1, 'frontmost_verified': True},
+                      {'pid': 301, 'frontmost_verified': 'true'}]:
+            with self.subTest(reply=reply):
+                guest = Mock()
+                guest.call.side_effect = [{'locked': False}, reply]
+                with self.assertRaisesRegex(GuestError, 'launch response'):
+                    Browser(guest=guest).launch()
+                self.assertEqual(guest.call.call_count, 2)
+
     def test_home_failure_or_malformed_acknowledgement_never_repeats_input(self):
         for result in [None, {}, {'button': 'wake'}, GuestError('transport timed out')]:
             with self.subTest(result=result):

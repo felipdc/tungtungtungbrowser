@@ -207,6 +207,9 @@ On the Linux runtime host, or inside its iPhone container:
 from tungtungtungbrowser import Browser
 
 browser = Browser(cid=3, timeout=120)
+launch = browser.launch()
+if not launch['frontmost_verified']:
+    raise RuntimeError('Inspect the device: Safari foreground was not confirmed')
 browser.goto('https://example.com/')
 # Wait for your application's expected state before using the captured content.
 browser.screenshot('/absolute/path/to/captures/example.jpg')
@@ -214,6 +217,21 @@ browser.tap(120, 240)
 browser.type_text('hello')
 browser.press('return')
 ```
+
+`launch()` unlocks the running guest and requests native Safari launch once.
+The CLI equivalent is `python3 -m tungtungtungbrowser launch`. Use it before
+the first navigation after a guest boot, or use `measure_ready.py` when you
+also need startup timings and a screenshot. It starts the app inside an
+already-running VM. URL opening alone can be acknowledged while the device
+remains on Home; an observed request loaded only after Safari was explicitly
+launched. Do not use an `open()` acknowledgement as an app-launch check.
+
+The launch result retains native `pid`, `frontmost_verified` and any warning.
+An unverified response is returned for inspection, including PID `0`; it is
+not silently retried. `visual_readiness_verified` and `navigation_verified`
+remain `false` even when native foreground identity is confirmed. Inspect the
+display and verify page content separately. Unlock failure prevents launch,
+and a failed or malformed launch response stops without further guest actions.
 
 `goto()` explicitly opens the URL in Safari through the native operating-system
 API. `goto(reuse_tab=True)` is an experimental option that types into the active

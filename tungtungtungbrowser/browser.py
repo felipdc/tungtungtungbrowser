@@ -91,9 +91,25 @@ class Browser:
     def unlock(self):
         with self._lock:
             result = self.guest.call('screen.unlock', timeout=60)
-            if result.get('locked') is not False:
+            if not isinstance(result, dict) or result.get('locked') is not False:
                 raise GuestError('Screen remains locked')
             return result
+
+    def launch(self):
+        """Unlock and request native Safari launch once, without navigating.
+
+        Preserve the native foreground result, including an unverified launch.
+        The caller must inspect the display separately; a transport failure
+        never triggers another launch or unlock request.
+        """
+        with self._lock:
+            self.unlock()
+            result = self.guest.call('apps.launch', bundle_id=SAFARI)
+            if (not isinstance(result, dict) or type(result.get('pid')) is not int
+                    or result['pid'] < 0 or type(result.get('frontmost_verified')) is not bool):
+                raise GuestError('Invalid native Safari launch response')
+            return {**result, 'browser': SAFARI, 'requested': True,
+                    'visual_readiness_verified': False, 'navigation_verified': False}
 
     def goto(self, url, *, reuse_tab=False):
         """Request navigation through native Safari URL opening.

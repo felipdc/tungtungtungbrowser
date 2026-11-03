@@ -108,6 +108,8 @@ class GuestContractTest(unittest.TestCase):
                     result = {"locked": test.locked, "screen_off": False}
                 if data['method'] == 'input.button':
                     result = {'button': data['params']['name']}
+                if data['method'] == 'apps.launch':
+                    result = {'pid': 301, 'frontmost_verified': True}
                 if data['method'] == 'logs.syslog':
                     result = test.log_result
                 if data['method'] == 'notify.state':
@@ -158,6 +160,19 @@ class GuestContractTest(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue()), {'button': 'home', 'home_screen_verified': False})
         self.assertEqual([(r['method'], r['params']) for r in self.requests],
                          [('input.button', {'name': 'home'})])
+
+    def test_launch_cli_unlocks_and_launches_safari_without_opening_a_url(self):
+        stdout = io.StringIO()
+        with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), contextlib.redirect_stdout(stdout):
+            main(['launch'])
+        result = json.loads(stdout.getvalue())
+        self.assertTrue(result['frontmost_verified'])
+        self.assertEqual(result['pid'], 301)
+        self.assertFalse(result['navigation_verified'])
+        self.assertFalse(result['visual_readiness_verified'])
+        self.assertEqual([(r['method'], r['params']) for r in self.requests], [
+            ('screen.unlock', {'timeout': 60}),
+            ('apps.launch', {'bundle_id': 'com.apple.mobilesafari'})])
 
     def test_screen_state_cli_reads_notifications_without_input_or_readiness_claim(self):
         stdout = io.StringIO()
