@@ -22,6 +22,45 @@ MAX_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_MESSAGE_BYTES = 1024 * 1024
 
 
+def _png_from_ppm(data):
+    """Encode QEMU's raw RGB rows after releasing the monitor connection.
+
+    The pinned QEMU writes pixman's four-byte-aligned row stride into PPM.
+    Accept that layout and ordinary packed PPM; discard only known row padding.
+    """
+    if not isinstance(data, bytes) or len(data) > MAX_IMAGE_BYTES:
+        raise GuestError('Display capture has invalid PPM data or size')
+    try:
+        magic, dimensions, maximum, _ = data[:64].split(b'\n', 3)
+        width, height = map(int, dimensions.split())
+    except ValueError as exc:
+        raise GuestError('Display capture has an invalid PPM header') from exc
+    if (magic != b'P6' or maximum != b'255' or width < 1 or height < 1
+            or width * height > 32_000_000):
+        raise GuestError('Display capture has unsupported PPM geometry or encoding')
+    header_bytes = len(magic) + len(dimensions) + len(maximum) + 3
+    pixels = memoryview(data)[header_bytes:]
+    row_bytes = width * 3
+    stride = row_bytes if len(pixels) == row_bytes * height else (row_bytes + 3) & ~3
+    if len(pixels) != stride * height:
+        raise GuestError('Display capture has truncated or extra PPM pixel data')
+
+    encoder = zlib.compressobj(level=3)
+    compressed = []
+    for offset in range(0, len(pixels), stride):
+        compressed.append(encoder.compress(b'\0'))  # PNG row filter: none.
+        compressed.append(encoder.compress(pixels[offset:offset + row_bytes]))
+    compressed.append(encoder.flush())
+
+    def chunk(kind, payload):
+        checksum = zlib.crc32(payload, zlib.crc32(kind))
+        return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', checksum)
+
+    return (b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', b''.join(compressed)) + chunk(b'IEND', b''))
+
+
 @dataclass(frozen=True)
 class DisplayScreenshot:
     png: bytes
@@ -143,9 +182,11 @@ class _Monitor:
 def capture_display(qmp_socket, *, timeout=15):
     """Return a PNG of the virtual display, including display-device overlays.
 
-    Does not contact vphoned, navigate, or assert that Safari is ready. The
-    timeout bounds the QMP session; failure cleanup gets at most one extra
-    second. Native input uses screen points; this image reports pixels only.
+    Does not contact vphoned, navigate, or assert that Safari is ready. QEMU
+    writes raw PPM; PNG encoding runs here after closing the monitor socket.
+    The timeout bounds the QMP session; failure cleanup gets at most one extra
+    second. Raw capture is limited to 32 MiB. Native input uses screen points;
+    this image reports pixels only.
     """
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 300:
         raise ValueError('Display timeout must be between 0 and 300 seconds')
@@ -168,7 +209,7 @@ def capture_display(qmp_socket, *, timeout=15):
             if isinstance(fdset, bool) or not isinstance(fdset, int) or fdset < 0:
                 raise GuestError('QMP returned an invalid file-descriptor set')
             try:
-                monitor.call('screendump', {'filename': f'/dev/fdset/{fdset}', 'format': 'png'})
+                monitor.call('screendump', {'filename': f'/dev/fdset/{fdset}', 'format': 'ppm'})
             except BaseException:
                 # A timed-out request may still run in QEMU. Queue removal on
                 # this connection, then close; never retry the capture silently.
@@ -181,6 +222,7 @@ def capture_display(qmp_socket, *, timeout=15):
             else:
                 monitor.call('remove-fd', {'fdset-id': fdset})
             output.seek(0)
-            return DisplayScreenshot.from_png(output.read(MAX_IMAGE_BYTES + 1))
+            raw = output.read(MAX_IMAGE_BYTES + 1)
+        return DisplayScreenshot.from_png(_png_from_ppm(raw))
     except (OSError, ValueError) as exc:
         raise GuestError(f'Display capture failed: {exc}') from exc

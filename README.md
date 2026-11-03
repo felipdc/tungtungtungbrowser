@@ -185,6 +185,13 @@ native device geometry when converting pixels to touch coordinates. A valid
 image alone does not establish browser readiness or successful page loading.
 Capture failures are reported without silently switching backends.
 
+The QMP backend requests raw RGB frames and encodes PNG in the controller after
+releasing the monitor connection. This reduces time spent encoding under the
+emulator's global lock. It handles the pinned QEMU's row padding without changing
+pixel geometry. Raw frames are bounded to 32 MiB; encoded files may be larger
+than QEMU's own PNG output. This changes capture overhead, not rendering fidelity
+or cold-start readiness.
+
 QMP is a VM administration socket: keep the VM directory private and use one
 controller at a time. The SDK opens a short-lived connection for each capture
 and does not expose QMP over the network.

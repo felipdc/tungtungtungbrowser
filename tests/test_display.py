@@ -15,6 +15,7 @@ import zlib
 
 from tungtungtungbrowser import Browser, DisplayScreenshot, GuestError, capture_display
 from tungtungtungbrowser.cli import capture
+from tungtungtungbrowser.display import _png_from_ppm
 
 
 def chunk(kind, data):
@@ -24,6 +25,21 @@ def chunk(kind, data):
 def png():
     return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
             + chunk(b'IDAT', zlib.compress(b'\x00\x12\x34\x56')) + chunk(b'IEND', b''))
+
+
+def ppm():
+    return b'P6\n1 1\n255\n\x12\x34\x56\0'
+
+
+def png_rows(data):
+    """Read the generated PNG's scanlines independently of the PPM encoder."""
+    offset, compressed = 8, bytearray()
+    while offset < len(data):
+        length = struct.unpack_from('>I', data, offset)[0]
+        if data[offset + 4:offset + 8] == b'IDAT':
+            compressed.extend(data[offset + 8:offset + 8 + length])
+        offset += length + 12
+    return zlib.decompress(compressed)
 
 
 @contextmanager
@@ -79,7 +95,7 @@ def monitor_fixture(mode='success', image=None):
                                         connection.sendall(b'{"event":"DISPLAY_UPDATE"}\n')
                                         time.sleep(0.01)
                                 else:
-                                    os.write(received_fd, png() if image is None else image)
+                                    os.write(received_fd, ppm() if image is None else image)
                             if command == 'remove-fd':
                                 state['removed'] = True
                                 os.close(received_fd)
@@ -112,14 +128,14 @@ class DisplayCaptureTest(unittest.TestCase):
                 def call(self, *args, **kwargs):
                     raise AssertionError('Host capture must not contact the guest')
             image = Browser(guest=NoGuestCalls(), qmp_socket=socket_path).screenshot(Path(folder) / 'screen.png')
-            self.assertEqual(image.png, png())
+            self.assertEqual(png_rows(image.png), b'\0\x12\x34\x56')
             self.assertEqual(image.metadata()['mime_type'], 'image/png')
             self.assertIsNone(image.coordinate_scale)
             self.assertEqual((image.width, image.height), (1, 1))
             with self.assertRaises(FileExistsError):
                 image.save(Path(folder) / 'screen.png')
         self.assertEqual(state['access_mode'], os.O_WRONLY)
-        self.assertEqual(state['screendump'], {'filename': '/dev/fdset/7', 'format': 'png'})
+        self.assertEqual(state['screendump'], {'filename': '/dev/fdset/7', 'format': 'ppm'})
         self.assertTrue(state['removed'])
 
     def test_capture_manifest_names_png_and_retains_unverified_navigation(self):
@@ -139,7 +155,7 @@ class DisplayCaptureTest(unittest.TestCase):
             self.assertIn('screenshot.png', result['artifacts'])
             self.assertNotIn('screenshot.jpg', result['artifacts'])
             self.assertFalse(result['navigation_verified'])
-            self.assertEqual((destination / 'screenshot.png').read_bytes(), png())
+            self.assertEqual(png_rows((destination / 'screenshot.png').read_bytes()), b'\0\x12\x34\x56')
             self.assertEqual(json.loads((destination / 'screenshot.json').read_text())['source'], 'qemu_display')
 
     def test_qmp_error_removes_descriptor_and_preserves_existing_output(self):
@@ -165,11 +181,25 @@ class DisplayCaptureTest(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 1)
 
     def test_empty_or_corrupt_capture_is_not_success(self):
-        for data in [b'', png()[:-1], png() + b'garbage', png().replace(b'IDAT', b'IDAX')]:
+        for data in [b'', ppm()[:-2], ppm() + b'garbage', png()]:
             with self.subTest(data=data[:8]), monitor_fixture(image=data) as (socket_path, state):
                 with self.assertRaisesRegex(GuestError, 'Display capture'):
                     capture_display(socket_path)
             self.assertTrue(state['removed'])
+
+    def test_ppm_padding_is_removed_without_losing_pixel_whitespace(self):
+        # Two RGB rows, each six bytes; QEMU adds two bytes of row padding.
+        first, second = b'\x0a\x20\x0d\xff\x00\x80', b'\x01\x02\x03\x04\x05\x06'
+        header = b'P6\n2 2\n255\n'
+        for pixels in (first + second, first + b'\xde\xad' + second + b'\xbe\xef'):
+            image = DisplayScreenshot.from_png(_png_from_ppm(header + pixels))
+            self.assertEqual((image.width, image.height), (2, 2))
+            self.assertEqual(png_rows(image.png), b'\0' + first + b'\0' + second)
+        for data in (header + first, header + first + second + b'\0',
+                     b'P6\n0 2\n255\n', b'P6\n999999 999999\n255\n',
+                     b'P6\n1 1\n65535\n' + b'\0' * 6):
+            with self.subTest(data=data[:30]), self.assertRaises(GuestError):
+                _png_from_ppm(data)
 
     def test_png_geometry_is_not_inferred_from_untrusted_metadata(self):
         data = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 0, 1, 8, 2, 0, 0, 0))

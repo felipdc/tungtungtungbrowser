@@ -49,8 +49,12 @@ encodes JPEG. It does not take the screenshot through browser JavaScript.
 When a local QMP socket is configured, `tungtungtungbrowser/display.py` instead
 captures the rendered display through QEMU's `screendump` operation. It passes
 an anonymous write-only file descriptor using `SCM_RIGHTS` and `add-fd`, reads
-the resulting PNG, and removes the descriptor set. The capture bounds its
-deadline and output size and validates PNG structure and checksums. This path
+raw PPM, and removes the descriptor set. After closing the monitor connection,
+the controller validates the RGB geometry and row stride and encodes PNG. The
+pinned QEMU's [PPM writer](https://github.com/YahiaAngelo/qemu-vphone/blob/4da65a96e039413faff00ed52e3d956bf931bfd9/ui/ui-qmp-cmds.c)
+includes pixman row padding; the controller removes that padding while retaining
+every RGB pixel. The QMP session has a deadline, raw and encoded output have
+size limits, and the final PNG is checked for structure and checksums. This path
 avoids guest image encoding and preserves the framebuffer's pixel dimensions;
 it does not determine UIKit's coordinate scale. It also includes system dialogs
 and overlays visible on the display. The QMP socket remains a privileged local
