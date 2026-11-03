@@ -265,7 +265,10 @@ The base Compose file defaults to `0` (disabled). Intervals from 10 to 3,600
 seconds are accepted; `0` explicitly disables maintenance in either setup.
 
 The launcher waits for daemon health, offers host time, then waits the interval
-after each successful response. Its health checks may retry during startup;
+after each successful response. Health requests use a five-second socket
+timeout; clock offers use 30 seconds to accommodate the native operation's
+multiple waits. Both settings are recorded in `launch.json`. Health checks may
+retry during startup;
 failed clock offers are never retried. Manual guest time remains untouched and
 ends maintenance. A clock failure is recorded without restarting the guest.
 Use an accurately synchronized host clock and review `clock_maintenance` in

@@ -13,7 +13,8 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
-from tungtungtungbrowser.clock import ClockMaintenance
+from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECONDS,
+                                     HEALTH_RPC_TIMEOUT_SECONDS)
 
 
 def stop_guest(process, guest, grace_seconds, *, clock=None):
@@ -113,10 +114,11 @@ def main():
             start_wall = time.time()
             clock = None
             if args.clock_interval_seconds:
-                clock = ClockMaintenance(Guest(args.cid, timeout=5),
+                clock = ClockMaintenance(Guest(args.cid, timeout=CLOCK_RPC_TIMEOUT_SECONDS),
                                          vm / ('clock-' + uuid.uuid4().hex + '.json'),
                                          args.clock_interval_seconds,
-                                         launch_started_unix=start_wall)
+                                         launch_started_unix=start_wall,
+                                         health_guest=Guest(args.cid, timeout=HEALTH_RPC_TIMEOUT_SECONDS))
             process = subprocess.Popen([str(source / 'run-vphone.sh'), str(vm),
                                         '-qmp', f'unix:{qmp},server=on,wait=off',
                                         '-netdev', 'user,id=ttt-net,ipv6=off',
@@ -139,6 +141,8 @@ def main():
                        "clock_maintenance": {
                            "enabled": clock is not None,
                            "interval_seconds": args.clock_interval_seconds,
+                           "health_timeout_seconds": HEALTH_RPC_TIMEOUT_SECONDS,
+                           "offer_timeout_seconds": CLOCK_RPC_TIMEOUT_SECONDS,
                            "state_file": str(clock.path) if clock is not None else None},
                        "cid": args.cid, "qmp": str(qmp), "safari_ready": False}
             (vm / 'launch.json').write_text(json.dumps(started, indent=2))

@@ -1,5 +1,7 @@
 """Exercise real worker threads, preserved state and stop/request ordering."""
 import contextlib
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
@@ -8,8 +10,9 @@ import threading
 import time
 import unittest
 
-from tungtungtungbrowser.clock import ClockMaintenance
-from tungtungtungbrowser.guest import GuestError
+from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECONDS,
+                                     HEALTH_RPC_TIMEOUT_SECONDS)
+from tungtungtungbrowser.guest import Guest, GuestError
 
 
 class ClockMaintenanceTest(unittest.TestCase):
@@ -72,6 +75,61 @@ class ClockMaintenanceTest(unittest.TestCase):
         self.assertEqual(state['status'], 'failed')
         self.assertIn('may have reached guest', state['error'])
         self.assertEqual(worker.stop()['status'], 'failed')
+
+    def test_slow_clock_reply_outlives_health_timeout_without_another_offer(self):
+        entered = threading.Event()
+        requests, connections = [], []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def reply(self, value):
+                body = json.dumps(value).encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                requests.append(('health', self.path))
+                self.reply({'status': 'ok'})
+
+            def do_POST(self):
+                request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                requests.append(('offer', request))
+                entered.set()
+                # A valid reply after the former shared five-second timeout.
+                time.sleep(HEALTH_RPC_TIMEOUT_SECONDS + 0.2)
+                self.reply({'id': request['id'], 'type': 'response', 'result': {
+                    'automatic': True, 'changed': True, 'time': 123, 'offset': 2}})
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+
+        def client(kind, timeout):
+            def connect():
+                connections.append(kind)
+                return http.client.HTTPConnection(*server.server_address, timeout=timeout)
+            return Guest(connection_factory=connect)
+
+        worker = self.worker(client('offer', CLOCK_RPC_TIMEOUT_SECONDS),
+                             health_guest=client('health', HEALTH_RPC_TIMEOUT_SECONDS))
+        worker.start()
+        self.assertTrue(entered.wait(2))
+        state = worker.stop()
+        self.assertEqual(connections, ['health', 'offer'])
+        self.assertEqual([kind for kind, _ in requests], ['health', 'offer'])
+        self.assertEqual(requests[1][1]['method'], 'time.clock')
+        self.assertEqual(set(requests[1][1]['params']), {'time'})
+        self.assertEqual(state['status'], 'stopped')
+        self.assertEqual(state['offers'], 1)
+        self.assertTrue(state['last_response']['changed'])
+        self.assertGreater(state['last_offer_seconds'], HEALTH_RPC_TIMEOUT_SECONDS)
 
     def test_stop_during_health_never_starts_clock_offer(self):
         entered, release = threading.Event(), threading.Event()

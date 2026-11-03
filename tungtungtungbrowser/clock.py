@@ -9,6 +9,11 @@ import time
 
 from .guest import GuestError
 
+# The pinned daemon may wait 3 s for automatic-time state, then perform six
+# offers with a 3 s native wait and 0.3 s settling each. Health stays short.
+CLOCK_RPC_TIMEOUT_SECONDS = 30
+HEALTH_RPC_TIMEOUT_SECONDS = 5
+
 
 class ClockMaintenance:
     """Wait for read-only health, then make serial offers until stopped or failed.
@@ -18,10 +23,11 @@ class ClockMaintenance:
     """
 
     def __init__(self, guest, path, interval, *, launch_started_unix,
-                 startup_timeout=600, health_interval=5):
+                 startup_timeout=600, health_interval=5, health_guest=None):
         if not 10 <= interval <= 3600:
             raise ValueError('Clock interval must be between 10 and 3600 seconds')
         self.guest = guest
+        self.health_guest = guest if health_guest is None else health_guest
         self.path = Path(path)
         self.interval = interval
         self.startup_timeout = startup_timeout
@@ -84,7 +90,7 @@ class ClockMaintenance:
                 raise GuestError('Clock maintenance guest-health deadline exceeded')
             self.state['health_checks'] += 1
             try:
-                self.guest.health()
+                self.health_guest.health()
                 break
             except GuestError as exc:
                 # Only read-only health is retried. A clock offer is never retried

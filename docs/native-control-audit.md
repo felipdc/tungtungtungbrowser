@@ -107,6 +107,27 @@ concurrently, and its native clock operation has multiple bounded waits.
 Clock maintenance under slow native inspection remains a reliability task;
 the initial startup barrier does not solve that later failure.
 
+The launcher previously used the same five-second socket timeout for health
+and clock requests. The pinned
+[`GuestAPI+Clock.swift`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI%2BClock.swift)
+first reads automatic-time state, then may make six native offers with up to
+0.3 seconds of settling after each. Each state read and offer has a three-second
+native wait in
+[`vphoned_clock.m`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Native/vphoned_clock.m).
+Those explicit waits can total 22.8 seconds for the time-only request; lock
+contention, scheduling and framework work can add time. Five seconds can
+therefore expire before the native operation's own waits finish.
+
+The launcher now gives clock offers a 30-second socket timeout while keeping
+startup health checks at five seconds through a separate client. It still
+sends each request once and joins the clock worker before shutdown. A local
+HTTP transport regression test accepts a valid clock reply arriving after
+five seconds, preserves it during stop, and confirms there was only one offer.
+This corrects the timeout mismatch; it does not yet establish that slow native
+inspection is reliable or explain the earlier guest timeout. The current
+renderer experiment retains the previous launcher for a consistent comparison;
+native validation of the longer timeout is pending.
+
 ## Screen evidence
 
 The same vphoned dispatcher handles `screen.screenshot` through
