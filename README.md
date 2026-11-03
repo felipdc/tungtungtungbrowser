@@ -18,6 +18,9 @@ limits and fast cold startup remain under development.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.
+An ARM64 build booted iOS, but its initial Safari window and local-page checks
+failed. Successful compilation and guest startup do not establish ARM browser
+support.
 No hardware GPU or GPU device passthrough is used. The host needs
 `/dev/vhost-vsock`; firmware creation additionally needs USB/IP-capable kernel
 modules and matching kernel headers. Containers alone cannot supply these
@@ -228,6 +231,15 @@ browser.tap(120, 240)
 browser.type_text('hello')
 browser.press('return')
 ```
+
+`tap(x, y)` takes native screen points. It sends one balanced native touch
+sequence with a 50 ms requested contact delay, calculating both positions
+before contact starts. Its result retains the native sequence's measured
+`duration_ms` and released-finger state; scheduling can make the duration longer
+than requested. The SDK does not repeat a gesture or fall back to another input
+method after an error. An acknowledged gesture still needs an observed UI or
+page result. See the [native input audit](docs/native-control-audit.md#tap-timing)
+for the timing problem this avoids and the remaining touch-fidelity work.
 
 `launch()` unlocks the running guest and requests native Safari launch once.
 The CLI equivalent is `python3 -m tungtungtungbrowser launch`. Use it before

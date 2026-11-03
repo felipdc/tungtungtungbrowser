@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock, call
 
 from tungtungtungbrowser import Browser, GuestError, Screenshot
+from tungtungtungbrowser.guest import Guest
 
 
 class NativeFixture:
@@ -30,6 +31,10 @@ class NativeFixture:
             return {'locked': self.locked}
         if method == 'apps.foreground':
             return {'bundle_id': self.foreground, 'verified': self.verified, 'pid': 301}
+        if method == 'input.touch_sequence':
+            if self.focus_on_tap:
+                self.editing = True
+            return {'events': 2, 'normalized': False, 'finger_down': False, 'duration_ms': 50}
         if method == 'input.paste' and not self.drop_text:
             self.address_value = params['text']
         if method == 'ui.tree':
@@ -46,10 +51,7 @@ class NativeFixture:
         return {'accepted': True}
 
     def tap(self, x, y):
-        result = self.call('input.tap', x=x, y=y)
-        if self.focus_on_tap:
-            self.editing = True
-        return result
+        return Guest.tap(self, x, y)
 
     def open(self, url):
         return self.call('apps.open_url', url=url, bundle_id='com.apple.mobilesafari')
@@ -151,7 +153,7 @@ class BrowserContractTest(unittest.TestCase):
         self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
         self.assertEqual(names.count('ui.tree'), 3)  # Two before typing; one URL readback.
         self.assertEqual(names.count('input.paste'), 1)
-        self.assertNotIn('input.tap', names)
+        self.assertNotIn('input.touch_sequence', names)
         self.assertEqual(names[:5], ['screen.unlock', 'apps.foreground', 'input.key',
                                      'ui.tree', 'ui.tree'])
 
@@ -167,7 +169,7 @@ class BrowserContractTest(unittest.TestCase):
                 names = [method for method, _ in guest.calls]
                 self.assertEqual(names.count('ui.tree'), 2)
                 self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
-                self.assertNotIn('input.tap', names)
+                self.assertNotIn('input.touch_sequence', names)
                 self.assertNotIn('input.paste', names)
                 self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
 
@@ -198,14 +200,16 @@ class BrowserContractTest(unittest.TestCase):
         guest.editing = False
         result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertEqual(result['method'], 'native_address_bar')
-        self.assertEqual([params for method, params in guest.calls if method == 'input.tap'],
-                         [{'x': 152.5, 'y': 794.0}])
+        self.assertEqual([params for method, params in guest.calls if method == 'input.touch_sequence'],
+                         [{'normalized': False, 'events': [
+                             {'phase': 'down', 'x': 152.5, 'y': 794.0, 'delay_ms': 50},
+                             {'phase': 'up', 'x': 152.5, 'y': 794.0, 'delay_ms': 0}]}])
         names = [method for method, _ in guest.calls]
-        self.assertLess(names.index('input.tap'), names.index('input.paste'))
+        self.assertLess(names.index('input.touch_sequence'), names.index('input.paste'))
         self.assertIn(('input.key', {'name': 'cmd+a'}), guest.calls)
 
     def test_unconfirmed_or_failed_focus_never_sends_text_or_repeats_tap(self):
-        for failure in [None, 'input.tap']:
+        for failure in [None, 'input.touch_sequence']:
             with self.subTest(failure=failure):
                 guest = NativeFixture()
                 guest.editing = guest.focus_on_tap = False
@@ -213,7 +217,7 @@ class BrowserContractTest(unittest.TestCase):
                 with self.assertRaises(GuestError):
                     Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 names = [method for method, _ in guest.calls]
-                self.assertEqual(names.count('input.tap'), 1)
+                self.assertEqual(names.count('input.touch_sequence'), 1)
                 self.assertNotIn('input.paste', names)
                 self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
 
@@ -228,7 +232,7 @@ class BrowserContractTest(unittest.TestCase):
                 guest.address_frame = frame
                 with self.assertRaisesRegex(GuestError, 'focus geometry'):
                     Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
-                self.assertNotIn('input.tap', [method for method, _ in guest.calls])
+                self.assertNotIn('input.touch_sequence', [method for method, _ in guest.calls])
                 self.assertNotIn('input.paste', [method for method, _ in guest.calls])
 
     def test_invalid_url_has_no_device_side_effect(self):

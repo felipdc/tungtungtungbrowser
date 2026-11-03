@@ -47,7 +47,7 @@ class VsockHTTPConnection(http.client.HTTPConnection):
 ALLOWED_METHODS = frozenset({
     "device.snapshot", "device.info", "device.network", "device.screen",
     "screen.unlock", "screen.screenshot", "apps.launch", "apps.open_url", "apps.foreground",
-    "input.tap", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
+    "input.tap", "input.touch_sequence", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
     "ui.tree", "ui.ocr", "services.profile", "services.profile.apply", "time.timezone",
     "system.shutdown", "time.clock",
     "logs.syslog", "notify.state",
@@ -210,6 +210,20 @@ class Guest:
         return result
 
     def tap(self, x, y):
-        if not all(math.isfinite(v) and v >= 0 for v in (x, y)):
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                   and math.isfinite(v) and v >= 0 for v in (x, y)):
             raise ValueError("Tap coordinates must be finite, nonnegative screen points")
-        return self.call("input.tap", x=x, y=y)
+        # The pinned helper's input.tap may refresh screenshot-backed geometry
+        # between down and up. A sequence maps both points before contact starts,
+        # so a slow geometry read cannot itself turn the tap into a long press.
+        result = self.call('input.touch_sequence', normalized=False, events=[
+            {'phase': 'down', 'x': x, 'y': y, 'delay_ms': 50},
+            {'phase': 'up', 'x': x, 'y': y, 'delay_ms': 0},
+        ])
+        if (not isinstance(result, dict)
+                or type(result.get('events')) is not int or result['events'] != 2
+                or result.get('normalized') is not False
+                or result.get('finger_down') is not False
+                or type(result.get('duration_ms')) is not int or result['duration_ms'] < 0):
+            raise GuestError('Invalid native tap sequence response; input is not repeated')
+        return {'x': x, 'y': y, 'method': 'native_touch_sequence', 'sequence': result}

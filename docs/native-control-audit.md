@@ -179,6 +179,52 @@ clock maintenance remained active. This validates accepting slow native replies
 in that run. It does not prove clock accuracy between offers, rule out future
 timeouts, explain every earlier failure, or establish faster cold startup.
 
+## Tap timing
+
+The pinned Icli [native input helper](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliPrivate/IcliPrivate.m)
+maps each phase of `input.tap` through screenshot-backed interface geometry.
+Its geometry cache expires after one second. A slow refresh between finger down
+and finger up can extend contact beyond the requested 50 ms. In one CPU-only
+native trial, the request took 11.47 seconds and opened the Home icon's
+long-press menu.
+
+`Browser.tap` now uses the daemon's
+[`input.touch_sequence`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI+Input.swift)
+operation. IcliKit's
+[`touchSequence`](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Input/RawInput.swift)
+maps all coordinates before dispatching the first contact. The SDK explicitly
+supplies `normalized: false` for screen-point coordinates, then one down event
+with a 50 ms delay and one up event at the same position. It requires a native
+reply reporting two events, point coordinates, a released finger and a
+nonnegative measured duration. Transport failures, native errors and malformed
+replies never cause a second gesture or an `input.tap` fallback. Contract tests
+cover those outcomes, including a timeout after sending the request.
+
+A direct native sequence trial reported 146 ms for the gesture and a released
+finger. The complete RPC took 9.56 seconds, including work before contact. It
+avoided the long-press menu and triggered application activation, but the app
+then exceeded its window-creation deadline. That trial establishes neither
+successful page interaction nor faster application startup. The sequence uses
+the existing native contact fields; it does not resolve the radius/force
+discrepancies tracked in the [roadmap](roadmap.md).
+
+A subsequent x86_64 Safari check used the SDK sequence for automatic address
+field focus and loaded the local diagnostic page in the existing tab. The
+page rendered its reference canvas, returned both worker observations and
+reported no WebGL error or lost context. A separate `Browser.tap` on its button
+produced trusted pointer, touch and click events, saved an input callback and
+visibly changed the button text. The native gesture reported 156 ms; the whole
+RPC took 20.26 seconds. Native geometry preparation and page event delivery
+remain slow even when contact itself is brief.
+
+These checks preserved a failed cold-launch request and a later clock-offer
+timeout. They validate functional input, not reliable startup or sustained
+clock accuracy. Constructed Touch objects returned the expected values through
+all four property-reading paths. Native contacts retained the same unexpected
+radius and force values through every path, including prototype getters. The
+remaining field discrepancy is therefore not explained by the recorder's read
+order; its native cause is still unresolved.
+
 ## Screen evidence
 
 The same vphoned dispatcher handles `screen.screenshot` through

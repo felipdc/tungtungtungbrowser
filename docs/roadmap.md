@@ -28,9 +28,15 @@ this repository.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.
       The diagnostic now reads constructed and native Touch objects through
-      the same literal, indexed and prototype-getter paths. Validate those
-      observations on the guest before attributing the remaining discrepancy
-      to a particular native conversion.
+      the same literal, indexed and prototype-getter paths. A native Safari
+      check reproduced the field discrepancy through all those readers while
+      constructed controls remained correct. Isolate the native conversion;
+      changing the recorder's read order does not resolve the discrepancy.
+- [ ] Verify native touchscreen registration during readiness. A USB device
+      can be present in the emulator while iOS has no main-screen digitizer;
+      an acknowledged input request then has no UI effect. Validate detection
+      and bounded recovery without restarting the guest or hiding the original
+      failure. Keep gesture timing and contact-field fidelity as separate checks.
 - [ ] Validate repeated navigation, worker consistency, native TLS and proxy
       failure/recovery behavior.
 

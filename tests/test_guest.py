@@ -16,6 +16,18 @@ from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, SC
 
 
 class GuestTransportTest(unittest.TestCase):
+    def test_tap_timeout_does_not_repeat_or_fall_back_after_sending(self):
+        connection = Mock()
+        connection.getresponse.side_effect = TimeoutError('timed out')
+        guest = Guest(connection_factory=lambda: connection)
+        with self.assertRaises(GuestTransportError) as raised:
+            guest.tap(120, 240)
+        self.assertTrue(raised.exception.request_may_have_been_sent)
+        connection.request.assert_called_once()
+        body = connection.request.call_args.kwargs['body']
+        self.assertEqual(json.loads(body)['method'], 'input.touch_sequence')
+        connection.close.assert_called_once()
+
     def test_short_http_body_is_a_transport_failure_even_if_it_is_valid_json(self):
         for payload in (b'{"status":"ok"}', b'{"status":"o'):
             with self.subTest(payload=payload):
@@ -129,6 +141,8 @@ class GuestContractTest(unittest.TestCase):
                            "count": 1, "truncated": True, "seconds": 2}
         self.clock_result = {'time': 1800000000.0, 'automatic': True,
                              'changed': True, 'offset': 120.0}
+        self.tap_result = {'events': 2, 'normalized': False,
+                           'finger_down': False, 'duration_ms': 51}
         test = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -152,6 +166,8 @@ class GuestContractTest(unittest.TestCase):
                     result = test.log_result
                 if data['method'] == 'time.clock':
                     result = test.clock_result
+                if data['method'] == 'input.touch_sequence':
+                    result = test.tap_result
                 if data['method'] == 'notify.state':
                     name = data['params']['name']
                     result = (test.notification_override if test.notification_override is not None
@@ -192,6 +208,41 @@ class GuestContractTest(unittest.TestCase):
         self.guest.shutdown()
         self.assertEqual(self.requests[0]['method'], 'system.shutdown')
         self.assertEqual(self.requests[0]['params'], {'force': True})
+
+    def test_tap_sends_one_balanced_sequence_in_screen_points(self):
+        result = self.guest.tap(120, 240)
+        self.assertEqual(result, {'x': 120, 'y': 240, 'method': 'native_touch_sequence',
+                                  'sequence': self.tap_result})
+        self.assertEqual([(r['method'], r['params']) for r in self.requests], [
+            ('input.touch_sequence', {'normalized': False, 'events': [
+                {'phase': 'down', 'x': 120, 'y': 240, 'delay_ms': 50},
+                {'phase': 'up', 'x': 120, 'y': 240, 'delay_ms': 0},
+            ]})])
+
+    def test_invalid_tap_coordinates_send_no_input(self):
+        for value in [True, None, '120', -1, float('nan'), float('inf')]:
+            for point in [(value, 10), (10, value)]:
+                with self.subTest(point=point), self.assertRaises(ValueError):
+                    self.guest.tap(*point)
+        self.assertEqual(self.requests, [])
+
+    def test_bad_sequence_reply_never_repeats_or_falls_back_to_tap(self):
+        valid = self.tap_result
+        for result in [None, {}, [], dict(valid, events=1), dict(valid, events=True),
+                       dict(valid, normalized=True), dict(valid, finger_down=True),
+                       dict(valid, duration_ms=-1), dict(valid, duration_ms=True)]:
+            with self.subTest(result=result):
+                self.tap_result = result
+                self.requests.clear()
+                with self.assertRaisesRegex(GuestError, 'Invalid native tap sequence'):
+                    self.guest.tap(120, 240)
+                self.assertEqual([r['method'] for r in self.requests], ['input.touch_sequence'])
+
+    def test_sequence_operation_error_has_no_input_fallback(self):
+        self.method_errors.add('input.touch_sequence')
+        with self.assertRaises(GuestError):
+            self.guest.tap(120, 240)
+        self.assertEqual([r['method'] for r in self.requests], ['input.touch_sequence'])
 
     def test_clock_sync_offers_host_time_without_changing_manual_mode(self):
         self.clock_result.update(automatic=False, changed=False)
