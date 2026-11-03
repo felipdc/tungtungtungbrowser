@@ -59,7 +59,7 @@ increase startup time or cause guest process termination.
 
 A prepared guest has completed native Safari startup, local canvas/WebGL and
 worker checks, and an external HTTPS browsing observation with these settings
-on a 16 GiB Linux host:
+on both 8 GiB and 16 GiB Linux hosts with four CPU cores:
 
 ```sh
 export TTT_VM_MEMORY_GIB=2
@@ -91,9 +91,17 @@ CPU quota for emulation, rendering and control.
 
 These settings remain experimental. Separate observations have included a
 native launch response timeout, worker timeouts, and loss of visible page
-content. A successful run does not erase those failures. Build and firmware
-preparation requirements remain separate, and an 8 GiB host is still under
-validation. The default Compose limits have not changed.
+content. A successful run does not erase those failures. A later cold run
+completed native foreground verification but its local workers missed their
+15-second deadline. Treat native readiness and usable page execution as
+separate observations.
+
+One 420-second browsing recording on the 8 GiB host retained about 1.10 GiB
+of available host memory at its lowest sampled point, with no host or container
+OOM kills, CPU throttling or swap use. This is evidence for that prepared guest
+and workload, not a stable minimum capacity guarantee. Build and firmware
+preparation requirements remain separate. The default Compose limits have
+not changed.
 
 For your workload, record the following before adopting a smaller configuration:
 

@@ -28,8 +28,9 @@ firmware preparation**. A prepared guest has run with 2–3 GiB guest RAM, two t
 four virtual CPUs and a 1 GiB translation cache, but the total container also holds
 emulator, renderer, shared graphics allocations and filesystem-cache memory.
 An experimental 2 GiB, two-CPU guest has completed local rendering and external
-HTTPS browsing checks with a 6.5 GiB container limit on a 16 GiB host. Startup
-and rendering failures have also occurred; this is not a stable minimum host
+HTTPS browsing checks with a 6.5 GiB container limit on both 8 GiB and 16 GiB
+hosts with four host CPU cores. Startup, worker and rendering failures have
+also occurred; this is not a stable minimum host
 requirement. The [resource settings](docs/setup.md#resource-settings) include
 the exact profile and a measurement procedure. Linux's `file` memory counter
 includes shared memory and should
