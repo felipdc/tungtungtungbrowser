@@ -109,6 +109,20 @@ The launcher records cold-start parameters in `launch.json` and shutdown
 results in `exit.json` inside the VM bundle. It holds a disk lease throughout
 QEMU's lifetime. Upstream launchers do not honor that lease, so keep one owner.
 
+For a read-only startup diagnostic, use
+`python3 -m tungtungtungbrowser --timeout 30 screen-state` inside the container,
+or `Browser().screen_state()` in Python. This reads three native SpringBoard
+notifications without waking the display, pressing buttons, or collecting a
+full device snapshot. Before SpringBoard reports startup, `locked` and
+`screen_off` are `null` because the initial notification values are not yet
+reliable. The raw integer values are retained in `states`.
+
+The three reads are sequential, so they can straddle a screen transition or
+SpringBoard restart. The timeout applies to each request, and an error stops
+the operation without retries or partial success. An unlocked notification can
+precede the rendered Home screen; `visual_readiness_verified` stays `false`.
+Review a screenshot and verify the application separately before sending input.
+
 For native startup and app-launch diagnostics, capture a short interval of
 the guest's unified log:
 

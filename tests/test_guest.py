@@ -11,7 +11,7 @@ import contextlib
 import io
 
 from tungtungtungbrowser.cli import capture, capture_logs, main
-from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser.guest import Guest, GuestError, SCREEN_NOTIFICATIONS
 
 
 class GuestContractTest(unittest.TestCase):
@@ -21,6 +21,8 @@ class GuestContractTest(unittest.TestCase):
         self.method_errors = set()
         self.wrong_id = False
         self.locked = False
+        self.notification_states = dict(zip(SCREEN_NOTIFICATIONS.values(), [34, 1, 0]))
+        self.notification_override = None
         self.log_result = {"source": "unified_log", "entries": [{"message": "private native event"}],
                            "count": 1, "truncated": True, "seconds": 2}
         test = self
@@ -40,6 +42,10 @@ class GuestContractTest(unittest.TestCase):
                     result = {"locked": test.locked, "screen_off": False}
                 if data['method'] == 'logs.syslog':
                     result = test.log_result
+                if data['method'] == 'notify.state':
+                    name = data['params']['name']
+                    result = (test.notification_override if test.notification_override is not None
+                              else {'name': name, 'state': test.notification_states[name]})
                 if data['method'] == 'screen.screenshot':
                     result = {"mime_type": "image/jpeg", "width": 1, "height": 1,
                               "data": base64.b64encode(b'\xff\xd8test-fixture\xff\xd9').decode()}
@@ -76,6 +82,58 @@ class GuestContractTest(unittest.TestCase):
         self.guest.shutdown()
         self.assertEqual(self.requests[0]['method'], 'system.shutdown')
         self.assertEqual(self.requests[0]['params'], {'force': True})
+
+    def test_screen_state_cli_reads_notifications_without_input_or_readiness_claim(self):
+        stdout = io.StringIO()
+        with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), contextlib.redirect_stdout(stdout):
+            main(['screen-state'])
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result, {
+            'source': 'darwin_notify', 'springboard_started': True,
+            'locked': True, 'screen_off': False,
+            'states': {'startup': 34, 'locked': 1, 'screen_off': 0},
+            'visual_readiness_verified': False})
+        self.assertEqual([(r['method'], r['params']) for r in self.requests], [
+            ('notify.state', {'name': name}) for name in SCREEN_NOTIFICATIONS.values()])
+        self.notification_states = dict.fromkeys(SCREEN_NOTIFICATIONS.values(), 0)
+        result = self.guest.screen_state()
+        self.assertFalse(result['springboard_started'])
+        self.assertIsNone(result['locked'])
+        self.assertIsNone(result['screen_off'])
+
+    def test_screen_state_rejects_malformed_notifications_and_never_retries(self):
+        startup = SCREEN_NOTIFICATIONS['startup']
+        for result in [{}, [], {'name': 'wrong', 'state': 1},
+                       {'name': startup, 'state': True}, {'name': startup, 'state': -1},
+                       {'name': startup, 'state': 2**64}]:
+            with self.subTest(result=result):
+                self.notification_override = result
+                self.requests.clear()
+                with self.assertRaisesRegex(GuestError, 'Invalid native screen-state'):
+                    self.guest.screen_state()
+                self.assertEqual(len(self.requests), 1)
+        self.notification_override = None
+        self.notification_states[SCREEN_NOTIFICATIONS['locked']] = 2
+        self.requests.clear()
+        with self.assertRaisesRegex(GuestError, 'Invalid native screen-state'):
+            self.guest.screen_state()
+        self.assertEqual(len(self.requests), 2)
+        self.method_errors = {'notify.state'}
+        self.requests.clear()
+        with self.assertRaisesRegex(GuestError, 'Native operation failed'):
+            self.guest.screen_state()
+        self.assertEqual(len(self.requests), 1)
+        with patch.object(self.guest, 'request', side_effect=GuestError('transport timed out')) as request:
+            with self.assertRaisesRegex(GuestError, 'transport timed out'):
+                self.guest.screen_state()
+            self.assertEqual(request.call_count, 1)
+
+    def test_screen_notifications_are_scoped_before_transport(self):
+        for params in [{}, {'name': 'unrelated.notification'},
+                       {'name': SCREEN_NOTIFICATIONS['locked'], 'state': 0}]:
+            with self.subTest(params=params), self.assertRaises(ValueError):
+                self.guest.call('notify.state', **params)
+        self.assertFalse(self.requests)
 
     def test_logs_capture_native_events_without_printing_contents(self):
         with tempfile.TemporaryDirectory() as folder:

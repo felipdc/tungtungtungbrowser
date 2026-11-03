@@ -34,8 +34,14 @@ ALLOWED_METHODS = frozenset({
     "input.tap", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
     "ui.tree", "ui.ocr", "services.profile", "services.profile.apply", "time.timezone",
     "system.shutdown",
-    "logs.syslog",
+    "logs.syslog", "notify.state",
 })
+
+SCREEN_NOTIFICATIONS = {
+    "startup": "com.apple.springboard.finishedstartup",
+    "locked": "com.apple.springboard.lockstate",
+    "screen_off": "com.apple.springboard.hasBlankedScreen",
+}
 
 
 def log_options(*, seconds=2, process=None, level="error", max_lines=500):
@@ -104,6 +110,9 @@ class Guest:
             raise ValueError(f"Native browser controller does not support {method!r}")
         if method == "logs.syslog":
             params = log_options(**params)
+        if method == "notify.state" and (set(params) != {"name"}
+                or params["name"] not in SCREEN_NOTIFICATIONS.values()):
+            raise ValueError("Only native screen-state notifications are supported")
         if method == "apps.open_url":
             web_url(params.get("url"))
             if params.get("bundle_id") != "com.apple.mobilesafari":
@@ -124,6 +133,28 @@ class Guest:
 
     def shutdown(self):
         return self.call("system.shutdown", force=True)
+
+    def screen_state(self):
+        """Read native notifications without waking, unlocking or querying UI.
+
+        These sequential observations are not an atomic snapshot. Lock and
+        display state remain unknown until SpringBoard reports startup; even
+        then, notifications do not establish visible or application readiness.
+        """
+        states = {}
+        for key, name in SCREEN_NOTIFICATIONS.items():
+            result = self.call("notify.state", name=name)
+            if (not isinstance(result, dict) or result.get("name") != name
+                    or type(result.get("state")) is not int
+                    or not 0 <= result["state"] < 2**64
+                    or (key != "startup" and result["state"] not in (0, 1))):
+                raise GuestError("Invalid native screen-state notification")
+            states[key] = result["state"]
+        started = states["startup"] != 0
+        return {"source": "darwin_notify", "springboard_started": started,
+                "locked": bool(states["locked"]) if started else None,
+                "screen_off": bool(states["screen_off"]) if started else None,
+                "states": states, "visual_readiness_verified": False}
 
     def logs(self, *, seconds=2, process=None, level="error", max_lines=500):
         """Capture a bounded interval of native unified logs, not historical logs."""

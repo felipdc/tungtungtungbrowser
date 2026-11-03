@@ -75,6 +75,11 @@ class Browser:
         with self._lock:
             return self.guest.call('device.snapshot')
 
+    def screen_state(self):
+        """Read native lock/display notifications; does not establish readiness."""
+        with self._lock:
+            return self.guest.screen_state()
+
     def unlock(self):
         with self._lock:
             result = self.guest.call('screen.unlock', timeout=60)
