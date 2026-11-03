@@ -71,7 +71,10 @@ function observeGraphics() {
     vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER),
     unmaskedVendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
     unmaskedRenderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
-    extensions: gl.getSupportedExtensions()
+    extensions: gl.getSupportedExtensions(),
+    // Read before releasing this diagnostic context. Obtaining an object does
+    // not mean the native graphics context is still usable.
+    contextLost: gl.isContextLost(), error: gl.getError()
   };
   const release = gl.getExtension('WEBGL_lose_context');
   if (release) release.loseContext();

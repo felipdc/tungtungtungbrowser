@@ -53,6 +53,13 @@ native Safari. Server transport checks alone are not Safari evidence. Its touch
 button records the pointer, touch and mouse event sequence, including trust,
 contact dimensions and pressure, without changing browser APIs.
 
+In the WebGL observation, `available` means `getContext` returned an object.
+The separate `contextLost` and numeric `error` values describe its state after
+the capability reads and before the probe releases its own context. A lost
+context can still return an object while capability queries return `null`.
+Do not treat object creation, a worker response or a saved callback as proof
+that the page rendered. Review the screenshot and canvas alongside these values.
+
 The `touchConstructor` observation constructs a `Touch` with distinct field
 values and reads them back without dispatching an event. This separates DOM
 field conversion from the native input path. Constructor support or failure
