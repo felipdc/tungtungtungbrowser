@@ -4,7 +4,7 @@ FROM debian:13-slim
 # Runtime exposes no hardware GPU devices; the launcher explicitly selects lavapipe.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 bash ca-certificates coreutils util-linux \
-    libglib2.0-0t64 libpixman-1-0 liblzfse1 libslirp0 libssh-4 \
+    libglib2.0-0t64 libpixman-1-0 liblzfse1 libslirp0 libssh-4 libfdt1 \
     libzstd1 libnettle8t64 libgnutls30t64 libgtk-3-0t64 libsdl2-2.0-0 \
     libusb-1.0-0 libsndio7.0 libcurl4t64 \
     libvulkan1 mesa-vulkan-drivers vulkan-tools \
