@@ -118,3 +118,13 @@ of the worker or accessibility failures, and the standalone compute timings
 do not establish a browser startup or memory improvement. A future experiment
 needs a controlled default comparison and successful browser checks before
 progressing to a warm-cache performance comparison.
+
+A subsequent cold run with the default compiler verified Safari foreground
+identity at 257.7 seconds. Both local workers answered within their original
+deadline, in 3,446 and 3,499 milliseconds, and canvas and WebGL checks passed.
+The first post-callback screenshot still had incomplete text; a later read-only
+capture at 166.1 seconds after navigation submission showed the complete local
+fixture. The controller preserved the active tab and saved-tab count. This is a
+bounded recovery check. Persisted guest state and controller code differed, so
+it does not isolate the cause of the earlier failures or establish a performance
+improvement.
