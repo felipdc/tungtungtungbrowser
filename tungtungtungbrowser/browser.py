@@ -1,7 +1,7 @@
 """Small synchronous API for native Safari input and screen capture."""
 import base64
 import binascii
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from pathlib import Path
 import threading
@@ -15,7 +15,7 @@ SAFARI = 'com.apple.mobilesafari'
 
 @dataclass(frozen=True)
 class Screenshot:
-    jpeg: bytes
+    jpeg: bytes = field(repr=False)
     width: int
     height: int
     coordinate_scale: float

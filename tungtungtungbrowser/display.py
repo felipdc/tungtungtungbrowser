@@ -5,7 +5,7 @@ need not share a filesystem path with the caller. QMP access controls the VM;
 use a trusted local Unix socket and one controller per guest.
 """
 import array
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 import os
@@ -63,7 +63,7 @@ def _png_from_ppm(data):
 
 @dataclass(frozen=True)
 class DisplayScreenshot:
-    png: bytes
+    png: bytes = field(repr=False)
     width: int
     height: int
     # QEMU knows pixel dimensions, not the guest's screen-point scale.
