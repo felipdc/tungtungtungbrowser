@@ -263,7 +263,16 @@ the time zone or browser APIs. Use an accurately synchronized host clock. The
 guest can restore stale time on boot even when its virtual RTC was correct;
 see the [upstream clock investigation](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/Research/Guest/host_clock_sync.md).
 
-The result retains native `time`, `automatic`, `changed` and the pre-correction
+To inspect the current clock without correcting it, use `Browser().clock_state()`
+or `python3 -m tungtungtungbrowser clock-state`. The result contains native
+Unix `time` in seconds and `automatic` (`true`, `false`, or `null` when the mode
+is unavailable). This sends one read request, with no host time or mode change.
+It never initiates synchronization after an error. A returned timestamp alone
+does not establish clock accuracy: bracket the call with host timestamps and
+retain the request duration when comparing clocks. Inspect the launcher's
+clock record separately; reading the clock does not restart failed maintenance.
+
+The synchronization result retains native `time`, `automatic`, `changed` and the pre-correction
 `offset` in seconds (host minus guest). Manual guest time is preserved: when
 `automatic` is `false`, an offer leaves that clock alone. The readiness command's
 optional `--sync-clock` step runs once after daemon health and before unlock,

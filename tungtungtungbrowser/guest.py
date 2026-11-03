@@ -160,6 +160,17 @@ class Guest:
     def shutdown(self):
         return self.call("system.shutdown", force=True)
 
+    def clock_state(self):
+        """Read guest wall time and automatic mode without offering a correction."""
+        result = self.call('time.clock')
+        if (not isinstance(result, dict)
+                or not isinstance(result.get('time'), (int, float))
+                or isinstance(result['time'], bool) or not math.isfinite(result['time'])
+                or 'automatic' not in result
+                or (result['automatic'] is not None and type(result['automatic']) is not bool)):
+            raise GuestError('Invalid native clock state response')
+        return result
+
     def sync_clock(self):
         """Offer the host's current time once; preserve manual guest clock settings."""
         result = self.call('time.clock', time=time.time())

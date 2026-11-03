@@ -255,6 +255,38 @@ class GuestContractTest(unittest.TestCase):
         self.assertEqual([(r['method'], r['params']) for r in self.requests],
                          [('time.clock', {'time': 1800000000.0})])
 
+    def test_clock_state_cli_reads_without_offering_time_or_setting_automatic_mode(self):
+        for automatic in (True, False, None):
+            with self.subTest(automatic=automatic):
+                self.clock_result = {'time': 1800000000.25, 'automatic': automatic}
+                self.requests.clear()
+                stdout = io.StringIO()
+                with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), \
+                        contextlib.redirect_stdout(stdout):
+                    main(['clock-state'])
+                self.assertEqual(json.loads(stdout.getvalue()), self.clock_result)
+                self.assertEqual([(r['method'], r['params']) for r in self.requests],
+                                 [('time.clock', {})])
+
+    def test_clock_state_bad_reply_or_failure_never_corrects_or_repeats(self):
+        for result in [None, {}, [], {'time': 1800000000},
+                       {'time': True, 'automatic': True},
+                       {'time': float('nan'), 'automatic': True},
+                       {'time': float('inf'), 'automatic': True},
+                       {'time': '1800000000', 'automatic': True},
+                       {'time': 1800000000, 'automatic': 1}]:
+            with self.subTest(result=result):
+                self.clock_result = result
+                self.requests.clear()
+                with self.assertRaisesRegex(GuestError, 'Invalid native clock state'):
+                    self.guest.clock_state()
+                self.assertEqual([(r['method'], r['params']) for r in self.requests],
+                                 [('time.clock', {})])
+        with patch.object(self.guest, 'call', side_effect=GuestError('timed out')) as call:
+            with self.assertRaisesRegex(GuestError, 'timed out'):
+                self.guest.clock_state()
+            call.assert_called_once_with('time.clock')
+
     def test_clock_sync_failure_or_malformed_reply_is_not_retried(self):
         for result in [{}, [], dict(self.clock_result, time=True),
                        dict(self.clock_result, offset='120'),

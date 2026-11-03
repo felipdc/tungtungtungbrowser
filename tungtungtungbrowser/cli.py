@@ -118,6 +118,7 @@ def main(argv=None):
     parser.add_argument("--display-timeout", type=float, default=15, help="QMP capture deadline in seconds (default: 15)")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("health")
+    sub.add_parser("clock-state", help="Read native guest time and automatic mode without changing them")
     clock = sub.add_parser("sync-clock", help="Offer host time; preserve manual guest time settings")
     clock.add_argument("--interval-seconds", type=float,
                        help="Repeat in the foreground every 10–3600 seconds after each response; stop on failure")
@@ -173,6 +174,7 @@ def main(argv=None):
     try:
         match args.action:
             case "health": emit(guest.health())
+            case "clock-state": emit(browser.clock_state())
             case "sync-clock":
                 if args.interval_seconds is None:
                     emit(browser.sync_clock())

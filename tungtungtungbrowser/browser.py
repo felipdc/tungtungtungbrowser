@@ -82,6 +82,11 @@ class Browser:
         with self._lock:
             return self.guest.screen_state()
 
+    def clock_state(self):
+        """Read guest time and automatic mode without changing either."""
+        with self._lock:
+            return self.guest.clock_state()
+
     def sync_clock(self):
         """Offer host time through native timed, retaining its automatic/manual mode."""
         with self._lock:

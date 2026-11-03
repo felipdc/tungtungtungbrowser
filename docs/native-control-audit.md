@@ -179,6 +179,23 @@ clock maintenance remained active. This validates accepting slow native replies
 in that run. It does not prove clock accuracy between offers, rule out future
 timeouts, explain every earlier failure, or establish faster cold startup.
 
+## Reading the guest clock
+
+`Browser.clock_state()` and the `clock-state` CLI command send `time.clock`
+with empty parameters. The pinned daemon's
+[`executeClock`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI%2BClock.swift)
+uses its read path when both `time` and `automatic` are absent. The controller
+validates a finite native Unix timestamp and preserves automatic mode, including
+an unavailable value of `null`. It sends no correction, changes no setting and
+does not restart clock maintenance after a failure.
+
+A native SDK check completed this read in 26 ms, with exactly one empty-parameter
+request and the original failed clock worker unchanged. The guest was then
+about 9.2 seconds ahead of the host, despite an earlier explicit correction
+whose immediate readback was within 0.24 seconds. Host timestamps bracketed
+both reads. This demonstrates why clock observation and synchronization results
+must be kept separate; sustained accuracy remains unresolved.
+
 ## Tap timing
 
 The pinned Icli [native input helper](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliPrivate/IcliPrivate.m)
