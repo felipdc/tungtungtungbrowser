@@ -102,6 +102,11 @@ class Guest:
             payload = response.read(32 * 1024 * 1024 + 1)
             if len(payload) > 32 * 1024 * 1024:
                 raise GuestError("Guest response exceeds 32 MiB")
+            # A bounded HTTPResponse.read() can return a short body without
+            # raising IncompleteRead. Check the remaining Content-Length before
+            # parsing JSON, even if the bytes received form a complete object.
+            if isinstance(response.length, int) and response.length > 0:
+                raise http.client.IncompleteRead(payload, response.length)
             value = json.loads(payload)
             if not isinstance(value, dict):
                 raise GuestError("Expected a JSON object from vphoned")

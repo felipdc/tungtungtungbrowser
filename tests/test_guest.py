@@ -16,6 +16,42 @@ from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, SC
 
 
 class GuestTransportTest(unittest.TestCase):
+    def test_short_http_body_is_a_transport_failure_even_if_it_is_valid_json(self):
+        for payload in (b'{"status":"ok"}', b'{"status":"o'):
+            with self.subTest(payload=payload):
+                seen = []
+
+                class Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        seen.append(self.path)
+                        self.send_response(200)
+                        self.send_header('Content-Length', str(len(payload) + 100))
+                        self.end_headers()
+                        self.wfile.write(payload)
+                        self.close_connection = True
+
+                    def log_message(self, *args):
+                        pass
+
+                server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    guest = Guest(connection_factory=lambda: http.client.HTTPConnection(
+                        '127.0.0.1', server.server_port, timeout=2))
+                    with self.assertRaises(GuestTransportError) as raised:
+                        guest.health()
+                    self.assertEqual(raised.exception.phase, 'read_body')
+                    self.assertTrue(raised.exception.request_may_have_been_sent)
+                    self.assertIsInstance(raised.exception.__cause__, http.client.IncompleteRead)
+                    self.assertEqual(raised.exception.__cause__.expected, 100)
+                    self.assertNotIn('status', str(raised.exception))
+                    self.assertEqual(seen, ['/v1/health'])
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join()
+
     def test_vsock_reset_before_connect_is_distinct_from_an_unknown_action_outcome(self):
         sock = Mock()
         cause = ConnectionResetError(errno.ECONNRESET, 'Connection reset by peer')

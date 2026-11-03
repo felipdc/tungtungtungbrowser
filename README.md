@@ -250,6 +250,9 @@ for later failures, where the native action's outcome is unknown. This flag
 describes the failed exchange only: an operation such as `goto()` may already
 have completed earlier steps. No transport failure automatically repeats the
 request. Inspect the guest before repeating an action with an unknown outcome.
+Responses shorter than their declared HTTP body length fail during `read_body`,
+even if the received bytes form valid JSON. Error messages report byte counts
+without including the response body.
 
 For faster screenshots, capture the virtual display through its local QMP
 socket. This avoids guest JPEG encoding, which can stall at Retina resolution:
