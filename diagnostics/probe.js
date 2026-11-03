@@ -1,6 +1,29 @@
 'use strict';
 const inputTrace = [];
 const touchButton = document.getElementById('touch-test');
+function observeTouchFields(touch) {
+  // Run constructed and native Touch objects through the same readers. These
+  // are observations only: no property replacement and no event dispatch.
+  const fields = ['identifier', 'clientX', 'clientY', 'radiusX', 'radiusY',
+    'rotationAngle', 'force'];
+  const read = operation => {
+    try { return {values: operation()}; }
+    catch (error) { return {error: String(error)}; }
+  };
+  return {
+    direct: read(() => ({identifier: touch.identifier,
+      clientX: touch.clientX, clientY: touch.clientY,
+      radiusX: touch.radiusX, radiusY: touch.radiusY,
+      rotationAngle: touch.rotationAngle, force: touch.force})),
+    indexedForward: read(() => Object.fromEntries(fields.map(key => [key, touch[key]]))),
+    indexedReverse: read(() => Object.fromEntries(fields.slice().reverse().map(key => [key, touch[key]]))),
+    prototypeGetters: Object.fromEntries(fields.map(key => [key, read(() => {
+      const descriptor = Object.getOwnPropertyDescriptor(Touch.prototype, key);
+      if (typeof descriptor?.get !== 'function') throw new Error('Touch prototype getter unavailable');
+      return descriptor.get.call(touch);
+    })]))
+  };
+}
 for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart',
   'touchend', 'touchcancel', 'mousedown', 'mouseup', 'click']) {
   touchButton.addEventListener(type, event => {
@@ -18,7 +41,8 @@ for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart',
         rotationAngle: touch.rotationAngle,
         webkitRadiusX: touch.webkitRadiusX ?? null,
         webkitRadiusY: touch.webkitRadiusY ?? null,
-        webkitForce: touch.webkitForce ?? null
+        webkitForce: touch.webkitForce ?? null,
+        propertyReads: observeTouchFields(touch)
       })) : null
     });
     if (inputTrace.length > 32) inputTrace.shift();
@@ -94,7 +118,8 @@ function observeTouchConstructor() {
   try {
     const touch = new Touch({...expected, target: touchButton});
     return {dispatched: false, expected,
-      observed: Object.fromEntries(Object.keys(expected).map(key => [key, touch[key]]))};
+      observed: Object.fromEntries(Object.keys(expected).map(key => [key, touch[key]])),
+      propertyReads: observeTouchFields(touch)};
   } catch (error) { return {dispatched: false, error: String(error)}; }
 }
 (async () => {

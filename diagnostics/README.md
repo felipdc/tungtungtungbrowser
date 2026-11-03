@@ -83,6 +83,16 @@ field conversion from the native input path. Constructor support or failure
 is recorded; this check does not establish native touch fidelity. Native event
 records also include rotation and any legacy prefixed radius/force properties.
 
+Both constructed touches and each native changed touch also include
+`propertyReads`. The same recorder reads identifier, coordinates, radii,
+rotation and force through literal property access, indexed access in forward
+and reverse order, and the getters exposed on `Touch.prototype`. Each read
+path records its values or error. The original observation fields remain
+available. This can help distinguish native conversion from a property-read
+discrepancy; it does not replace a getter, dispatch a synthetic event, or
+correct any observed value. Capture the diagnostic revision with comparisons,
+since the historical measurements below predate these additional reads.
+
 The pinned native input helper has a known contact-geometry defect. On a guest
 reporting a 393 by 852 point display at scale 3, a native tap produced trusted
 touch events with `radiusX: 4260` and `force: 4260`. Trusted event delivery does
