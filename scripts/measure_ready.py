@@ -158,7 +158,15 @@ def main(argv=None):
             'apps.launch', bundle_id='com.apple.mobilesafari')
         result['safari_launch_request_seconds'] = time.monotonic() - start
         checkpoint()
-        retry('safari_foreground', safari)
+        if result['safari_launch_response'].get('frontmost_verified') is True:
+            # The pinned native launch method already checks foreground identity.
+            # Repeating apps.foreground also scans installed/running apps and can
+            # add substantial work under TCG. Keep the original observation time.
+            result['safari_foreground_source'] = 'apps.launch'
+            result['safari_foreground_seconds'] = result['safari_launch_request_seconds']
+        else:
+            result['safari_foreground_source'] = 'apps.foreground'
+            result['safari_foreground_response'] = retry('safari_foreground', safari)
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)
         # Native foreground identity plus a valid image still requires inspection

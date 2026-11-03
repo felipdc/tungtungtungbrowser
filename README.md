@@ -83,9 +83,14 @@ guest, launches Safari and verifies its foreground identity, recording timings
 and a screenshot. Choose a new `.json` output path for each measurement; existing
 reports and screenshots are preserved. The report records the current stage
 during startup and retains the native `safari_launch_response`. A launch can
-return PID `0` or `frontmost_verified: false`; the report preserves that response
-and checks foreground identity separately. A launch acknowledgement does not
-establish readiness. If readiness fails and QMP is configured, it also attempts a
+return PID `0` or `frontmost_verified: false`; the report preserves that response.
+When the launch reply explicitly reports `frontmost_verified: true`, readiness
+uses that native identity verification and its timestamp. Otherwise it queries
+foreground identity separately. `safari_foreground_source` records which native
+method supplied the observation. This avoids another application scan after an
+already verified launch. A launch acknowledgement without verified foreground
+identity does not establish readiness, and a screenshot still needs visual
+review. If readiness fails and QMP is configured, it also attempts a
 separate `.failure.png` display capture with a five-second QMP deadline. A failure
 capture does not establish readiness, and its own error does not replace the
 original failure. Unlock input and the Safari launch request are each sent once.

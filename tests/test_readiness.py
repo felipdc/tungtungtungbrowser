@@ -183,6 +183,45 @@ class ReadinessTest(unittest.TestCase):
         self.assertIn(('apps.foreground', 'safari_foreground'), self.calls)
         self.assertFalse(result['navigation_verified'])
 
+    def test_verified_launch_reuses_native_identity_without_another_app_scan(self):
+        self.launch_response = {'pid': 219, 'frontmost_verified': True}
+        self.failure_method = 'apps.foreground'
+        self.run_measurement()
+        result = self.report()
+        self.assertEqual([method for method, _ in self.calls], ['screen.unlock', 'apps.launch'])
+        self.assertEqual(result['safari_foreground_source'], 'apps.launch')
+        self.assertEqual(result['safari_foreground_seconds'], result['safari_launch_request_seconds'])
+        self.assertEqual(result['safari_launch_response'], self.launch_response)
+        self.assertTrue(result['safari_foreground_verified'])
+        self.assertTrue(result['screenshot_captured'])
+        self.assertFalse(result['navigation_verified'])
+        self.assertEqual(result['visual_review'], 'pending')
+
+    def test_truthy_launch_flags_do_not_skip_foreground_verification(self):
+        for index, flag in enumerate([1, 'true', None, False]):
+            with self.subTest(flag=flag):
+                self.output = self.vm / f'readiness-{index}.json'
+                self.calls.clear()
+                self.launch_response = {'pid': 219, 'frontmost_verified': flag}
+                self.run_measurement()
+                result = self.report()
+                self.assertIn(('apps.foreground', 'safari_foreground'), self.calls)
+                self.assertEqual(result['safari_foreground_source'], 'apps.foreground')
+                self.assertEqual(result['safari_foreground_response'],
+                                 {'bundle_id': 'com.apple.mobilesafari', 'verified': True})
+
+    def test_verified_launch_still_requires_a_successful_screenshot(self):
+        self.launch_response = {'pid': 0, 'frontmost_verified': True}
+        self.capture.side_effect = RuntimeError('display capture failed')
+        with self.assertRaisesRegex(RuntimeError, 'display capture failed'):
+            self.run_measurement()
+        result = self.report()
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(result['safari_foreground_verified'])
+        self.assertFalse(result['screenshot_captured'])
+        self.assertFalse(result['navigation_verified'])
+        self.assertNotIn(('apps.foreground', 'safari_foreground'), self.calls)
+
     def test_capture_failure_preserves_original_launch_error(self):
         self.failure_method = 'apps.launch'
         self.capture.side_effect = RuntimeError('QMP unavailable')
