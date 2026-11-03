@@ -6,8 +6,11 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
+import contextlib
+import io
 
-from tungtungtungbrowser.cli import capture
+from tungtungtungbrowser.cli import capture, capture_logs, main
 from tungtungtungbrowser.guest import Guest, GuestError
 
 
@@ -18,6 +21,8 @@ class GuestContractTest(unittest.TestCase):
         self.method_errors = set()
         self.wrong_id = False
         self.locked = False
+        self.log_result = {"source": "unified_log", "entries": [{"message": "private native event"}],
+                           "count": 1, "truncated": True, "seconds": 2}
         test = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -33,6 +38,8 @@ class GuestContractTest(unittest.TestCase):
                 result = {"accepted": True}
                 if data['method'] == 'screen.unlock':
                     result = {"locked": test.locked, "screen_off": False}
+                if data['method'] == 'logs.syslog':
+                    result = test.log_result
                 if data['method'] == 'screen.screenshot':
                     result = {"mime_type": "image/jpeg", "width": 1, "height": 1,
                               "data": base64.b64encode(b'\xff\xd8test-fixture\xff\xd9').decode()}
@@ -69,6 +76,61 @@ class GuestContractTest(unittest.TestCase):
         self.guest.shutdown()
         self.assertEqual(self.requests[0]['method'], 'system.shutdown')
         self.assertEqual(self.requests[0]['params'], {'force': True})
+
+    def test_logs_capture_native_events_without_printing_contents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'logs.json'
+            stdout = io.StringIO()
+            with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), contextlib.redirect_stdout(stdout):
+                main(['logs', '--output', str(path), '--process', 'MobileSafari',
+                      '--level', 'all', '--seconds', '2', '--max-lines', '1'])
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved['status'], 'complete')
+            self.assertEqual(saved['result'], self.log_result)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(stdout.getvalue())['count'], 1)
+            self.assertNotIn('private native event', stdout.getvalue())
+            self.assertEqual(self.requests[0]['method'], 'logs.syslog')
+            self.assertEqual(self.requests[0]['params'], {
+                'seconds': 2, 'process': 'MobileSafari', 'level': 'all', 'max_lines': 1})
+
+    def test_log_limits_and_existing_output_prevent_guest_requests(self):
+        invalid = [{'seconds': float('nan')}, {'seconds': 61}, {'seconds': 0},
+                   {'max_lines': 0}, {'max_lines': 5001}, {'max_lines': 1.5},
+                   {'max_lines': True}, {'process': ''}, {'process': 'a\nb'}, {'level': 'invalid'}]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'logs.json'
+            for options in invalid:
+                with self.subTest(options=options), self.assertRaises(ValueError):
+                    capture_logs(self.guest, path, **options)
+                self.assertFalse(path.exists())
+            path.write_text('original evidence')
+            with self.assertRaises(FileExistsError):
+                capture_logs(self.guest, path)
+            self.assertEqual(path.read_text(), 'original evidence')
+        self.assertFalse(self.requests)
+
+    def test_log_failure_keeps_report_without_retrying(self):
+        self.method_errors = {'logs.syslog'}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'logs.json'
+            with self.assertRaises(GuestError):
+                capture_logs(self.guest, path)
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved['status'], 'failed')
+            self.assertIn('Safari unavailable', saved['error'])
+            self.assertIn('finished_at', saved)
+            self.assertNotIn('result', saved)
+        self.assertEqual(len(self.requests), 1)
+
+    def test_invalid_log_result_is_not_reported_as_success(self):
+        for result in [{}, {'error': 'stream unavailable'},
+                       dict(self.log_result, count=2), dict(self.log_result, truncated='false'),
+                       dict(self.log_result, entries=[None])]:
+            with self.subTest(result=result):
+                self.log_result = result
+                with self.assertRaisesRegex(GuestError, 'Invalid native log'):
+                    self.guest.logs()
 
     def test_scripting_and_nonweb_urls_rejected_before_transport(self):
         for url in ["javascript:alert(1)", "data:text/html,hi", "file:///tmp/x",

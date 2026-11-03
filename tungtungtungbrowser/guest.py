@@ -34,7 +34,23 @@ ALLOWED_METHODS = frozenset({
     "input.tap", "input.swipe", "input.type", "input.paste", "input.key", "input.button",
     "ui.tree", "ui.ocr", "services.profile", "services.profile.apply", "time.timezone",
     "system.shutdown",
+    "logs.syslog",
 })
+
+
+def log_options(*, seconds=2, process=None, level="error", max_lines=500):
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not 0.1 <= seconds <= 60:
+        raise ValueError("Log duration must be between 0.1 and 60 seconds")
+    if isinstance(max_lines, bool) or not isinstance(max_lines, int) or not 1 <= max_lines <= 5000:
+        raise ValueError("Log entry limit must be an integer between 1 and 5000")
+    if level not in {"all", "debug", "info", "default", "notice", "error", "fault"}:
+        raise ValueError("Unsupported native log level")
+    options = {"seconds": seconds, "level": level, "max_lines": max_lines}
+    if process is not None:
+        if not isinstance(process, str) or not process.strip() or len(process) > 256 or any(ord(c) < 32 for c in process):
+            raise ValueError("Log process filter must be a nonempty name of at most 256 characters")
+        options["process"] = process
+    return options
 
 
 def web_url(value):
@@ -86,6 +102,8 @@ class Guest:
     def call(self, method, **params):
         if method not in ALLOWED_METHODS:
             raise ValueError(f"Native browser controller does not support {method!r}")
+        if method == "logs.syslog":
+            params = log_options(**params)
         if method == "apps.open_url":
             web_url(params.get("url"))
             if params.get("bundle_id") != "com.apple.mobilesafari":
@@ -106,6 +124,20 @@ class Guest:
 
     def shutdown(self):
         return self.call("system.shutdown", force=True)
+
+    def logs(self, *, seconds=2, process=None, level="error", max_lines=500):
+        """Capture a bounded interval of native unified logs, not historical logs."""
+        result = self.call("logs.syslog", seconds=seconds, process=process,
+                           level=level, max_lines=max_lines)
+        if (not isinstance(result, dict) or result.get("source") != "unified_log"
+                or not isinstance(result.get("entries"), list)
+                or not all(isinstance(entry, dict) for entry in result["entries"])
+                or type(result.get("count")) is not int
+                or result["count"] != len(result["entries"])
+                or result["count"] > max_lines
+                or type(result.get("truncated")) is not bool):
+            raise GuestError("Invalid native log capture result")
+        return result
 
     def tap(self, x, y):
         if not all(math.isfinite(v) and v >= 0 for v in (x, y)):

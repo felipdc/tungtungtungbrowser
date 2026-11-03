@@ -109,6 +109,32 @@ The launcher records cold-start parameters in `launch.json` and shutdown
 results in `exit.json` inside the VM bundle. It holds a disk lease throughout
 QEMU's lifetime. Upstream launchers do not honor that lease, so keep one owner.
 
+For native startup and app-launch diagnostics, capture a short interval of
+the guest's unified log:
+
+```sh
+docker compose -f runtime/compose.yaml exec iphone \
+  python3 -m tungtungtungbrowser logs --seconds 10 \
+  --process MobileSafari --level all --max-lines 500 \
+  --output /vm/diagnostics/safari-001.json
+```
+
+This listens to new native log events; it does not read historical logs or
+require a guest `log` executable. Omit `--process` for all processes; the default
+level is `error`. Process matching is case-insensitive and accepts a substring.
+Duration is bounded to 0.1–60 seconds and retained entries to 1–5000. Filtering
+happens before the entry limit, and `truncated` records whether more entries
+matched. A zero-entry capture does not establish app health. Allow the global
+`--timeout` to cover the capture interval plus guest processing time.
+
+Each capture creates a new file with mode `0600`, saves its timing and status,
+and preserves a failure report if the native request fails. Existing files are
+never overwritten, and requests are not automatically retried. The CLI prints
+the file path and counts; log contents stay in the file. Native logs may include
+application data, so keep these artifacts outside the source repository.
+Python callers can use `Guest().logs(seconds=10, process='MobileSafari')`
+from `tungtungtungbrowser.guest` to receive the native result directly.
+
 ## Build and create a VM
 
 The setup scripts resolve paths relative to this checkout and put downloaded

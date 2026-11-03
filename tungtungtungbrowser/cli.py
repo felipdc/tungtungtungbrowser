@@ -1,16 +1,45 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 import time
 
-from .guest import Guest, GuestError, web_url
+from .guest import Guest, GuestError, log_options, web_url
 from .browser import Browser
 
 
 def emit(value):
     print(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def capture_logs(guest, destination, **options):
+    options = log_options(**options)
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    started = time.monotonic()
+    report = {"status": "capturing", "started_at": datetime.now(timezone.utc).isoformat(),
+              "options": options}
+    with os.fdopen(descriptor, "w") as output:
+        json.dump(report, output, ensure_ascii=False, indent=2)
+        output.flush()
+        try:
+            report["result"] = guest.logs(**options)
+            report["status"] = "complete"
+        except Exception as exc:
+            report.update(status="failed", error=str(exc))
+            raise
+        finally:
+            report["elapsed_seconds"] = time.monotonic() - started
+            report["finished_at"] = datetime.now(timezone.utc).isoformat()
+            output.seek(0)
+            json.dump(report, output, ensure_ascii=False, indent=2)
+            output.truncate()
+    return {"output": str(destination), "count": report["result"]["count"],
+            "truncated": report["result"]["truncated"],
+            "elapsed_seconds": report["elapsed_seconds"]}
 
 
 def capture(guest, url, destination, settle, *, accessibility=False, ocr=False,
@@ -60,7 +89,7 @@ def capture(guest, url, destination, settle, *, accessibility=False, ocr=False,
         (destination / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(prog="tungtungtungbrowser")
     parser.add_argument("--cid", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=120)
@@ -69,6 +98,12 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("health")
     sub.add_parser("device")
+    logs = sub.add_parser("logs", help="Save a bounded capture of native unified logs")
+    logs.add_argument("--output", type=Path, required=True)
+    logs.add_argument("--seconds", type=float, default=2)
+    logs.add_argument("--process", help="Case-insensitive process-name substring")
+    logs.add_argument("--level", choices=["all", "debug", "info", "default", "notice", "error", "fault"], default="error")
+    logs.add_argument("--max-lines", type=int, default=500)
     opening = sub.add_parser("open", help="Open HTTP(S) URL through iOS LaunchServices in Safari")
     opening.add_argument("url")
     going = sub.add_parser("goto", help="Navigate through native Safari URL opening")
@@ -96,7 +131,7 @@ def main():
     capturing.add_argument("--ocr", action="store_true", help="Also run native OCR; may be slow")
     trimming = sub.add_parser("services", help="Inspect or apply the upstream reversible service profile")
     trimming.add_argument("profile", choices=["status", "trimmed", "none"], default="status", nargs="?")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not 0 < args.timeout <= 300:
         parser.error("timeout must be between 0 and 300 seconds")
     if not 0 < args.display_timeout <= 300:
@@ -110,6 +145,9 @@ def main():
         match args.action:
             case "health": emit(guest.health())
             case "device": emit(guest.call("device.info"))
+            case "logs": emit(capture_logs(guest, args.output, seconds=args.seconds,
+                                           process=args.process, level=args.level,
+                                           max_lines=args.max_lines))
             case "open": emit(guest.open(args.url))
             case "goto": emit(browser.goto(args.url, reuse_tab=args.reuse_tab))
             case "screenshot": emit(browser.screenshot(args.output, overwrite=args.overwrite).metadata())
