@@ -250,6 +250,29 @@ or automatic time is unavailable or disabled. Failed requests are not retried.
 This is a single synchronization, so run it again after a host suspend or VM
 pause if needed. It does not create a background clock service.
 
+For longer sessions where the guest cannot reach NTP, optionally run periodic
+native clock offers in a separate foreground process:
+
+```sh
+docker compose -f runtime/compose.yaml exec iphone \
+  python3 -m tungtungtungbrowser --timeout 30 sync-clock --interval-seconds 60
+```
+
+This sends an initial offer, then waits the specified interval after each
+successful response. It prints one flushed JSON line per response, preserving
+the native offset and change result. Intervals from 10 to 3,600 seconds are
+accepted. Requests never overlap; a transport error or invalid native response
+ends the process with an error instead of retrying. Manual time remains
+untouched. A successful offer is a point-in-time result, not a guarantee of
+accuracy between offers.
+
+Ctrl-C or SIGTERM stops the loop. If a request is in progress, the process waits
+for its response or configured request timeout, prints any successful response,
+and exits without another offer. Run one clock process per guest and stop it
+before stopping or replacing that guest. This command does not install a service
+or start with the container automatically. Keep it out of baseline resource
+measurements unless periodic synchronization is part of the measured workload.
+
 `goto()` explicitly opens the URL in Safari through the native operating-system
 API. `goto(reuse_tab=True)` is an experimental option that types into the active
 Safari tab's address field and verifies the complete entered URL before

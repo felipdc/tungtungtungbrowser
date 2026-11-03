@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import signal
 import sys
+import threading
 import time
 
 from .guest import Guest, GuestError, log_options, web_url
@@ -12,6 +14,25 @@ from .browser import Browser
 
 def emit(value):
     print(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def keep_clock_synchronized(browser, interval):
+    """Offer time serially until signalled; never retry a failed request."""
+    stopping = threading.Event()
+    previous = {}
+    try:
+        for number in (signal.SIGINT, signal.SIGTERM):
+            previous[number] = signal.signal(number, lambda *_: stopping.set())
+        while not stopping.is_set():
+            result = browser.sync_clock()
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+            # Event.wait uses an elapsed-time wait and wakes promptly on stop.
+            # Start the interval after the response: slow requests cannot overlap
+            # or cause a burst of catch-up requests.
+            stopping.wait(interval)
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 def capture_logs(guest, destination, **options):
@@ -97,7 +118,9 @@ def main(argv=None):
     parser.add_argument("--display-timeout", type=float, default=15, help="QMP capture deadline in seconds (default: 15)")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("health")
-    sub.add_parser("sync-clock", help="Offer the host's time once; preserve manual guest time settings")
+    clock = sub.add_parser("sync-clock", help="Offer host time; preserve manual guest time settings")
+    clock.add_argument("--interval-seconds", type=float,
+                       help="Repeat in the foreground every 10–3600 seconds after each response; stop on failure")
     sub.add_parser("device")
     sub.add_parser("screen-state", help="Read native startup, lock and display notifications without input")
     sub.add_parser("home", help="Send one native Home-button event; inspect the display separately")
@@ -142,13 +165,19 @@ def main(argv=None):
         parser.error("display-timeout must be between 0 and 300 seconds")
     if args.action == "capture" and not 0 <= args.settle_seconds <= 60:
         parser.error("settle-seconds must be between 0 and 60")
+    if args.action == "sync-clock" and args.interval_seconds is not None and not 10 <= args.interval_seconds <= 3600:
+        parser.error("interval-seconds must be between 10 and 3600")
     guest = Guest(args.cid, args.timeout)
     browser = Browser(guest=guest, qmp_socket=args.qmp_socket,
                       display_timeout=args.display_timeout)
     try:
         match args.action:
             case "health": emit(guest.health())
-            case "sync-clock": emit(browser.sync_clock())
+            case "sync-clock":
+                if args.interval_seconds is None:
+                    emit(browser.sync_clock())
+                else:
+                    keep_clock_synchronized(browser, args.interval_seconds)
             case "device": emit(guest.call("device.info"))
             case "screen-state": emit(browser.screen_state())
             case "home": emit(browser.home())
