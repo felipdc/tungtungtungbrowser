@@ -1,0 +1,25 @@
+#version 450
+
+// A bounded compute workload for the optional CPU-renderer compiler experiment.
+layout(local_size_x = 64) in;
+layout(constant_id = 0) const uint rounds = 17;
+layout(set = 0, binding = 0, std430) buffer Output { uvec4 data[]; } result;
+shared uint neighbors[64];
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    uint lane = gl_LocalInvocationID.x;
+    uint value = id ^ 0xa5a5a5a5u;
+    for (uint n = 0; n < rounds; ++n) {
+        value = value * 1664525u + 1013904223u;
+        value ^= value >> 13;
+    }
+    neighbors[lane] = value;
+    barrier();
+
+    // Binary fractions make exact comparison with the CPU reference possible.
+    float fraction = float(id & 1023u) * 0.25 + float(rounds) * 0.125;
+    fraction = fraction * 0.5 + float((id + 3u) & 127u) * 0.25;
+    result.data[id] = uvec4(value, neighbors[(lane + 17u) % 64u],
+                           floatBitsToUint(fraction), rounds ^ id);
+}

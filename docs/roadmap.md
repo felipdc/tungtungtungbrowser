@@ -13,6 +13,9 @@ this repository.
       30-second offer timeout has accepted native replies taking 20.0 and 5.6
       seconds; sustained reliability and clock accuracy still need validation.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
+      The [renderer compiler experiment](lavapipe-compiler.md) has passed a
+      standalone compute check; native browser performance and fidelity remain
+      separate adoption requirements.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
