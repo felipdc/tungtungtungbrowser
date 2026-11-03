@@ -5,6 +5,12 @@ matching kernel headers, `/dev/vhost-vsock`, and Mesa's lavapipe Vulkan driver.
 Debian 13 is the validated baseline. Cloud provider selection is independent
 of the browser runtime; the required kernel features must be available locally.
 
+Check both `docker version` and `docker compose version` before starting.
+Debian 13 packages the Docker daemon, command-line client and Compose
+separately; installing `docker.io` with `--no-install-recommends` does not
+install `docker-cli`. Install the client and Compose as well when using those
+distribution packages.
+
 `build_runtime.sh` pins the revision in `runtime.lock.json`, installs upstream
 dependencies and applies the native JIT permission patch before compiling.
 It places sources in `$XDG_CACHE_HOME/tungtungtungbrowser/vphone-linux` and build
@@ -29,10 +35,12 @@ runtime. Confirm no emulator still owns `Disk.img`. Keep VM bundles, proxy
 credentials, deployment configuration and captured page content in external
 directories. Do not put them into a source archive or container image.
 
-The current Dockerfiles build for x86_64. An ARM port must update the runtime
-build and architecture-specific downloads and pass native guest verification;
-a different host CPU alone does not establish acceleration for Apple-specific
-CPU instructions.
+The runtime and proxy Dockerfiles also build natively for ARM64. The ARM
+images have passed controller import and proxy binary execution checks, but
+the complete ARM runtime still needs native guest verification. The source
+build, firmware creation and kernel-selection helpers remain validated only
+on x86_64. A different host CPU alone does not establish acceleration for
+Apple-specific CPU instructions.
 
 The optional [ARM64 memory-access check](../native/README.md#arm64-linux-memory-access-check)
 can test some native instruction requirements before a runtime build. Passing
