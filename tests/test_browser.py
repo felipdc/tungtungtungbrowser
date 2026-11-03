@@ -17,6 +17,9 @@ class NativeFixture:
         self.address_visible = True
         self.address_value = "https://example.org/"
         self.drop_text = False
+        self.editing = True
+        self.focus_on_tap = True
+        self.address_frame = {'x': 46, 'y': 770, 'width': 213, 'height': 48}
 
     def call(self, method, **params):
         self.calls.append((method, params))
@@ -30,9 +33,17 @@ class NativeFixture:
             self.address_value = params['text']
         if method == 'ui.tree':
             return {'source': 'ax', 'pid': 301, 'elements': [
-                {'identifier': 'URL', 'visible': True, 'enabled': True, 'value': self.address_value}
+                {'identifier': 'URL', 'visible': True, 'enabled': True, 'value': self.address_value,
+                 'traits': 146031247360 if self.editing else 146029150208,
+                 'frame': self.address_frame}
             ] if self.address_visible else []}
         return {'accepted': True}
+
+    def tap(self, x, y):
+        result = self.call('input.tap', x=x, y=y)
+        if self.focus_on_tap:
+            self.editing = True
+        return result
 
     def open(self, url):
         return self.call('apps.open_url', url=url, bundle_id='com.apple.mobilesafari')
@@ -128,6 +139,44 @@ class BrowserContractTest(unittest.TestCase):
         with self.assertRaisesRegex(GuestError, 'requested URL'):
             Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
+
+    def test_visible_but_unfocused_address_field_is_focused_before_typing(self):
+        guest = NativeFixture()
+        guest.editing = False
+        result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+        self.assertEqual(result['method'], 'native_address_bar')
+        self.assertEqual([params for method, params in guest.calls if method == 'input.tap'],
+                         [{'x': 152.5, 'y': 794.0}])
+        names = [method for method, _ in guest.calls]
+        self.assertLess(names.index('input.tap'), names.index('input.paste'))
+        self.assertIn(('input.key', {'name': 'cmd+a'}), guest.calls)
+
+    def test_unconfirmed_or_failed_focus_never_sends_text_or_repeats_tap(self):
+        for failure in [None, 'input.tap']:
+            with self.subTest(failure=failure):
+                guest = NativeFixture()
+                guest.editing = guest.focus_on_tap = False
+                guest.fail = failure
+                with self.assertRaises(GuestError):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                names = [method for method, _ in guest.calls]
+                self.assertEqual(names.count('input.tap'), 1)
+                self.assertNotIn('input.paste', names)
+                self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
+
+    def test_invalid_focus_geometry_never_sends_a_tap_or_text(self):
+        for frame in [None, [], {}, {'x': -1, 'y': 2, 'width': 3, 'height': 4},
+                      {'x': 1, 'y': 2, 'width': 0, 'height': 4},
+                      {'x': float('nan'), 'y': 2, 'width': 3, 'height': 4},
+                      {'x': True, 'y': 2, 'width': 3, 'height': 4}]:
+            with self.subTest(frame=frame):
+                guest = NativeFixture()
+                guest.editing = False
+                guest.address_frame = frame
+                with self.assertRaisesRegex(GuestError, 'focus geometry'):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                self.assertNotIn('input.tap', [method for method, _ in guest.calls])
+                self.assertNotIn('input.paste', [method for method, _ in guest.calls])
 
     def test_invalid_url_has_no_device_side_effect(self):
         guest = NativeFixture()

@@ -8,6 +8,8 @@ this repository.
 ## Current runtime work
 
 - [ ] Make cold startup and Safari readiness reliable, with measured timings.
+- [ ] Resolve periodic clock-offer timeouts under slow native inspection while
+      preserving once-only requests and recorded failure outcomes.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental

@@ -316,8 +316,14 @@ measurements unless periodic synchronization is part of the measured workload.
 `goto()` explicitly opens the URL in Safari through the native operating-system
 API. `goto(reuse_tab=True)` is an experimental option that types into the active
 Safari tab's address field and verifies the complete entered URL before
-submitting. It falls back to explicit Safari opening if another app is in the
-foreground. Tab reuse has not passed sustained page-load validation. Both paths
+submitting. It requires native accessibility evidence that the field is editing;
+if needed, it makes one focus attempt using the verified field's frame. Missing
+or unconfirmed fields stop the operation before text entry. It selects existing
+text before entering the URL and never repeats a failed input request. It falls
+back to explicit Safari opening if another app is in the foreground. Local page
+checks preserved the active tab and saved-tab count; automatic refocusing and
+sustained page-load validation remain incomplete. See the
+[native control audit](docs/native-control-audit.md#reusing-a-tab). Both paths
 report a navigation request, not successful page rendering. Screenshots preserve
 existing files unless `overwrite=True` is supplied. One `Browser` object
 serializes its operations; use one controller per guest.

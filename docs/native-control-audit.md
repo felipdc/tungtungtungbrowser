@@ -32,11 +32,41 @@ unverified until screenshots and page content have been inspected.
 The higher-level `Browser.goto` defaults to explicit native URL opening.
 Its experimental `reuse_tab=True` option uses the pinned native `input.key` and
 `input.paste` methods when Safari is verified in the foreground. It confirms
-Safari's accessibility address field before text entry and reads the URL back
-before pressing Return. IcliKit's `pasteText` emits a Unicode HID event; it does
+Safari's accessibility address field and editing state before text entry,
+selects the existing text, and reads the complete URL back before pressing
+Return. IcliKit's `pasteText` emits a Unicode HID event; it does
 not run page code or use the administrative JavaScriptCore bridge. The native
 open-URL path is used when Safari is not the verified foreground app. Tab reuse
 has not passed sustained page-load validation and is not the default.
+
+Live checks on 2026-11-03 showed that Command-L can expose a visible, enabled
+URL field without putting it into editing mode. In that state, acknowledged
+text input left the old URL unchanged; the existing readback check prevented
+Return. A separate native tap at the field's frame center changed its traits
+from `0x2200040000` to `0x2200240000`. The difference is `1 << 21`, the private
+`kAXIsEditingTrait` value listed in the
+[RPC project's iOS API reference](https://rpc-project.readthedocs.io/en/stable/api_reference/rpcclient.ios.html).
+This is an observed private-interface contract for the tested runtime, not an
+Apple public API guarantee.
+
+The controller now requires that editing trait. If it is absent, it validates
+the native field frame, makes one native tap at its center, and checks the
+field again before sending text. The tree must identify the same Safari
+process, with exactly one visible, enabled URL field. Invalid geometry,
+unconfirmed focus, failed input or mismatched URL readback stops the operation;
+none triggers an automatic retry.
+
+Two local navigations through the updated SDK rendered the expected canvas,
+returned both worker results, and preserved the saved-tab count and active
+tab ID. Their fields were already editing, so they did not exercise the new
+automatic focus branch. A separate manual focus-and-navigation sequence
+passed. A native Tab-key perturbation also left editing active. A native
+Escape-key cancellation removed the URL field, and the SDK stopped without
+sending text or Return. Unit tests cover successful automatic focus, failed or
+unconfirmed focus, and invalid geometry. Live automatic focus recovery remains
+unverified. These functional checks ran after clock maintenance had failed;
+they establish neither timing accuracy nor memory savings or sustained external
+page reliability.
 
 ## Native time and startup ordering
 
@@ -68,6 +98,14 @@ The final clock state and native shutdown result are recorded in `exit.json`.
 This sequencing has been exercised on a live guest: the worker reached
 `stopped` before shutdown was requested, and iOS exited without forced
 termination. This does not establish behavior for every shutdown failure.
+
+A later run completed its startup and browsing measurements, then a periodic
+clock offer timed out while a native accessibility query was also outstanding.
+The clock manager retained the failure and sent no further offers. Temporal
+overlap does not establish causation: the pinned daemon dispatches requests
+concurrently, and its native clock operation has multiple bounded waits.
+Clock maintenance under slow native inspection remains a reliability task;
+the initial startup barrier does not solve that later failure.
 
 ## Screen evidence
 

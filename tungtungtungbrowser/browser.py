@@ -11,6 +11,8 @@ from .guest import Guest, GuestError, web_url
 from .display import capture_display
 
 SAFARI = 'com.apple.mobilesafari'
+# Native accessibility kAXIsEditingTrait. See docs/native-control-audit.md.
+_AX_IS_EDITING = 1 << 21
 
 
 @dataclass(frozen=True)
@@ -131,7 +133,28 @@ class Browser:
                     and foreground.get('bundle_id') == SAFARI):
                 self.guest.call('input.key', name='cmd+l')
                 time.sleep(self.input_settle)
-                self._address_field(foreground)
+                field = self._address_field(foreground, require_editing=False)
+                if not field['traits'] & _AX_IS_EDITING:
+                    # Command-L can reveal the field without making it editable.
+                    # Its center coordinates become zero in some editing states;
+                    # use the verified field's frame for this one focus attempt.
+                    frame = field.get('frame', {})
+                    if not isinstance(frame, dict):
+                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
+                    values = [frame.get(key) for key in ('x', 'y', 'width', 'height')]
+                    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                and math.isfinite(v) for v in values)
+                            or min(values[:2]) < 0 or min(values[2:]) <= 0):
+                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
+                    x, y, width, height = values
+                    center = (x + width / 2, y + height / 2)
+                    if not all(math.isfinite(v) for v in center):
+                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
+                    self.guest.tap(*center)
+                    time.sleep(self.input_settle)
+                    self._address_field(foreground)
+                self.guest.call('input.key', name='cmd+a')
+                time.sleep(self.input_settle)
                 self.guest.call('input.paste', text=url)
                 time.sleep(self.input_settle)
                 if self._address_field(foreground).get('value') != url:
@@ -144,7 +167,7 @@ class Browser:
             return {'url': url, 'browser': SAFARI, 'requested': True,
                     'method': method, 'navigation_verified': False}
 
-    def _address_field(self, foreground):
+    def _address_field(self, foreground, *, require_editing=True):
         tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
         if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):
             raise GuestError('Cannot verify Safari address-field ownership')
@@ -153,7 +176,13 @@ class Browser:
                   and element.get('visible') and element.get('enabled')]
         if len(fields) != 1:
             raise GuestError('Safari address field is not active; navigation not submitted')
-        return fields[0]
+        field = fields[0]
+        traits = field.get('traits')
+        if type(traits) is not int or traits < 0:
+            raise GuestError('Safari address-field editing state is unavailable; navigation not submitted')
+        if require_editing and not traits & _AX_IS_EDITING:
+            raise GuestError('Safari address field is not editing; navigation not submitted')
+        return field
 
     def screenshot(self, path=None, *, overwrite=False):
         """Capture native JPEG, or host PNG when qmp_socket is configured."""
