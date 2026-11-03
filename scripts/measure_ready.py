@@ -120,9 +120,10 @@ def main(argv=None):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('Safari launch deadline exceeded')
-        Guest(launch['cid'], timeout=min(120, remaining)).call(
+        result['safari_launch_response'] = Guest(launch['cid'], timeout=min(120, remaining)).call(
             'apps.launch', bundle_id='com.apple.mobilesafari')
         result['safari_launch_request_seconds'] = time.monotonic() - start
+        checkpoint()
         retry('safari_foreground', safari)
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)

@@ -41,6 +41,7 @@ class ReadinessTest(unittest.TestCase):
         self.guest.call.side_effect = self.native
         self.calls = []
         self.failure_method = None
+        self.launch_response = {'accepted': True}
         self.capture = Mock(return_value=SavedShot())
         self.factory = self.enterContext(patch.object(measure_ready, 'Guest', return_value=self.guest))
         self.browser = self.enterContext(patch.object(measure_ready, 'Browser'))
@@ -55,7 +56,7 @@ class ReadinessTest(unittest.TestCase):
             raise GuestError('vphoned transport failed: timed out')
         return {
             'screen.unlock': {'locked': False},
-            'apps.launch': {'accepted': True},
+            'apps.launch': self.launch_response,
             'apps.foreground': {'bundle_id': 'com.apple.mobilesafari', 'verified': True},
         }[method]
 
@@ -96,6 +97,28 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(self.calls, [('screen.unlock', 'screen_unlocked')])
         self.assertTrue(Path(result['failure_screenshot']['path']).exists())
         self.browser.assert_called_once_with(qmp_socket=self.vm / 'control.sock', display_timeout=5)
+
+    def test_unverified_launch_response_survives_foreground_timeout(self):
+        self.launch_response = {'pid': 0, 'frontmost_verified': False}
+        self.failure_method = 'apps.foreground'
+        with self.assertRaises(GuestError):
+            self.run_measurement()
+        result = self.report()
+        self.assertEqual(result['safari_launch_response'], self.launch_response)
+        self.assertIn('safari_launch_request_seconds', result)
+        self.assertFalse(result['safari_foreground_verified'])
+        self.assertFalse(result['navigation_verified'])
+        self.assertEqual([method for method, _ in self.calls].count('apps.launch'), 1)
+
+    def test_launch_response_does_not_replace_foreground_verification(self):
+        self.launch_response = {'pid': 0, 'frontmost_verified': False}
+        self.run_measurement()
+        result = self.report()
+        self.assertEqual(result['safari_launch_response'], self.launch_response)
+        self.assertEqual(result['status'], 'complete')
+        self.assertTrue(result['safari_foreground_verified'])
+        self.assertIn(('apps.foreground', 'safari_foreground'), self.calls)
+        self.assertFalse(result['navigation_verified'])
 
     def test_capture_failure_preserves_original_launch_error(self):
         self.failure_method = 'apps.launch'
