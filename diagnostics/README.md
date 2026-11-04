@@ -17,6 +17,17 @@ Each submission creates a separate directory containing browser observations,
 the rendered canvas PNG and the HTTP request headers received by the server.
 Keep the service out of baseline resource measurements and stop it when finished.
 
+For filesystem observers, `observations.json` is the completion marker for a
+submission: the optional canvas and `request.json` are complete before that
+filename becomes visible. Polling only for the directory can find a submission
+still being written. A failed write can leave a partial directory without the
+completion marker; retain it as incomplete evidence. Input callbacks similarly
+publish a complete `input-*.json` file atomically. JSON artifacts use mode `0600`,
+and publication refuses an existing filename rather than replacing evidence.
+Non-finite JSON constants such as `NaN` are rejected before creating artifacts.
+These guarantees cover publication to concurrent readers, not persistence after
+a power failure or proof that Safari received the response and painted a frame.
+
 To distinguish local HTTP delivery from later browser work, enable a bounded
 request journal when starting the server:
 

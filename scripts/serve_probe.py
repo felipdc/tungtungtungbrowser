@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
@@ -20,6 +21,29 @@ ASSETS = {'': ('probe.html', 'text/html; charset=utf-8'),
           'display-sequence.html': ('display-sequence.html', 'text/html; charset=utf-8'),
           **{name: (name, 'text/javascript; charset=utf-8')
              for name in ('probe-common.js', 'probe-worker.js', 'probe.js', 'display-sequence.js')}}
+
+
+def publish_json(path, value):
+    """Expose a complete, private callback file without replacing prior evidence."""
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent,
+                                     prefix='.' + path.name + '.', delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            json.dump(value, stream, indent=2, allow_nan=False)
+            stream.close()
+            os.link(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def publish_observation(destination, observation, request, png):
+    """Publish observations.json last, when its companion artifacts are complete."""
+    destination.mkdir()
+    if png is not None:
+        with (destination / 'canvas.png').open('xb') as stream:
+            stream.write(png)
+    publish_json(destination / 'request.json', request)
+    publish_json(destination / 'observations.json', observation)
 
 
 class RequestJournal:
@@ -121,6 +145,9 @@ def main():
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise ValueError('Expected object')
+                # Python accepts NaN/Infinity on input; callback artifacts must
+                # remain ordinary JSON. Reject these before creating any files.
+                json.dumps(data, allow_nan=False)
                 canvas = data.pop('canvasPNG', None)
                 png = None
                 if canvas is not None:
@@ -134,24 +161,20 @@ def main():
                 self.reply(400, b'{}'); return
             if self.path == prefix + 'input':
                 identity = 'input-' + uuid.uuid4().hex
-                (args.output / (identity + '.json')).write_text(json.dumps({
+                publish_json(args.output / (identity + '.json'), {
                     'received_at': datetime.now(timezone.utc).isoformat(),
                     'peer': self.client_address[0], 'observation': data,
-                }, indent=2))
+                })
                 self.reply(200, json.dumps({'id': identity}).encode())
                 print(json.dumps({'saved_input': identity}), flush=True)
                 return
             identity = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:12]
             destination = args.output / identity
-            destination.mkdir()
-            if png is not None:
-                (destination / 'canvas.png').write_bytes(png)
-            (destination / 'observations.json').write_text(json.dumps(data, indent=2))
-            (destination / 'request.json').write_text(json.dumps({
+            publish_observation(destination, data, {
                 'received_at': datetime.now(timezone.utc).isoformat(),
                 'peer': self.client_address[0], 'headers': list(self.headers.items()),
                 'transport': 'HTTP; TLS not measured', 'navigation_verified': False,
-            }, indent=2))
+            }, png)
             self.reply(200, json.dumps({'id': identity}).encode())
             print(json.dumps({'saved': str(destination)}), flush=True)
 

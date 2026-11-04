@@ -1,6 +1,7 @@
 import concurrent.futures
 import importlib.util
 import json
+import os
 from pathlib import Path
 import select
 import stat
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 
@@ -46,7 +48,12 @@ class ProbeRequestJournalTests(unittest.TestCase):
                     data=json.dumps({'private_test_value': secret}).encode(),
                     headers={'Content-Type': 'application/json', 'Origin': base})
                 with urllib.request.urlopen(request, timeout=5) as response:
-                    self.assertIn('id', json.load(response))
+                    identity = json.load(response)['id']
+                bundle = root / 'observations' / identity
+                self.assertEqual(json.loads((bundle / 'observations.json').read_text()),
+                                 {'private_test_value': secret})
+                self.assertIn('received_at', json.loads((bundle / 'request.json').read_text()))
+                self.assertEqual(stat.S_IMODE((bundle / 'observations.json').stat().st_mode), 0o600)
                 with self.assertRaises(urllib.error.HTTPError) as error:
                     urllib.request.urlopen(base + '/' + secret, timeout=5)
                 self.assertEqual(error.exception.code, 404)
@@ -109,6 +116,17 @@ class ProbeRequestJournalTests(unittest.TestCase):
                 saved_input = json.loads((root / 'observations' / (identity + '.json')).read_text())
                 self.assertEqual(saved_input['observation'], observation)
                 self.assertIn('received_at', saved_input)
+                self.assertEqual(stat.S_IMODE((root / 'observations' / (identity + '.json')).stat().st_mode), 0o600)
+                before = set((root / 'observations').iterdir())
+                for route in ['collect', 'input']:
+                    request = urllib.request.Request(base + address['path'] + route,
+                        data=b'{"invalid":NaN}',
+                        headers={'Content-Type': 'application/json', 'Origin': base})
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request, timeout=5)
+                    self.assertEqual(error.exception.code, 400)
+                    error.exception.close()
+                self.assertEqual(set((root / 'observations').iterdir()), before)
             finally:
                 process.terminate()
                 try:
@@ -139,6 +157,73 @@ class ProbeRequestJournalTests(unittest.TestCase):
             # Server shutdown can race with the end of a handler thread.
             journal.record({'value': 'late'})
             self.assertEqual(path.read_bytes(), saved)
+
+
+class CallbackPublicationTests(unittest.TestCase):
+    def test_input_polling_cannot_see_a_partial_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'input-example.json'
+            value = {'observation': {'sequence': 3}}
+            def interrupted_dump(data, stream, **kwargs):
+                encoded = json.dumps(data)
+                stream.write(encoded[:5])
+                stream.flush()
+                self.assertEqual(list(root.glob('input-*.json')), [])
+                stream.write(encoded[5:])
+            with patch.object(probe.json, 'dump', side_effect=interrupted_dump):
+                probe.publish_json(path, value)
+            self.assertEqual(json.loads(path.read_text()), value)
+            self.assertEqual(list(root.iterdir()), [path])
+
+    def test_observation_becomes_visible_after_its_companions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / 'observation-example'
+            observation, request, png = {'value': 7}, {'received_at': 'test'}, b'canvas bytes'
+            dump = json.dump
+            def inspect_publication(value, stream, **kwargs):
+                if value == observation:
+                    self.assertEqual(list(root.glob('*/observations.json')), [])
+                    self.assertEqual((destination / 'canvas.png').read_bytes(), png)
+                    self.assertEqual(json.loads((destination / 'request.json').read_text()), request)
+                dump(value, stream, **kwargs)
+            with patch.object(probe.json, 'dump', side_effect=inspect_publication):
+                probe.publish_observation(destination, observation, request, png)
+            self.assertEqual(json.loads((destination / 'observations.json').read_text()), observation)
+            with self.assertRaises(FileExistsError):
+                probe.publish_observation(destination, {'replacement': True}, {}, None)
+            self.assertEqual(json.loads((destination / 'observations.json').read_text()), observation)
+
+    def test_competing_input_writer_preserves_original_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'input-example.json'
+            link = os.link
+            def competitor(source, destination):
+                path.write_text('{"owner":"earlier callback"}')
+                link(source, destination)
+            with patch.object(probe.os, 'link', side_effect=competitor):
+                with self.assertRaises(FileExistsError):
+                    probe.publish_json(path, {'owner': 'later callback'})
+            self.assertEqual(json.loads(path.read_text()), {'owner': 'earlier callback'})
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_failed_write_never_publishes_completion_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / 'observation-example'
+            dump = json.dump
+            def fail_observation(value, stream, **kwargs):
+                if value == {'observation': True}:
+                    stream.write('{"partial":')
+                    stream.flush()
+                    raise OSError('Interrupted artifact write')
+                dump(value, stream, **kwargs)
+            with patch.object(probe.json, 'dump', side_effect=fail_observation):
+                with self.assertRaises(OSError):
+                    probe.publish_observation(destination, {'observation': True}, {}, b'canvas')
+            self.assertEqual(list(root.glob('*/observations.json')), [])
+            self.assertEqual({p.name for p in destination.iterdir()}, {'canvas.png', 'request.json'})
 
 
 if __name__ == '__main__':
