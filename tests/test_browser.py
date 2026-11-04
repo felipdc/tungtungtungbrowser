@@ -141,6 +141,30 @@ class BrowserContractTest(unittest.TestCase):
             Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn('input.paste', [method for method, _ in guest.calls])
 
+    def test_invalid_safari_pid_stops_before_address_bar_input(self):
+        for pid in [None, True, False, 0, 1, -2, '301', 301.0, 2147483648]:
+            with self.subTest(pid=pid):
+                guest = Mock()
+                guest.call.side_effect = [
+                    {'locked': False},
+                    {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': pid}]
+                with self.assertRaisesRegex(GuestError, 'process identity'):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                self.assertEqual(guest.call.call_args_list, [
+                    call('screen.unlock', timeout=60), call('apps.foreground')])
+                guest.open.assert_not_called()
+
+    def test_malformed_foreground_reply_does_not_fall_back_to_new_url_open(self):
+        for reply in [None, [], {}, {'verified': 'true', 'bundle_id': 'com.apple.mobilesafari'},
+                      {'verified': True, 'bundle_id': None}]:
+            with self.subTest(reply=reply):
+                guest = Mock()
+                guest.call.side_effect = [{'locked': False}, reply]
+                with self.assertRaisesRegex(GuestError, 'foreground response'):
+                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                self.assertEqual(guest.call.call_count, 2)
+                guest.open.assert_not_called()
+
     def test_truncated_missing_identifier_gets_one_read_without_repeating_input(self):
         guest = NativeFixture()
         guest.address_trees = [{'source': 'ax', 'pid': 301, 'truncated': True,

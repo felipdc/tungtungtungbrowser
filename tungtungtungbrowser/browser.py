@@ -136,8 +136,15 @@ class Browser:
         with self._lock:
             self.unlock()
             foreground = self.guest.call('apps.foreground') if reuse_tab else None
+            if reuse_tab and (not isinstance(foreground, dict)
+                              or type(foreground.get('verified')) is not bool
+                              or not isinstance(foreground.get('bundle_id'), str)):
+                raise GuestError('Invalid native foreground response; navigation not submitted')
             if (foreground and foreground.get('verified') is True
                     and foreground.get('bundle_id') == SAFARI):
+                pid = foreground.get('pid')
+                if type(pid) is not int or not 1 < pid <= 2147483647:
+                    raise GuestError('Cannot verify Safari process identity; native input not sent')
                 self.guest.call('input.key', name='cmd+l')
                 time.sleep(self.input_settle)
                 field = self._address_field(foreground, require_editing=False)

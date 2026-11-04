@@ -264,6 +264,10 @@ one additional read after the input settling interval. The controller still
 requires the URL identifier and matching Safari process; it does not infer
 field identity from its text. Each read uses the configured request timeout.
 Ambiguous fields, a different owner, and transport errors stop immediately.
+The initial foreground reply must have valid verification and bundle fields.
+Verified Safari also requires a valid process ID before Command-L or any other
+address-bar input. Malformed replies stop with `GuestError`; they do not silently
+fall back to opening a URL in another tab.
 It selects existing
 text before entering the URL and never repeats a failed input request. It falls
 back to explicit Safari opening if another app is in the foreground. A local page
