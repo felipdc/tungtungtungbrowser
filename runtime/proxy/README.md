@@ -62,7 +62,7 @@ and waits for a successful automatic-time response from this launch before
 unlocking the guest or launching Safari. This prevents the initial correction
 from overlapping those startup actions and preserves the original boot deadline.
 Do not also run a separate clock loop or readiness's `--sync-clock` step for
-the same guest. See the [clock behavior](../../README.md#python-and-native-control)
+the same guest. See the [clock behavior](../../docs/browser-control.md#managed-clock-offers)
 for lifecycle and failure details.
 
 The firewall drops external traffic by default. Only marked router connections
