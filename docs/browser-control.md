@@ -332,6 +332,12 @@ whole-container peak, with no memory-limit events or OOM kills. It used the same
 lengths do not establish a resource reduction. Keep tab ownership, consistent
 rendering and repeated successful cold starts as separate adoption checks.
 
+The same session's subsequent 420-second external-page window averaged 1.46
+cores and reached the 6.5 GiB memory limit, recording 1,078 memory-limit events
+and no OOM kills. It included fixed display captures and two brief host memory
+inspection reads. This reinforces the need to measure sustained browsing beyond
+the local diagnostic window before qualifying a smaller memory limit.
+
 ## Transport failures
 
 Transport failures raise `GuestTransportError`, a subclass of `GuestError`.
