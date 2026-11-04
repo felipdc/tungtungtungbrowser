@@ -310,6 +310,28 @@ supported host nor the experimental runtime is qualified by these results.
 Prioritize repeated successful cold starts near the current 300-second budget
 and correct warm rendering before further boot-time tuning.
 
+A subsequent cold session with the same experimental runtime and disk parent
+reached foreground Safari in 230.2 seconds, but its first complete local
+diagnostic callback arrived 355.4 seconds after boot. Its initial foreground
+capture was blank. Three later default URL opens in the same Safari process
+produced successful worker, canvas and WebGL callbacks in 22.9, 12.8 and 16.5
+seconds; native URL acknowledgements took 1.31, 0.59 and 0.61 seconds. These
+are callback and request timings, not first-paint measurements. Fixed captures
+at 15, 30, 60 and 120 seconds showed each matching saved identifier by 30
+seconds, without the earlier backward status change in those samples. Native
+touch passed, and a subsequent paired native/QMP capture showed matching settled
+page content. This bounded success does not resolve the earlier intermittent
+display issue or certify complete visual fidelity.
+
+Saved tabs again grew from ten to thirteen. The following 720-second warm
+measurement included those navigations, native touch, the paired captures and
+two external HTTPS opens. It averaged 1.67 CPU cores and sampled a 6.38 GiB
+whole-container peak, with no memory-limit events or OOM kills. It used the same
+6.5 GiB container limit and no swap; the 600-second startup window sampled
+6.39 GiB and averaged 2.22 cores. These differing workloads and observation
+lengths do not establish a resource reduction. Keep tab ownership, consistent
+rendering and repeated successful cold starts as separate adoption checks.
+
 ## Transport failures
 
 Transport failures raise `GuestTransportError`, a subclass of `GuestError`.
