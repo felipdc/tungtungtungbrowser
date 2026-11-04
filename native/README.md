@@ -1,5 +1,14 @@
 # Native diagnostics and workarounds
 
+## QEMU wait-instruction check
+
+`check_qemu_wfe.S` is a small AArch64 program for the optional
+[QEMU WFE scheduling experiment](../docs/qemu-wfe.md). Its two cores exchange
+values with and without an explicit event, then execute wait hints without a
+future event. `scripts/check_qemu_wfe.py` builds it and runs bounded disposable
+emulator processes, retaining each command and failure. It opens no existing
+guest disks. Run it outside browser resource-measurement windows.
+
 ## Restore transport workaround
 
 `usbmuxd_send_fix.c` normalizes positive error returns from `usbmuxd_send`

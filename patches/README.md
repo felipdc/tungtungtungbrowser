@@ -1,5 +1,11 @@
 # Pinned runtime patches
 
+`qemu-wfe-backoff.patch` is an optional CPU scheduling experiment for the
+pinned QEMU fork. Its default is disabled, and the runtime build does not
+apply it. See the [WFE experiment](../docs/qemu-wfe.md) for the native handoff
+check, browser evidence and limitations. It modifies files with GPL/LGPL
+notices; see [third-party notices](../THIRD_PARTY_NOTICES.md).
+
 `lavapipe-release-backing.patch` is an optional Mesa 25.0.7 experiment that
 discards an ordinary allocation's backing pages before its file range can be
 reused. It is not applied by the default runtime build. See the

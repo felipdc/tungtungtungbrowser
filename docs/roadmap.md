@@ -17,6 +17,10 @@ this repository.
       standalone compute check, but its first native run exceeded both worker
       deadlines. The compiler setting remains unadopted; native browser
       performance and fidelity are separate adoption requirements.
+      The [ARM wait-hint scheduling experiment](qemu-wfe.md) has a separate
+      two-core handoff check and native comparison procedure. Its optional
+      backoff remains disabled; lower synthetic CPU use is insufficient for
+      adoption without a real browsing benefit.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated

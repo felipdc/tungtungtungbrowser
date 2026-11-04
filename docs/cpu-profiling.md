@@ -126,3 +126,9 @@ pinned QEMU build.
 
 For subsequent performance runs, remove the profiling override from the
 Compose file list and restart through the normal clean-shutdown path.
+
+The [ARM wait-hint experiment](qemu-wfe.md) illustrates the next step after
+finding a translated lock-wait hotspot: validate bounded progress separately,
+then compare whole-container resources and native Safari behavior with the
+same starting state. A synthetic reduction alone does not establish a browser
+improvement.

@@ -1,0 +1,111 @@
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index c300967369..cbd747b3c9 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1438,6 +1438,11 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+     CPUARMState *env = &cpu->env;
+     Error *local_err = NULL;
+ 
++    if (cpu->wfe_backoff_us > 1000) {
++        error_setg(errp, "wfe-backoff-us must be between 0 and 1000");
++        return;
++    }
++
+ #ifdef CONFIG_TCG
+     /* Use pc-relative instructions in system-mode */
+     tcg_cflags_set(cs, CF_PCREL);
+@@ -2023,6 +2028,7 @@ static ObjectClass *arm_cpu_class_by_name(const char *cpu_model)
+ }
+ 
+ static const Property arm_cpu_properties[] = {
++    DEFINE_PROP_UINT32("wfe-backoff-us", ARMCPU, wfe_backoff_us, 0),
+     DEFINE_PROP_UINT64("midr", ARMCPU, midr, 0),
+     DEFINE_PROP_UINT64("mp-affinity", ARMCPU,
+                         mp_affinity, ARM64_AFFINITY_INVALID),
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index edb78f950c..9d0f8a6bd5 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -981,6 +981,9 @@ struct ArchCPU {
+ 
+     CPUARMState env;
+ 
++    /* Opt-in bounded host backoff for AArch64 WFE under MTTCG. */
++    uint32_t wfe_backoff_us;
++
+     /* Coprocessor information */
+     ARMCPRegTable_t cp_regs;
+     /* For marshalling (mostly coprocessor) register state between the
+diff --git a/target/arm/tcg/helper.h b/target/arm/tcg/helper.h
+index f96ac70ece..ea14b85692 100644
+--- a/target/arm/tcg/helper.h
++++ b/target/arm/tcg/helper.h
+@@ -55,6 +55,7 @@ DEF_HELPER_2(exception_pc_alignment, noreturn, env, vaddr)
+ DEF_HELPER_1(setend, void, env)
+ DEF_HELPER_2(wfi, void, env, i32)
+ DEF_HELPER_1(wfe, void, env)
++DEF_HELPER_1(wfe_backoff, void, i32)
+ DEF_HELPER_2(wfit, void, env, i64)
+ DEF_HELPER_1(yield, void, env)
+ DEF_HELPER_1(pre_hvc, void, env)
+diff --git a/target/arm/tcg/op_helper.c b/target/arm/tcg/op_helper.c
+index 53299002fb..14eeea2eec 100644
+--- a/target/arm/tcg/op_helper.c
++++ b/target/arm/tcg/op_helper.c
+@@ -445,6 +445,17 @@ void HELPER(wfit)(CPUARMState *env, uint64_t timeout)
+     cpu_loop_exit(cs);
+ }
+ 
++/*
++ * Experimental scheduling backoff, not a modeled ARM event-register wait.
++ * A bounded sleep cannot lose an event and halt a vCPU indefinitely. Host
++ * scheduling can extend the requested delay; guest locks are never altered.
++ * Called only in parallel TCG, outside the big QEMU lock.
++ */
++void HELPER(wfe_backoff)(uint32_t microseconds)
++{
++    g_usleep(microseconds);
++}
++
+ void HELPER(wfe)(CPUARMState *env)
+ {
+     /* This is a hint instruction that is semantically different
+diff --git a/target/arm/tcg/translate-a64.c b/target/arm/tcg/translate-a64.c
+index b4a9228a9a..9a35f3bb29 100644
+--- a/target/arm/tcg/translate-a64.c
++++ b/target/arm/tcg/translate-a64.c
+@@ -2169,6 +2169,14 @@ static bool trans_WFI(DisasContext *s, arg_WFI *a)
+ 
+ static bool trans_WFE(DisasContext *s, arg_WFI *a)
+ {
++    if ((tb_cflags(s->base.tb) & CF_PARALLEL) &&
++        s->wfe_backoff_us && !s->ss_active) {
++        gen_a64_update_pc(s, 4);
++        gen_helper_wfe_backoff(tcg_constant_i32(s->wfe_backoff_us));
++        /* Return through the main loop to service pending interrupts. */
++        s->base.is_jmp = DISAS_EXIT;
++        return true;
++    }
+     /*
+      * When running in MTTCG we don't generate jumps to the yield and
+      * WFE helpers as it won't affect the scheduling of other vCPUs.
+@@ -10681,6 +10689,7 @@ static void aarch64_tr_init_disas_context(DisasContextBase *dcbase,
+     int bound, core_mmu_idx;
+ 
+     dc->isar = &arm_cpu->isar;
++    dc->wfe_backoff_us = arm_cpu->wfe_backoff_us;
+     dc->condjmp = 0;
+     dc->pc_save = dc->base.pc_first;
+     dc->gxf_active = arm_feature(env, ARM_FEATURE_GXF);
+diff --git a/target/arm/tcg/translate.h b/target/arm/tcg/translate.h
+index a3d26b5542..51a99dc6f4 100644
+--- a/target/arm/tcg/translate.h
++++ b/target/arm/tcg/translate.h
+@@ -24,6 +24,7 @@ typedef struct DisasLabel {
+ typedef struct DisasContext {
+     DisasContextBase base;
+     const ARMISARegisters *isar;
++    uint32_t wfe_backoff_us;
+ 
+     /* The address of the current instruction being translated. */
+     target_ulong pc_curr;
