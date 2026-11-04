@@ -88,6 +88,27 @@ class ProbeRequestJournalTests(unittest.TestCase):
                 self.assertNotIn(secret, journal.read_text())
                 self.assertNotIn(address['path'], journal.read_text())
                 self.assertEqual(stat.S_IMODE(journal.stat().st_mode), 0o600)
+                # The sequence page uses the same private asset prefix and input
+                # collector; callbacks must remain attributable to their page run.
+                for asset, mime in [('display-sequence.html', 'text/html'),
+                                    ('display-sequence.js', 'text/javascript')]:
+                    with urllib.request.urlopen(base + address['path'] + asset, timeout=5) as response:
+                        self.assertEqual(response.headers.get_content_type(), mime)
+                        self.assertTrue(response.read())
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(base + '/' + asset, timeout=5)
+                    self.assertEqual(error.exception.code, 404)
+                    error.exception.close()
+                observation = {'diagnostic': 'display-sequence', 'run': 'test-run',
+                               'phase': 'step', 'sequence': 7}
+                request = urllib.request.Request(base + address['path'] + 'input',
+                    data=json.dumps(observation).encode(),
+                    headers={'Content-Type': 'application/json', 'Origin': base})
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    identity = json.load(response)['id']
+                saved_input = json.loads((root / 'observations' / (identity + '.json')).read_text())
+                self.assertEqual(saved_input['observation'], observation)
+                self.assertIn('received_at', saved_input)
             finally:
                 process.terminate()
                 try:

@@ -11,7 +11,12 @@ The health response confirms the native control daemon. It does not certify
 that Safari is ready to receive navigation. The readiness command unlocks the
 guest, launches Safari and verifies its foreground identity, recording timings
 and a screenshot. Choose a new `.json` output path for each measurement; existing
-reports and screenshots are preserved. The report records the current stage
+reports and screenshots are preserved. Initial report creation and subsequent
+checkpoints publish complete JSON atomically. Initial publication also refuses
+an existing filename, including one claimed concurrently by another observer.
+A serialization failure leaves the preceding report intact. This prevents a
+polling reader from observing an empty initial report; it does not change native
+startup or retry failed browser actions. The report records the current stage
 during startup and retains the native `safari_launch_response`. A launch can
 return PID `0` or `frontmost_verified: false`; the report preserves that response.
 When the launch reply explicitly reports `frontmost_verified: true`, readiness

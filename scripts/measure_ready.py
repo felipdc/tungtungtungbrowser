@@ -7,6 +7,7 @@ separately with capture; foreground Safari alone does not prove network access.
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -15,6 +16,24 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser import Browser
+
+
+def write_report(path, result, *, exclusive=False):
+    """Publish complete JSON; initial creation must not expose an empty file."""
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent,
+                                     prefix=path.name + '.', delete=False) as report:
+        temporary = Path(report.name)
+        try:
+            json.dump(result, report, indent=2, allow_nan=False)
+            report.close()
+            if exclusive:
+                # Same-filesystem link is atomic and refuses an existing name.
+                # An exists-then-replace check could overwrite another observer.
+                os.link(temporary, path)
+            else:
+                temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def main(argv=None):
@@ -52,20 +71,11 @@ def main(argv=None):
             parser.error(f'Output already exists: {path}')
     # Claim the report before making guest requests. A second observer must
     # choose another filename, and must not replace earlier evidence.
-    with args.output.open('x') as report:
-        json.dump(result, report, indent=2)
+    write_report(args.output, result, exclusive=True)
 
     def checkpoint():
         result['elapsed_seconds'] = time.monotonic() - start
-        with tempfile.NamedTemporaryFile(mode='w', dir=args.output.parent,
-                                         prefix=args.output.name + '.', delete=False) as report:
-            temporary = Path(report.name)
-            try:
-                json.dump(result, report, indent=2)
-                report.close()
-                temporary.replace(args.output)
-            finally:
-                temporary.unlink(missing_ok=True)
+        write_report(args.output, result)
 
     def alive():
         stat = Path(f"/proc/{launch['pid']}/stat").read_text().rsplit(')', 1)[1].split()

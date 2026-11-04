@@ -17,8 +17,9 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {'': ('probe.html', 'text/html; charset=utf-8'),
+          'display-sequence.html': ('display-sequence.html', 'text/html; charset=utf-8'),
           **{name: (name, 'text/javascript; charset=utf-8')
-             for name in ('probe-common.js', 'probe-worker.js', 'probe.js')}}
+             for name in ('probe-common.js', 'probe-worker.js', 'probe.js', 'display-sequence.js')}}
 
 
 class RequestJournal:

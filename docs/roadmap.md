@@ -83,8 +83,10 @@ check native rendering at each stage before adopting an optimization.
       retained Safari and passed consecutive local diagnostics, but later
       captures sometimes showed an earlier page state without new input.
       Record frame ordering, requested URL, local callback identity and fixed
-      capture times. Identify the active display device before instrumenting
-      it; keep renderer experiments separate from CPU and proxy changes.
+      capture times. The [local sequence page](display-sequence.md) separates
+      DOM/canvas values from callback delivery evidence. Identify the active
+      display device before instrumenting it; keep renderer experiments separate
+      from CPU and proxy changes.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

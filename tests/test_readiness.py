@@ -334,5 +334,52 @@ class ReadinessTest(unittest.TestCase):
         self.assertIn('no longer runs', self.report()['failure_screenshot_error'])
 
 
+class ReportPublicationTest(unittest.TestCase):
+    def test_initial_and_updated_reports_never_expose_partial_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'readiness.json'
+            original = {'stage': 'starting'}
+            updated = {'stage': 'complete'}
+            for exclusive, value in [(True, original), (False, updated)]:
+                def interrupted_write(data, stream, **kwargs):
+                    encoded = json.dumps(data)
+                    stream.write(encoded[:5])
+                    stream.flush()
+                    if exclusive:
+                        self.assertFalse(path.exists())
+                    else:
+                        self.assertEqual(json.loads(path.read_text()), original)
+                    stream.write(encoded[5:])
+                with patch.object(measure_ready.json, 'dump', side_effect=interrupted_write):
+                    measure_ready.write_report(path, value, exclusive=exclusive)
+                self.assertEqual(json.loads(path.read_text()), value)
+                self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_competing_initial_writer_cannot_replace_existing_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'readiness.json'
+            link = os.link
+            def competitor(source, destination):
+                path.write_text('{"owner":"another observer"}')
+                link(source, destination)
+            with patch.object(measure_ready.os, 'link', side_effect=competitor):
+                with self.assertRaises(FileExistsError):
+                    measure_ready.write_report(path, {'owner': 'this observer'}, exclusive=True)
+            self.assertEqual(json.loads(path.read_text()), {'owner': 'another observer'})
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_serialization_failure_preserves_previous_report_and_removes_temp_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'readiness.json'
+            with self.assertRaises(ValueError):
+                measure_ready.write_report(path, {'invalid': float('nan')}, exclusive=True)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            path.write_text('{"stage":"starting"}')
+            with self.assertRaises(ValueError):
+                measure_ready.write_report(path, {'invalid': float('nan')})
+            self.assertEqual(json.loads(path.read_text()), {'stage': 'starting'})
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+
 if __name__ == '__main__':
     unittest.main()

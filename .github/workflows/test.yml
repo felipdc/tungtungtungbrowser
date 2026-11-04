@@ -17,4 +17,4 @@ jobs:
       - run: python -m compileall -q tungtungtungbrowser scripts
       - run: python scripts/check_public_tree.py
       - run: for script in scripts/*.sh; do bash -n "$script" || exit; done
-      - run: node --check diagnostics/probe.js
+      - run: for script in diagnostics/*.js; do node --check "$script" || exit; done

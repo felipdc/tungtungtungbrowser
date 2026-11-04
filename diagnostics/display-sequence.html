@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tungtungtungbrowser display sequence</title>
+<style>
+body{margin:20px;font:16px system-ui;background:white;color:black}
+h1{font-size:23px}h2{font-size:18px;margin:20px 0 8px}
+#number{font:700 48px monospace;margin:12px 0}
+#cells{display:flex;width:320px;height:64px}
+#cells>div{width:32px;height:64px;flex:none}
+#cells>div>div{height:32px}
+canvas{display:block;width:320px;height:96px}
+#status{font-size:14px;overflow-wrap:anywhere}
+</style>
+<h1>Display sequence</h1>
+<p>Compare the increasing DOM and canvas values with saved callbacks.</p>
+<div id="number">Waiting</div>
+<h2>DOM</h2><div id="cells"></div>
+<h2>Canvas</h2><canvas id="canvas" width="320" height="96"></canvas>
+<p id="status">Starting local diagnostic…</p>
+<script src="display-sequence.js"></script>
+</html>
