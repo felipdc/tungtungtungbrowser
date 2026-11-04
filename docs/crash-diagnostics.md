@@ -30,6 +30,21 @@ matching, different, missing and conflicting boot identities. Malformed files
 remain listed as errors alongside successfully inspected files. The output
 must be new; an existing report is never overwritten.
 
+Add `--thread-frames 60` to include a bounded stack from threads identified by
+the main queue, a `triggered` flag, or the report's `faultingThread` index. The
+option accepts 0–100 frames per selected thread; zero, the default, omits stacks.
+Each stack retains its selection reason, thread index, total frame count and
+truncation flag. Symbol names and offsets come directly from the report. Image
+names are resolved using its image table; the tool does not symbolize missing
+symbols, infer that thread zero is the main thread, or include image paths.
+Invalid image indexes and ambiguous selected fields remain input errors. Reports
+without a selected thread produce an empty stack list, not evidence that the
+main thread was idle.
+
+Use these sampled stacks to choose the next measurement. A thread captured in
+layout, keyboard or snapshot work may have spent earlier parts of its deadline
+elsewhere. The stack alone does not measure which function consumed the time.
+
 Exit status zero means the supplied files were inspected, even when they
 contain current-boot crashes. Missing or conflicting identities remain
 unattributed. Exit status one indicates an input or output error. No result

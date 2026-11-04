@@ -90,7 +90,77 @@ def parse_report(raw):
     return records[-1]
 
 
-def summarize(raw, expected_boot_uuid):
+def sampled_threads(body, frame_limit):
+    """Return bounded main/triggered stacks, without guessing a main thread."""
+    threads = body.get('threads', [])
+    images = body.get('usedImages', [])
+    if not isinstance(threads, list) or not isinstance(images, list):
+        raise ValueError('Threads and usedImages must be lists')
+    faulting = body.get('faultingThread')
+    if faulting is not None and (type(faulting) is not int or not 0 <= faulting < len(threads)):
+        raise ValueError('Invalid faulting thread index')
+    selected = []
+    for index, thread in enumerate(threads):
+        if not isinstance(thread, dict):
+            raise ValueError('Thread must be an object')
+        identity = {key: thread.get(key) for key in ('id', 'name', 'queue', 'triggered')}
+        if isinstance(thread, ReportObject) and set(thread.duplicate_keys) & identity.keys():
+            raise ValueError('Duplicate thread identity field')
+        if identity['id'] is not None and (type(identity['id']) is not int or identity['id'] < 0):
+            raise ValueError('Thread ID must be a nonnegative integer')
+        if any(identity[key] is not None and not isinstance(identity[key], str)
+               for key in ('name', 'queue')):
+            raise ValueError('Thread name and queue must be strings')
+        if identity['triggered'] is not None and type(identity['triggered']) is not bool:
+            raise ValueError('Thread triggered flag must be boolean')
+        reasons = []
+        if identity['queue'] == 'com.apple.main-thread':
+            reasons.append('main_queue')
+        if identity['triggered'] is True:
+            reasons.append('triggered')
+        if index == faulting:
+            reasons.append('faulting_thread_index')
+        if not reasons:
+            continue
+        frames = thread.get('frames', [])
+        if (not isinstance(frames, list) or
+                isinstance(thread, ReportObject) and 'frames' in thread.duplicate_keys):
+            raise ValueError('Invalid or duplicate thread frames')
+        stack = []
+        for frame in frames[:frame_limit]:
+            if not isinstance(frame, dict):
+                raise ValueError('Stack frame must be an object')
+            keys = ('symbol', 'symbolLocation', 'imageIndex', 'imageOffset')
+            if isinstance(frame, ReportObject) and set(frame.duplicate_keys) & set(keys):
+                raise ValueError('Duplicate selected stack frame field')
+            row = {key: frame[key] for key in keys if key in frame}
+            for key in ('symbolLocation', 'imageOffset'):
+                if key in row and (type(row[key]) is not int or row[key] < 0):
+                    raise ValueError('Frame offsets must be nonnegative integers')
+            if 'symbol' in row and not isinstance(row['symbol'], str):
+                raise ValueError('Frame symbol must be a string')
+            if 'imageIndex' in row:
+                image_index = row['imageIndex']
+                if type(image_index) is not int or not 0 <= image_index < len(images):
+                    raise ValueError('Invalid stack frame image index')
+                image = images[image_index]
+                if (not isinstance(image, dict) or
+                        isinstance(image, ReportObject) and 'name' in image.duplicate_keys):
+                    raise ValueError('Invalid or duplicate image name')
+                name = image.get('name')
+                if name is not None and not isinstance(name, str):
+                    raise ValueError('Image name must be a string')
+                row['image_name'] = name
+            stack.append(row)
+        selected.append({'thread_index': index, **identity, 'selected_by': reasons,
+                         'total_frames': len(frames), 'frames_truncated': len(frames) > frame_limit,
+                         'frames': stack})
+    return selected
+
+
+def summarize(raw, expected_boot_uuid, *, thread_frames=0):
+    if type(thread_frames) is not int or not 0 <= thread_frames <= 100:
+        raise ValueError('thread_frames must be between 0 and 100')
     expected = boot_uuid(expected_boot_uuid)
     body = parse_report(raw)
     identities = []
@@ -131,7 +201,7 @@ def summarize(raw, expected_boot_uuid):
     seconds = float(allowance[1]) if is_watchdog and allowance else None
     if seconds is not None and not math.isfinite(seconds):
         raise ValueError('Watchdog allowance must be finite')
-    return {
+    result = {
         'sha256': hashlib.sha256(raw).hexdigest(),
         'bytes': len(raw),
         'attribution': attribution,
@@ -146,6 +216,10 @@ def summarize(raw, expected_boot_uuid):
         'wall_clock_allowance_seconds': seconds,
         'termination': termination,
     }
+    if thread_frames:
+        result['sampled_threads'] = sampled_threads(body, thread_frames)
+        result['stack_scope'] = 'Sampled main/triggered threads; not a duration trace or root-cause finding'
+    return result
 
 
 def main(argv=None):
@@ -154,7 +228,11 @@ def main(argv=None):
     parser.add_argument('--boot-uuid', type=boot_uuid, required=True,
                         help='Guest boot UUID, not the host boot ID or a crash incident ID')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--thread-frames', type=int, default=0, metavar='N',
+                        help='Include up to N frames per main/triggered thread (1–100; default: omit stacks)')
     args = parser.parse_args(argv)
+    if not 0 <= args.thread_frames <= 100:
+        parser.error('thread-frames must be between 0 and 100')
     result = {'expected_boot_uuid': args.boot_uuid, 'reports': [], 'errors': [],
               'browser_readiness_verified': False,
               'scope': 'Attribution of supplied files; absence of a report does not prove absence of a crash'}
@@ -163,7 +241,7 @@ def main(argv=None):
         try:
             with path.open('rb') as source:
                 raw = source.read(MAX_REPORT_BYTES + 1)
-            row.update(summarize(raw, args.boot_uuid))
+            row.update(summarize(raw, args.boot_uuid, thread_frames=args.thread_frames))
             result['reports'].append(row)
         except (OSError, ValueError, RecursionError) as exc:
             result['errors'].append({'path': str(path), 'error': str(exc)})

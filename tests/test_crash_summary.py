@@ -18,6 +18,60 @@ def encoded(body, header=None):
 
 
 class CrashSummaryTest(unittest.TestCase):
+    def test_optional_stacks_keep_identity_and_bound_frames_without_inferring_cause(self):
+        body = {
+            'bootSessionUUID': EARLIER, 'faultingThread': 2,
+            'usedImages': [{'name': 'UIKitCore', 'path': '/private/example/UIKitCore'}],
+            'threads': [
+                {'id': 1, 'queue': 'worker', 'frames': []},
+                {'id': 2, 'queue': 'com.apple.main-thread', 'frames': [
+                    {'symbol': 'layout', 'imageIndex': 0, 'imageOffset': 100},
+                    {'symbol': 'snapshot', 'imageIndex': 0},
+                ]},
+                {'id': 3, 'triggered': True, 'frames': [{'imageIndex': 0, 'imageOffset': 200}]},
+            ],
+        }
+        self.assertNotIn('sampled_threads', summarize(encoded(body), CURRENT))
+        result = summarize(encoded(body), CURRENT, thread_frames=1)
+        self.assertEqual(result['attribution'], 'different_boot')
+        main, triggered = result['sampled_threads']
+        self.assertEqual(main['selected_by'], ['main_queue'])
+        self.assertEqual(main['total_frames'], 2)
+        self.assertTrue(main['frames_truncated'])
+        self.assertEqual(main['frames'], [{'symbol': 'layout', 'imageIndex': 0,
+                                          'imageOffset': 100, 'image_name': 'UIKitCore'}])
+        self.assertEqual(triggered['selected_by'], ['triggered', 'faulting_thread_index'])
+        self.assertFalse(triggered['frames_truncated'])
+        self.assertNotIn('symbol', triggered['frames'][0])
+        self.assertNotIn('/private/example', json.dumps(result))
+        self.assertIn('not a duration trace', result['stack_scope'])
+
+    def test_optional_stack_selection_rejects_ambiguous_or_unresolvable_fields(self):
+        for fragment in (
+            '"faultingThread":true', '"faultingThread":9',
+            '"threads":{}', '"usedImages":{}',
+            '"threads":[{"triggered":1}]',
+            '"threads":[{"triggered":true,"triggered":false}]',
+            '"threads":[{"queue":{},"id":false}]',
+            '"threads":[{"triggered":true,"frames":[],"frames":[]}]',
+            '"threads":[{"triggered":true,"frames":[{"imageIndex":0}]}]',
+            '"threads":[{"triggered":true,"frames":[{"imageOffset":true}]}]',
+            '"threads":[{"triggered":true,"frames":[{"symbol":"a","symbol":"b"}]}]',
+            '"threads":[{"triggered":true,"frames":[{"symbol":{}}]}]',
+            '"usedImages":[{"name":"a","name":"b"}],'
+            '"threads":[{"triggered":true,"frames":[{"imageIndex":0}]}]',
+        ):
+            raw = ('{' + fragment + '}').encode()
+            with self.subTest(fragment=fragment):
+                # Optional inspection does not change default boot attribution.
+                self.assertEqual(summarize(raw, CURRENT)['attribution'], 'unknown_boot')
+                with self.assertRaises(ValueError):
+                    summarize(raw, CURRENT, thread_frames=10)
+        for limit in (-1, 101, True, 1.5):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                summarize(b'{}', CURRENT, thread_frames=limit)
+        self.assertEqual(summarize(b'{}', CURRENT, thread_frames=100)['sampled_threads'], [])
+
     def test_native_watchdog_report_is_attributed_by_boot(self):
         result = summarize(encoded({
             'bootSessionUUID': CURRENT, 'procName': 'ExampleBrowser', 'pid': 42,
@@ -86,7 +140,7 @@ class CrashSummaryTest(unittest.TestCase):
             unknown.write_bytes(encoded({'incident': CURRENT}))
             broken.write_bytes(b'{')
             command = [sys.executable, str(script), str(old), str(unknown), str(broken),
-                       '--boot-uuid', CURRENT, '--output', str(output)]
+                       '--boot-uuid', CURRENT, '--thread-frames', '3', '--output', str(output)]
             process = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(process.returncode, 1, process.stderr)
             report = json.loads(output.read_text())
@@ -96,6 +150,7 @@ class CrashSummaryTest(unittest.TestCase):
             self.assertEqual(len(report['errors']), 1)
             self.assertFalse(report['inspection_complete'])
             self.assertFalse(report['browser_readiness_verified'])
+            self.assertTrue(all(row['sampled_threads'] == [] for row in report['reports']))
             saved = output.read_bytes()
             process = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(process.returncode, 1)
