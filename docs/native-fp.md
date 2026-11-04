@@ -60,12 +60,19 @@ container CPU/memory limits, renderer and display settings for each trial.
 Record the effective `VPHONE_NATIVE_FP` and `QEMU_TLB_UNSYNCED` values. Keep
 clock experiments separate from the dependency comparison.
 
-Measure cold startup, rendered local-page diagnostics, calibrated native input,
-and the [Safari/Home transition](session-lifecycle.md). Continue to external
-HTTPS only after those checks pass. Compare whole-cgroup CPU and memory over
-equivalent successful workloads; a timeout, crash or empty page cannot establish
-a resource improvement. Keep site-specific acceptance tests and their captures
-outside the repository.
+Measure reliable cold startup within the approximate 300-second development
+budget, then repeated foreground navigation, rendered local-page diagnostics
+and calibrated native input. Keep warm acknowledgment, complete page execution
+and visible rendering times separate. Record the
+[Safari/Home transition](session-lifecycle.md) as a separate lifecycle check;
+foreground browsing is the primary request path.
+
+For adoption, require successful cold and warm local checks followed by external
+HTTPS acceptance. A diagnostic continuation after a failed cold page may help
+investigate warm behavior, but must retain the cold failure and cannot qualify
+the whole run. Compare whole-cgroup CPU and memory over equivalent successful
+workloads; a timeout, crash or empty page cannot establish a resource improvement.
+Keep site-specific acceptance tests and their captures outside the repository.
 
 The patch does not alter browser JavaScript, browser APIs, device strings or
 page content, and it does not require a hardware GPU. It is not applied by the

@@ -153,9 +153,10 @@ The pinned patched source passed a local compile check and 50 selected
 allocator and memory-related tests. The standalone check then passed all twenty
 rounds with logging enabled and disabled on CPU Lavapipe. The enabled log
 contained 256-byte buffer and 4 KiB image placements, replayed consistently, and
-ended with no logged live pool blocks. No instrumented iPhone run has been
-qualified yet. A two-job build with debug information exceeded a 4 GiB build
-container limit; the documented one-job, no-debug-information build completed
+ended with no logged live pool blocks. The native observations below retain a
+failed cold-page gate and do not qualify a runtime change. A two-job build with
+debug information exceeded a 4 GiB build container limit; the documented
+one-job, no-debug-information build completed
 within that same limit. Build memory is separate from browser memory use.
 
 ## Linking the diagnostic into a runtime
@@ -219,3 +220,55 @@ native preflight caught this mismatch before a guest was started. Rebuild the
 deployment image from its intended Dockerfile, or retain the control build's
 internal libfdt configuration, and record the resulting dependency change.
 Preserve the failed preflight separately from the corrected check.
+
+## Native allocation observations
+
+One instrumented native session used the pinned renderer and the corrected
+`14c9913d` QEMU candidate with native FP enabled and TLB mode 0. It ran on four
+x86-64 host cores with 8 GiB RAM, a 6656 MiB container limit, two guest
+application CPUs, 2 GiB guest RAM and one CPU Lavapipe thread. The display
+remained 1179 × 2556. The binary passed the numerical regression gate with
+native FP enabled and disabled; its static renderer bridge passed a separate
+shared-buffer readback check with allocation logging enabled and disabled.
+
+Safari reached verified foreground at 234.3 seconds, but both first-page worker
+checks exceeded their 15-second deadlines. That cold sequence failed. Three
+later foreground navigations in the same Safari process passed workers, canvas
+and WebGL checks, followed by one calibrated native touch. Their native-open
+acknowledgments took 0.59–1.13 seconds; complete local-page callbacks took
+14.97–21.45 seconds. Fixed captures showed each completed observation by
+30 seconds. A later warm success does not change the original cold result.
+
+Two bounded allocation-log prefixes from this process replayed consistently:
+
+| Capture | Pooled capacity | Logged live placements | Unaccounted capacity | Blocks without logged placements |
+| --- | --- | --- | --- | --- |
+| After the cold-page failure | 1,024 MiB | 708.6 MiB | 315.4 MiB | 1 |
+| After three warm pages and touch | 1,280 MiB | 824.2 MiB | 455.8 MiB | 2 |
+
+The warm pool held eight buffer blocks and twelve image blocks. Its two blocks
+without placements total only 128 MiB; the remaining unaccounted capacity is
+distributed within occupied blocks. Changing block sizes or retention needs a
+separate allocation and rendering experiment. These figures do not establish
+that any particular amount of resident memory can be released.
+
+Each capture retained the full prefix, binary hash, original launch identity,
+process ancestry, logging environment and stdout/stderr-to-log association.
+The coverage declaration preceded allocation events, and local replay matched
+the remote report. These checks strengthen provenance, but the live log and
+`/proc/PID/smaps` reads were not an atomic snapshot and the analyzer still reports
+`capture_completeness_verified: false`.
+
+At the warm snapshot, proportional resident memory was approximately 2,019 MiB
+in guest backing mappings, 2,096 MiB in anonymous mappings and 1,208 MiB in
+allocation-file mappings. Mapping names alone do not identify every owner, and
+these are process observations rather than whole-container totals. The
+720-second warm resource window averaged 1.36 CPU cores and sampled a 6.09 GiB
+container peak, with no memory-limit or OOM events. Default URL opening also
+increased saved tabs from ten to thirteen during the three local navigations;
+future memory comparisons must control tab state.
+
+This was a diagnostic rebuild with additional logging and some different
+autodetected dependencies. Its failed cold workload and different build prevent
+using lower individual readings as evidence of an optimization. No allocator
+policy, supported memory limit or default dependency pin changed.
