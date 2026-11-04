@@ -276,6 +276,13 @@ those radii, pointer pressure was zero, and pointer-up dimensions were zero.
 Every tap produced a trusted callback, and all four property-reading paths
 agreed. The local page rendered its canvas and completed both worker checks.
 
+A restoration control then wrote back the original instructions and signature
+slot, verified the original complete-file hash, and rebooted. The same SDK tap
+again returned `radiusX: 4260`, `radiusY: 0` and `force: 4260`. The local canvas
+and worker checks still passed. This reversible result establishes the repair's
+effect on those touch fields; it does not establish the original file's stock
+provenance or the outcome of unrelated browsing workloads.
+
 This is a build-specific experimental result. The public runtime does not yet
 install the framework repair or replace the pinned HID helper. Package the
 guarded repair and contact scaling before claiming that a fresh checkout has
