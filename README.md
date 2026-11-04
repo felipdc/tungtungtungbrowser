@@ -174,10 +174,13 @@ The [native browser control reference](docs/browser-control.md) covers:
 - Experimental tab reuse and transport failure handling.
 
 An optional [calibrated native tap helper](docs/native-touch-helper.md) has a
-separate build and installer. Its framework field repair and live validation
-requirements are documented there; VM creation does not install that repair
-automatically. The controller uses native interfaces without injected page
-scripts or JavaScript property replacements.
+separate build and installer. Its framework field repair has an
+[offline preparation tool](docs/touch-repair.md) and a separate experimental
+[native installer](docs/native-touch-installation.md), with full backups and
+explicit reboot verification. VM creation does not install that repair
+automatically. Live Safari validation is still required. The controller uses
+native interfaces without injected page scripts or JavaScript property
+replacements.
 
 HTML retrieval, DOM snapshots, selector waits and network observation or
 interception are [planned APIs](docs/roadmap.md#browser-api-expansion--pursue-after-the-current-runtime-work).

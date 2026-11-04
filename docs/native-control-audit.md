@@ -287,7 +287,9 @@ This is a build-specific experimental result. The public
 [offline preparation tool](touch-repair.md) can create and reverse the exact
 guarded code/signature repair on a separate extracted file. An optional
 [native tap backend](native-touch-helper.md) packages calibrated HID input and
-its installation. Runtime creation still does not install the framework repair,
+its installation. A separate [framework installer](native-touch-installation.md)
+provides guarded replacement, full backups and post-reboot verification.
+Runtime creation still does not install the framework repair,
 and the default tap path remains the pinned native sequence. A fresh checkout
 therefore does not automatically have corrected input.
 The nonzero requested-pressure case still produced zero native

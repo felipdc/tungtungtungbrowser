@@ -9,6 +9,9 @@ Use Python 3.11 or newer. Run `python3 -m unittest discover -s tests -v` and
 `python3 -m compileall -q tungtungtungbrowser scripts`. For shell changes, run
 `bash -n` on the changed files. Check diagnostic JavaScript with `node --check`.
 Use `python3 scripts/check_public_tree.py` before preparing a source release.
+The native installer tests run on Linux with a C compiler (`cc`) and the
+OpenSSL 3 or 1.1 `libcrypto` runtime. They compile the installation core against
+synthetic cache fixtures and real temporary files; they need no firmware or VM.
 
 Changes to guest control need tests for the observable request contract,
 transport failures and evidence preservation. Live browser validation must

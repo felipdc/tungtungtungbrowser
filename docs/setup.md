@@ -32,7 +32,9 @@ The first boot includes data migration and is not a normal startup benchmark.
 
 An experimental [native touch repair](touch-repair.md) can be prepared from an
 exact matching extracted cache using a separate offline tool. It preserves
-the source file and verifies the changed code page's signature. VM creation
+the source file and verifies the changed code page's signature. The separate
+[native installation guide](native-touch-installation.md) covers firmware
+prerequisites, full backups, reversal and post-reboot verification. VM creation
 does not install this optional, build-specific repair automatically.
 
 After creation, cleanly stop the upstream VM before starting the Compose

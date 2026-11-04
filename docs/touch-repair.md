@@ -85,11 +85,13 @@ or a guarantee against every storage-device failure.
 
 ## Installation and validation scope
 
-The tool does not mount a VM disk, remount iOS, install files, reboot a guest
-or change `Browser.tap`. The runtime's creation and startup scripts do not
-install this repair automatically. Integrating installation into firmware
-preparation, with its native trust prerequisites and rollback, remains work
-on the [roadmap](roadmap.md).
+The offline tool does not mount a VM disk, remount iOS, install files, reboot a
+guest or change `Browser.tap`. A separate experimental
+[native installer](native-touch-installation.md) provides guarded installation,
+full backups, deliberate reversal and post-reboot verification. Its guide
+documents firmware prerequisites, failure evidence and native qualification.
+The runtime's creation and startup scripts do not install this repair
+automatically; that integration remains on the [roadmap](roadmap.md).
 
 The earlier native experiment applied these exact code/signature bytes,
 verified the complete file hash, cleanly rebooted, and verified the hash again
