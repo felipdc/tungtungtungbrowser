@@ -18,6 +18,9 @@ class TransitionTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.vm = Path(directory.name)
         self.out = self.vm / 'evidence'
+        # A fresh CI runner can have less than 60 seconds of uptime. Keep
+        # this synthetic launch clock independent of the host's clock origin.
+        self.enterContext(patch.object(transition.time, 'monotonic', return_value=1000.0))
         self.launch = {'pid': os.getpid(), 'cid': 3,
                        'pid_start_ticks': Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19],
                        'host_boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
