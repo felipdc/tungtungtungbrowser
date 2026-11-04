@@ -1,5 +1,14 @@
 # Native diagnostics and workarounds
 
+## Renderer allocation log check
+
+`check_graphics_memory.rs` exercises small buffer and image allocations through
+metal2vulkan on CPU Lavapipe. It checks completed buffer fill/copy readback and
+a neighboring allocation while validating the optional complete-placement log.
+The [allocation guide](../docs/graphics-memory.md) covers the external build,
+offline analyzer and evidence limits. It does not start an iPhone or qualify
+native browser behavior or a smaller memory limit.
+
 ## Direct process identity observer
 
 `process_observer.c` is an optional read-only native service for inspecting a

@@ -1,5 +1,12 @@
 # Pinned runtime patches
 
+`metal2vulkan-log-all-placements.patch` is an optional diagnostic for the pinned
+renderer. It records small pooled placements omitted by the upstream memory
+log, without changing allocation policy. The default build does not apply it.
+See [graphics allocation accounting](../docs/graphics-memory.md) for the
+offline analyzer, capture requirements and limits. The patch uses the upstream
+GPL-2.0-or-later option; see [third-party notices](../THIRD_PARTY_NOTICES.md).
+
 `qemu-wfe-backoff.patch` is an optional CPU scheduling experiment for the
 pinned QEMU fork. Its default is disabled, and the runtime build does not
 apply it. See the [WFE experiment](../docs/qemu-wfe.md) for the native handoff

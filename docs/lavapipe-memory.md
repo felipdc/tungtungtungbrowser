@@ -4,6 +4,10 @@
 llvmpipe allocator frees an ordinary allocation. It is an opt-in experiment;
 the default runtime image and build script do not apply it.
 
+The separate [graphics allocation analyzer](graphics-memory.md) checks pool
+lifetimes and placement-log coverage before changing sub-allocation policy.
+Unaccounted pool capacity is not the same measurement as freed backing pages.
+
 In Mesa 25.0.7, ordinary allocations occupy ranges of one shared `memfd`.
 The free path unmaps the allocation and returns its range to the allocator,
 but leaves its backing pages in the file. Those pages can remain resident

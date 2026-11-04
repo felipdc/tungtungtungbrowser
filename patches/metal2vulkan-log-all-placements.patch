@@ -1,0 +1,48 @@
+diff --git a/crates/metal2vulkan-runtime/src/memory.rs b/crates/metal2vulkan-runtime/src/memory.rs
+index 25c3254..cecc6d9 100644
+--- a/crates/metal2vulkan-runtime/src/memory.rs
++++ b/crates/metal2vulkan-runtime/src/memory.rs
+@@ -79,9 +79,9 @@ pub(super) const KEPT_EMPTY_BLOCKS: usize = 2;
+ pub(super) const KEPT_EMPTY_FOR: Duration = Duration::from_secs(1);
+ 
+ /// The least bytes of a pooled placement the memory log names as it is placed and returned
+-/// (`memory_log.rs`): a few such placements fill a block, so their comings and goings are what
+-/// makes and frees blocks.
+-const LOGGED_PLACEMENT_BYTES: u64 = 4 << 20;
++/// (`memory_log.rs`). This diagnostic build records every pooled placement.
++/// Logging remains controlled by METAL2VULKAN_LOG_MEMORY; allocation policy is unchanged.
++const LOGGED_PLACEMENT_BYTES: u64 = 1;
+ 
+ /// What memory a resource needs.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+@@ -1060,6 +1060,11 @@ impl Memory {
+     /// Log each `VkDeviceMemory` allocated, imported or freed from now on to `log`
+     /// (`memory_log.rs`).
+     pub(super) fn log_to(&mut self, log: Option<MemoryLog>) {
++        if let Some(log) = &log {
++            log.line(
++                "metal2vulkan: memory: placement coverage: minimum 1 bytes; protocol 1".to_owned(),
++            );
++        }
+         self.log = log;
+     }
+ 
+diff --git a/crates/metal2vulkan-runtime/src/memory_log.rs b/crates/metal2vulkan-runtime/src/memory_log.rs
+index cfe8607..32b98cf 100644
+--- a/crates/metal2vulkan-runtime/src/memory_log.rs
++++ b/crates/metal2vulkan-runtime/src/memory_log.rs
+@@ -10,11 +10,11 @@
+ //!   bytes and range again. Memory that waits for the batches in flight before it is freed
+ //!   (`freed_memory.rs`) is named as it starts to wait. The memory device creation makes and frees
+ //!   to prime the driver (`device/prime.rs`) is not logged.
+-//! - **Large placements.** One line per placement of at least `LOGGED_PLACEMENT_BYTES` (4 MiB)
++//! - **All pooled placements (diagnostic build).** One line per placement of at least one byte
+ //!   in a pooled block, as it is placed and as it is returned ([`placement_line`]): whether it is
+ //!   an image or a buffer, its memory class where placed, its bytes, its offset and its block's
+-//!   handle and memory type, which the block's own lines name. A few such placements fill a block,
+-//!   so their comings and goings show what makes and frees blocks.
++//!   handle and memory type, which the block's own lines name. This can produce large logs;
++//!   keep its timing/resource overhead separate from performance measurements.
+ //! - **The device address.** A block with a buffer of addresses (`memory.rs`) gives that buffer's.
+ //!   Any other memory's line says the address is unknown: the log makes and binds no Vulkan object
+ //!   to learn one, as a diagnostic changes no GPU work. A buffer of `SHADER_DEVICE_ADDRESS` usage

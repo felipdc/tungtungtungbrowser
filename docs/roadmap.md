@@ -42,6 +42,11 @@ check native rendering at each stage before adopting an optimization.
       30-second offer timeout has accepted native replies taking 20.0 and 5.6
       seconds; sustained reliability and clock accuracy still need validation.
 - [ ] Reduce total host/container resource usage under real browsing workloads.
+      Use the [graphics allocation analyzer](graphics-memory.md) to distinguish
+      logged live placements from unaccounted pool capacity. The filtered
+      upstream log cannot establish reclaimable bytes; the optional complete
+      placement diagnostic remains separate from runtime defaults and measured
+      performance comparisons.
       The [renderer compiler experiment](lavapipe-compiler.md) has passed a
       standalone compute check, but its first native run exceeded both worker
       deadlines. The compiler setting remains unadopted; native browser
