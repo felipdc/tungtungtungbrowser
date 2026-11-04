@@ -97,6 +97,8 @@ docker compose -f runtime/compose.yaml exec iphone \
 Read [startup and readiness](docs/browser-control.md#startup-and-readiness)
 for foreground verification, clock ordering, capture evidence and handling a
 failed request without repeating an action with an unknown outcome.
+Use the [session-transition diagnostic](docs/session-lifecycle.md) to record
+one Home/Safari round trip, check process continuity and retain native captures.
 For native crashes, use the [offline crash diagnostics](docs/crash-diagnostics.md)
 to match saved reports to the guest boot UUID. New report filenames and
 modification times can belong to an earlier boot.
