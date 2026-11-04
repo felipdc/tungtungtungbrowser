@@ -86,7 +86,11 @@ def web_url(value):
 
 
 class Guest:
-    def __init__(self, cid=3, timeout=30, connection_factory=None):
+    def __init__(self, cid=3, timeout=30, connection_factory=None, *, touch_helper_sha256=None):
+        if touch_helper_sha256 is not None:
+            from .native_touch import helper_path
+            helper_path(touch_helper_sha256)
+        self.touch_helper_sha256 = touch_helper_sha256
         self.connection_factory = connection_factory or (lambda: VsockHTTPConnection(cid, timeout))
 
     def request(self, method, path, data=None):
@@ -143,6 +147,10 @@ class Guest:
             web_url(params.get("url"))
             if params.get("bundle_id") != "com.apple.mobilesafari":
                 raise ValueError("Navigation must explicitly target iOS Safari")
+        return self._rpc(method, **params)
+
+    def _rpc(self, method, **params):
+        """Internal envelope exchange; public callers use the typed methods."""
         request_id = str(uuid.uuid4())
         response = self.request("POST", "/v1/rpc", {
             "id": request_id, "method": method, "params": params})
@@ -221,6 +229,9 @@ class Guest:
         return result
 
     def tap(self, x, y):
+        if getattr(self, 'touch_helper_sha256', None) is not None:
+            from .native_touch import calibrated_tap
+            return calibrated_tap(self, self.touch_helper_sha256, x, y)
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
                    and math.isfinite(v) and v >= 0 for v in (x, y)):
             raise ValueError("Tap coordinates must be finite, nonnegative screen points")

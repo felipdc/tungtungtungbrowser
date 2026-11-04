@@ -109,9 +109,10 @@ copying, failed writes and preservation of previous attempts.
 
 This framework repair also leaves a separate HID issue unresolved: the pinned
 input helper supplies oversized contact radii and retains pointer dimensions
-on release. A calibrated native helper passed four single-contact checks,
-but it is not integrated into the public browser controller. After integration,
-use the local diagnostic page and
+on release. A calibrated native helper passed four single-contact checks.
+The public controller now has an optional
+[calibrated tap backend](native-touch-helper.md) with separate build and
+installation steps. Use the local diagnostic page and
 [`check_touch_probe.py`](../scripts/check_touch_probe.py) to verify trusted
 touch/pointer fields and inspect the native screenshot. Native request
 acknowledgements alone do not establish correct input or page rendering.

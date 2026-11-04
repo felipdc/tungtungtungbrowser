@@ -114,6 +114,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="tungtungtungbrowser")
     parser.add_argument("--cid", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--touch-helper-sha256", help="Use an installed experimental calibrated native tap helper")
     parser.add_argument("--qmp-socket", type=Path, help="Use local QMP display capture (PNG) instead of guest JPEG")
     parser.add_argument("--display-timeout", type=float, default=15, help="QMP capture deadline in seconds (default: 15)")
     sub = parser.add_subparsers(dest="action", required=True)
@@ -168,7 +169,10 @@ def main(argv=None):
         parser.error("settle-seconds must be between 0 and 60")
     if args.action == "sync-clock" and args.interval_seconds is not None and not 10 <= args.interval_seconds <= 3600:
         parser.error("interval-seconds must be between 10 and 3600")
-    guest = Guest(args.cid, args.timeout)
+    try:
+        guest = Guest(args.cid, args.timeout, touch_helper_sha256=args.touch_helper_sha256)
+    except ValueError as exc:
+        parser.error(str(exc))
     browser = Browser(guest=guest, qmp_socket=args.qmp_socket,
                       display_timeout=args.display_timeout)
     try:

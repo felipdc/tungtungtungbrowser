@@ -60,10 +60,12 @@ class Browser:
     serialized; navigation requests never assert that page content is ready.
     """
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
-                 qmp_socket=None, display_timeout=15):
+                 qmp_socket=None, display_timeout=15, touch_helper_sha256=None):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
-        self.guest = guest if guest is not None else Guest(cid, timeout)
+        if guest is not None and touch_helper_sha256 is not None:
+            raise ValueError('Configure the touch helper on the supplied Guest instead')
+        self.guest = guest if guest is not None else Guest(cid, timeout, touch_helper_sha256=touch_helper_sha256)
         self.input_settle = input_settle
         self.qmp_socket = qmp_socket
         self.display_timeout = display_timeout

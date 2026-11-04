@@ -209,6 +209,12 @@ Firmware and VM images are obtained separately under their own terms.
 
 ## Python and native control
 
+An optional [calibrated native tap helper](docs/native-touch-helper.md) can be
+built and installed separately for the tested portrait display. Select it with
+`Browser(touch_helper_sha256=...)` or `--touch-helper-sha256`. It uses native
+IOKit events and does not inject scripts into Safari. The separate framework
+field repair and live validation requirements are documented with the helper.
+
 The Python controller has no third-party runtime dependencies:
 
 ```sh

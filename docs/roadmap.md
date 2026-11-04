@@ -37,8 +37,10 @@ this repository.
       helper, four trusted contacts had consistent touch/pointer fields and
       zero pointer dimensions on release. The [offline preparation tool](touch-repair.md)
       now packages exact build verification, reversible copies and signature
-      verification. Integrate native installation and HID scaling into runtime
-      setup; the public runtime does not install these experimental changes.
+      verification. An optional [native tap backend](native-touch-helper.md)
+      now provides a build, installer and calibrated SDK/CLI input. Complete
+      framework installation and validate integration into runtime defaults;
+      creation still does not install the framework repair automatically.
       Validate other builds, drags, multitouch and stylus behavior separately.
 - [ ] Verify native touchscreen registration during readiness. A USB device
       can be present in the emulator while iOS has no main-screen digitizer;

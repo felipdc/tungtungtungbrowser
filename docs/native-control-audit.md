@@ -285,9 +285,11 @@ provenance or the outcome of unrelated browsing workloads.
 
 This is a build-specific experimental result. The public
 [offline preparation tool](touch-repair.md) can create and reverse the exact
-guarded code/signature repair on a separate extracted file. The public runtime
-does not yet install it or replace the pinned HID helper. Complete installation
-and contact scaling before claiming that a fresh checkout has corrected input.
+guarded code/signature repair on a separate extracted file. An optional
+[native tap backend](native-touch-helper.md) packages calibrated HID input and
+its installation. Runtime creation still does not install the framework repair,
+and the default tap path remains the pinned native sequence. A fresh checkout
+therefore does not automatically have corrected input.
 The nonzero requested-pressure case still produced zero native
 pressure; it does not establish force support. Drag, multitouch, stylus/twist,
 other framework builds and complete physical-device equivalence remain untested.
@@ -357,8 +359,11 @@ separately check the native Safari request and reject scripting methods and
 non-web URL schemes before transport.
 
 vphoned also offers a general administrative JavaScriptCore bridge upstream.
-This project's browser controller does not expose or invoke it. Its presence
-is not evidence that scripts are being injected into Safari.
+The optional [calibrated touch backend](native-touch-helper.md) invokes a fixed
+`proc.run` expression there to launch a content-addressed native HID helper.
+That session runs outside Safari. It accepts no caller-provided script or page
+execution context, and the public generic call method still rejects
+`script.eval`. Default navigation and input do not use this bridge.
 
 A guest daemon is re-signed during installation, so its whole-file hash can
 differ from the upstream release. For provenance checks, compare its Mach-O
