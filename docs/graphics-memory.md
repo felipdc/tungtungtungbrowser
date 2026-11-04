@@ -157,3 +157,50 @@ ended with no logged live pool blocks. No instrumented iPhone run has been
 qualified yet. A two-job build with debug information exceeded a 4 GiB build
 container limit; the documented one-job, no-debug-information build completed
 within that same limit. Build memory is separate from browser memory use.
+
+## Linking the diagnostic into a runtime
+
+QEMU links the renderer statically. Replacing a shared library beside an
+existing QEMU binary does not install this diagnostic. Build a separate
+renderer distribution, then configure and link a separate QEMU against it.
+Keep the control binary, disk parents and browser caches intact.
+
+Use the pinned reims-vgpu revision
+`83dcaf58e484cff369996da7cc10a0cdd0dc8bc3`, with the patched metal2vulkan
+checkout beside it as its `Cargo.toml` requires. Preserve the dependency
+lockfile and verify its hash before and after the build. The QEMU source,
+patches, compiler settings and enabled features must match the selected
+control; installing this diagnostic does not require adopting a newer QEMU.
+Follow the source repositories' worktree instructions when preparing separate
+checkouts.
+
+For an already prepared source tree, build the renderer into a new external
+directory. `$build_root` must be an absolute path outside this repository:
+
+```sh
+cd "$renderer_source"
+export CARGO_TARGET_DIR="$build_root/reims"
+export CARGO_BUILD_JOBS=1 CMAKE_BUILD_PARALLEL_LEVEL=1 MAKEFLAGS=-j1
+. scripts/internal/dev-env.sh
+cargo +1.98.1 xtask dist --platform vulkan --out "$build_root/dist-vulkan"
+```
+
+This uses the renderer's release profile. The debug-information override in
+the standalone fixture above is not a runtime optimization. For QEMU, create a
+new build directory and set
+`PKG_CONFIG_PATH="$build_root/dist-vulkan/lib/pkgconfig"` when running the
+selected source's `configure`, retaining the control's options including
+`--enable-pvg`. Build `qemu-system-aarch64` there. Record the source diffs,
+toolchain, lockfile, static-library and final-binary hashes, and each build's
+exit status.
+
+Before a native boot, check the resulting binary inside the intended runtime
+environment: required shared libraries must resolve, the expected machine
+must be available, and the graphics device must initialize with only the CPU
+Lavapipe ICD exposed. A paused device check does not execute an iPhone guest.
+The pinned QEMU fork's generic `virt` machine does not allow adding
+`apple-gfx-mmio` as a dynamic device. Check that device on the actual machine;
+a standalone renderer C API check covers the bridge, not QEMU's machine wiring.
+If the selected QEMU includes the optional native-FP changes, retain the
+[numerical regression gate](native-fp.md) as well. Only a subsequent cold boot
+and warm workload can qualify the instrumented native runtime.
