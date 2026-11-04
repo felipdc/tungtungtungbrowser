@@ -28,7 +28,7 @@ services:
         source: ${TTT_VM_DIR:?Set TTT_VM_DIR to a prepared iOS bundle}
         target: /vm
       - type: bind
-        source: ${TTT_VM_DIR}/cache
+        source: ${TTT_CACHE_DIR:-${TTT_VM_DIR}/cache}
         target: /root/.cache
       - type: bind
         source: ${TTT_RUNTIME_DIR:?Set TTT_RUNTIME_DIR to the built pinned vphone-linux checkout}

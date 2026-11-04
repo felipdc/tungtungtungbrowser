@@ -106,6 +106,7 @@ Compose reads these variables from your shell or an external `--env-file`:
 | `TTT_CONTAINER_CPUS` | `4` | Whole-container CPU quota |
 | `TTT_SHM_SIZE` | `6g` | Shared-memory mount capacity, charged to container memory as used |
 | `TTT_CLOCK_INTERVAL_SECONDS` | `0`; proxy overlay: `60` | Native time offers owned by the launcher; `0` disables, otherwise 10–3,600 seconds |
+| `TTT_CACHE_DIR` | `$TTT_VM_DIR/cache` | Host directory mounted at `/root/.cache`; use a separate copy for resource comparisons |
 
 Guest RAM is only part of total memory use. Include the emulator, software
 renderer, shared buffers and filesystem cache when sizing the host. The
@@ -182,3 +183,8 @@ For your workload, record the following before adopting a smaller configuration:
 
 See the [diagnostic commands and limitations](../diagnostics/README.md) for
 recording and interpreting these measurements.
+
+For comparisons that change emulator settings, use the
+[translation-cache and cache-isolation procedure](translation-cache.md).
+Changing environment variables for individual graphics libraries does not
+necessarily redirect every renderer cache.

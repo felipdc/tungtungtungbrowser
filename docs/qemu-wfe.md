@@ -90,9 +90,10 @@ emulated SEP CPU; record every CPU's effective property through QMP.
 
 The native comparison uses two application CPUs, 2 GiB guest RAM, a 1 GiB
 translation cache, one lavapipe thread, and identical container limits. A single
-recorded disk state supplies both boots, and each trial receives a separate copy
-of the same initial renderer cache. The local page open and native tap are
-scheduled relative to the original launch clock, with the same deadlines.
+recorded disk state supplies both boots. The trials copied the same initial
+renderer cache and redirected selected cache environment variables. The local
+page open and native tap are scheduled relative to the original launch clock,
+with the same deadlines.
 
 QEMU's `-snapshot` option directs disk writes into temporary copy-on-write
 files. This is a disk-testing mode, **not** saved machine state or fast resume.
@@ -108,8 +109,15 @@ metadata and recorded small-file/cache hashes after each clean shutdown. These
 checks supplement the observed read-only block graph; they are not a full hash
 of a large guest disk.
 
-The method controls saved device and renderer-cache contents. Host page-cache
-warmth, guest scheduling, clock correction and external network responses can
+The read-only block graph controls the saved device state. The original cache
+verification checked recorded entries, but did not reject additional files.
+A later audit found three new renderer entries in the original `/root/.cache`
+mount, despite the per-trial cache environment variables. Complete renderer-cache
+isolation was therefore not established by that procedure. For new comparisons,
+redirect the mount itself with `TTT_CACHE_DIR` and compare the full filename set
+and hashes, as described in [cache isolation](translation-cache.md#isolate-the-renderer-cache).
+
+Host page-cache warmth, guest scheduling, clock correction and external responses can
 still differ. Linux charges memory to the cgroup that instantiated it until
 release; shared file pages do not necessarily belong to the current consumer.
 Compare anonymous/file/shared-memory counters and host available memory as well

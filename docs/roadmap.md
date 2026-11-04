@@ -21,6 +21,9 @@ this repository.
       two-core handoff check and native comparison procedure. Its optional
       backoff remains disabled; lower synthetic CPU use is insufficient for
       adoption without a real browsing benefit.
+      The [translation-cache comparison](translation-cache.md) failed Safari
+      readiness at 512 MiB; retain the 1024-MiB default. New comparisons isolate
+      the full renderer-cache mount and verify both filenames and hashes.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
