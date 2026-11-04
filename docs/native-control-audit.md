@@ -113,6 +113,26 @@ had completed 12 offers and remained active at the end of those captures.
 These two navigations establish a bounded local and external page check;
 they do not establish sustained workload reliability or memory savings.
 
+## Launch and state-query cost
+
+Source inspection and a native experiment on 2026-11-04 examined repeated
+application enumeration in the pinned daemon. `apps.launch` reads running apps
+before and after launching, then queries foreground identity. `apps.foreground`
+also combines foreground identity with installed/running-app lookups. Those
+operations can add substantial work under CPU translation.
+
+An experimental native helper instead selected Safari by executable path,
+checked its process-start identity and bundle ID, and read its RunningBoard
+focal assertions. A resident version returned two warm state queries in 23.1
+and 16.8 milliseconds after a 419.7-millisecond first query. Those observations
+cover a narrow focal-state check; they do not replace the pinned implementation's
+multi-app ambiguity handling, establish displayed content, or measure cold boot.
+
+The [subsequent Home/Safari transition failed](crash-diagnostics.md#observed-transition-failure),
+including a fresh Safari watchdog termination. The experimental helper is not
+shipped as an SDK backend. Fast warm observations are insufficient grounds to
+change startup or control defaults.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.

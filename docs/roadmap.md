@@ -7,7 +7,19 @@ this repository.
 
 ## Current runtime work
 
+Prioritize repeatable startup and native control, then consistent external-page
+browsing, then measured resource reductions. Retain failures and check native
+rendering at each stage before adopting an optimization.
+
 - [ ] Make cold startup and Safari readiness reliable, with measured timings.
+      Validate repeated Home/Safari transitions and process identity as well as
+      initial launch. A [native transition trial](crash-diagnostics.md) passed
+      local page and touch checks but hit a background scene-update watchdog;
+      its experimental fast state observer remains unadopted.
+- [ ] Establish consistent external-page browsing across recorded runs. An
+      unexpected login wall or challenge is a failed acceptance outcome.
+      Investigate device/browser signals and proxy behavior without treating a
+      single successful page or one failure as proof of the cause.
 - [ ] Resolve periodic clock-offer timeouts under slow native inspection while
       preserving once-only requests and recorded failure outcomes. The separate
       30-second offer timeout has accepted native replies taking 20.0 and 5.6
