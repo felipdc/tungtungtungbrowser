@@ -159,30 +159,56 @@ class ClockMaintenanceTest(unittest.TestCase):
         self.assertEqual(guest.offers, 0)
         self.assertEqual(self.join(worker)['status'], 'stopped')
 
-    def test_offers_are_spaced_after_responses_and_idle_stop_is_prompt(self):
-        calls, responses = [], []
-        second = threading.Event()
+    def test_offers_wait_after_responses_and_idle_stop_interrupts_wait(self):
+        calls, responses, waits = [], [], []
+        first_interval, advance_interval, idle = (threading.Event() for _ in range(3))
+
+        class StopSignal:
+            """Advance the first interval explicitly; interrupt the second."""
+            def __init__(self):
+                self.event = threading.Event()
+
+            def is_set(self):
+                return self.event.is_set()
+
+            def set(self):
+                self.event.set()
+                advance_interval.set()
+
+            def wait(self, timeout):
+                waits.append((timeout, len(responses)))
+                if len(waits) == 1:
+                    first_interval.set()
+                    if not advance_interval.wait(10):
+                        raise RuntimeError('test interval was not advanced')
+                    return self.event.is_set()
+                idle.set()
+                return self.event.wait(timeout)
 
         class NativeGuest:
             def health(self):
                 pass
 
             def sync_clock(self):
-                calls.append(time.monotonic())
-                time.sleep(0.03)
-                responses.append(time.monotonic())
-                if len(calls) == 2:
-                    second.set()
+                calls.append('offer')
+                responses.append('response')
                 return {'automatic': True, 'changed': True, 'time': 123, 'offset': 2}
 
         worker = self.worker(NativeGuest())
+        worker.stopping = StopSignal()
         worker.start()
-        self.assertTrue(second.wait(12))
-        started = time.monotonic()
-        state = worker.stop()
-        self.assertLess(time.monotonic() - started, 1)
+        self.assertTrue(first_interval.wait(5))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(waits, [(10, 1)])
+        advance_interval.set()
+        self.assertTrue(idle.wait(5))
+        stopping = threading.Thread(target=worker.stop)
+        stopping.start()
+        stopping.join(5)
+        self.assertFalse(stopping.is_alive(), 'stop did not interrupt the idle interval')
+        state = self.join(worker)
         self.assertEqual(len(calls), 2)
-        self.assertGreaterEqual(calls[1] - responses[0], 10)
+        self.assertEqual(waits, [(10, 1), (10, 2)])
         self.assertEqual(state['status'], 'stopped')
         self.assertEqual(state['offers'], 2)
         self.assertEqual(state['last_response']['offset'], 2)
