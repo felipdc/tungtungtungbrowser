@@ -153,6 +153,42 @@ including a fresh Safari watchdog termination. The experimental helper is not
 shipped as an SDK backend. Fast warm observations are insufficient grounds to
 change startup or control defaults.
 
+## Focused address-field query experiment
+
+A later native trial on 2026-11-04 reached verified foreground Safari in
+269.6 seconds from its original cold launch. The first local page completed
+its diagnostic callback at 339.1 seconds from launch, or 66.8 seconds after
+navigation was requested. Both workers responded within their 15-second
+limits, although the shared worker took 14.2 seconds. Foreground readiness and
+completed page diagnostics are separate milestones; this single successful
+cold sequence does not establish repeated startup reliability.
+
+After the original 600-second cold resource window, one distinct default
+navigation reused the running Safari process. Its request was acknowledged in
+1.20 seconds and its diagnostic callback arrived in 23.19 seconds. Both workers,
+the expected canvas hash and WebGL checks passed. The 15-second capture was
+blank; the 30- and 60-second captures showed the expected page and matching
+saved observation identifier. The saved-tab count increased from 10 to 11 in
+sequential database/WAL copies, whose live atomic consistency was not proven.
+This is one warm-page observation, not a sustained speed or memory improvement.
+
+An experimental read-only address-field helper then attempted to reduce the
+cost of serializing a full accessibility tree. Its local synthetic validation
+passed 13 scenarios under address and undefined-behavior sanitizers. On the
+native guest, however, it exited at the symbol-binding stage before querying
+the field. The existing native tree query subsequently found the enabled,
+visible `URL` field in 17.82 seconds. The original comparison remains failed;
+no follow-up field tap, URL text or Return was sent. The helper is not shipped
+as a controller backend, and its 5.16-second failed RPC is not a successful
+query latency measurement.
+
+The proposed helper also verifies process identity rather than foreground
+state. Any future use for input must retain the original foreground checks and
+ambiguity handling. Reducing attribute reads must not weaken those checks,
+accept an unidentified field, or convert a timed-out operation into repeated
+native input. Resolve native symbol availability and repeat the read-only
+comparison before considering integration.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.
