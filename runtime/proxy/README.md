@@ -37,6 +37,9 @@ Resolve the gateway on the runtime host before starting the isolated namespace.
 HTTPS verifies the certificate against `host` while connecting to `address`.
 Refresh that address and recreate the whole Compose project when it changes.
 The iPhone must be recreated whenever the egress network namespace is replaced.
+For a deliberate credential or session change on the same gateway, the optional
+[session reload](#reload-credentials-without-recreating-the-iphone) below keeps
+the existing namespace and guest.
 
 The router pins [sing-box 1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)
 and verifies a separate release SHA-256 for `amd64` and `arm64`. The image
@@ -134,3 +137,63 @@ recreate both containers together so they share the new network namespace.
 The router is limited to 256 MiB and half a CPU. Include its resource use when
 measuring the complete browser deployment. Credentials are mounted as a private
 file and are not included in source or image layers.
+
+### Reload credentials without recreating the iPhone
+
+When an upstream session becomes unavailable, finish outstanding browser work
+and preserve its failure before deliberately selecting replacement credentials.
+For the same gateway, protocol, port and TLS identity, the optional reload tool
+can update only the router's username/password. It uses the pinned router's
+[SIGHUP reload path](https://github.com/SagerNet/sing-box/blob/v1.14.4/cmd/sing-box/cmd_run.go).
+Reloading closes existing proxy connections. It does not recreate the egress
+container, replace its network namespace, reboot the guest or send browser input.
+
+Supply a complete replacement private proxy JSON in the format above through
+stdin, so credentials do not appear in command-line arguments:
+
+```sh
+docker compose -f runtime/compose.yaml -f runtime/compose.proxy.yaml exec -T egress \
+  python3 /app/scripts/reload_proxy_session.py --output /run/reload-001 \
+  < /external/private/proxy-next.json
+```
+
+The output directory must be new, outside the source tree and on the same
+filesystem as `/run/proxy-config.json`. The tool rejects concurrent reloads,
+checks that PID 1 is the router using that exact configuration, validates the
+candidate with `sing-box check`, and verifies the original configuration and
+process identity again before atomic replacement. A Linux process descriptor
+targets one SIGHUP at that verified process. There is no automatic retry or
+rollback after an uncertain result.
+
+Exit zero and `status: reload_requested` mean the signal was sent. They do not
+establish reload completion, upstream connectivity, a particular exit IP or
+successful browser rendering. Run a new `check_proxy_route.py` observation with
+the intended country/address, inspect the recorded container/guest identities,
+and then verify Safari on an external page. Keep the original failed route and
+browser observations; a later recovery does not change their outcomes.
+
+The evidence directory has mode `0700`; its files have mode `0600`.
+`previous-config.json` contains the original credentials and must remain
+private. A failed validation can also leave `candidate-config.json` for review.
+The report contains hashes, stage outcomes and error types, without credential
+values or subprocess output. If `configuration_replaced` is true on failure,
+inspect the existing router before any further action; do not assume the old
+configuration is still active. An `outcome_unknown` CLI result likewise requires
+inspection rather than another signal.
+
+This updates the live `/run` configuration only. The mounted private source
+file and future Compose launches are unchanged. Select the intended private
+configuration explicitly for the next launch. Gateway/address changes still
+require the complete namespace recreation described above. HTTPS has native
+workload evidence; HTTP and SOCKS5 credential reloads need equivalent validation.
+
+On 2026-11-04, a native evaluation of this tool sent one reload after the
+original browsing and resource recordings finished. The tool retained the
+current credentials; this validated the public reload path without selecting
+another exit. It returned in about 208 ms. A separate route check then matched
+the expected country and IP, and the existing container/PID/network-namespace
+identities and guest launch record were unchanged. No browser input was sent.
+An earlier private credential replacement in the same session had restored an
+unavailable upstream route, but the browser's independent rendering and
+acceptance failures remained failures. Neither observation qualifies general
+proxy failure recovery or continuous connections during reload.

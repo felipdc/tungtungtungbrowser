@@ -115,6 +115,26 @@ they do not establish sustained workload reliability or memory savings.
 
 ## Launch and state-query cost
 
+A foreground-only trial on 2026-11-04 retained a separate tab-reuse failure:
+the first address-field query returned native error `-25215` after 38.9 seconds.
+The controller had sent Command-L, but had not sent the requested URL or Return.
+No input was repeated. Three subsequent, distinct default `goto()` requests
+used native URL opening in the same Safari process. They were acknowledged in
+2.06, 0.50 and 0.50 seconds; local diagnostic callbacks arrived after 21.07,
+15.02 and 17.02 seconds. Both workers, the expected canvas hash and WebGL checks
+passed on each page.
+
+Those callbacks did not establish prompt visual completion. The first and third
+immediate captures were blank or incomplete; the second showed the diagnostic
+canvas. A later capture of the final page, 113.9 seconds after its navigation
+request, showed the expected content and saved observation identifier, while
+toolbar rendering artifacts remained. The native touch check passed and the
+Safari PID/start time remained unchanged. Sequential database copies showed
+saved tabs increasing from 10 to 13; their live atomic consistency was not
+proven. This establishes an observed latency/rendering gap and tab accumulation,
+not sustained navigation reliability or a resource improvement. The default
+controller and runtime pin remain unchanged.
+
 Source inspection and a native experiment on 2026-11-04 examined repeated
 application enumeration in the pinned daemon. `apps.launch` reads running apps
 before and after launching, then queries foreground identity. `apps.foreground`

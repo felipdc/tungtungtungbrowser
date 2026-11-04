@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=download /usr/local/bin/sing-box /usr/local/bin/sing-box
 COPY runtime/proxy/entrypoint.py /app/entrypoint.py
 COPY scripts/check_proxy_route.py /app/scripts/check_proxy_route.py
+COPY scripts/reload_proxy_session.py /app/scripts/reload_proxy_session.py
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/tungtungtungbrowser/
 ENV PYTHONDONTWRITEBYTECODE=1
 ENTRYPOINT ["python3", "/app/entrypoint.py"]
