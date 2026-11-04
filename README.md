@@ -209,6 +209,9 @@ docker compose -f runtime/compose.yaml exec iphone \
 measurement tools are described in [diagnostics](diagnostics/README.md).
 Cold boot and in-memory pause/resume must be reported separately. The pinned
 virtual display does not support durable QEMU saved-state migration.
+The [native FP evaluation](docs/native-fp.md) documents the optional upstream
+CPU experiment, its numerical correctness gate and the boundary correction
+required by the tested candidate.
 
 ## Development and licensing
 

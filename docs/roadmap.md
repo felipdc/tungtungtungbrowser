@@ -39,6 +39,18 @@ rendering at each stage before adopting an optimization.
       The [translation-cache comparison](translation-cache.md) failed Safari
       readiness at 512 MiB; retain the 1024-MiB default. New comparisons isolate
       the full renderer-cache mount and verify both filenames and hashes.
+      The [native floating-point update](native-fp.md) requires a host-FPU
+      boundary correction to pass the numerical fixture. Patched native trials
+      passed local rendering, touch and one session transition each, but did
+      not improve cold startup. Repeat successful workloads before adopting
+      either TLB mode or claiming a resource reduction.
+- [ ] Verify storage coherence in isolated runtime experiments. When firmware
+      and operating-system devices address the same disk, their writable views
+      must share one block node. Independent overlays can diverge even when
+      they have the same parent. Synthetic tests with the board's block devices
+      passed writes in both directions through a shared node. Native boot and
+      migration from previously divergent state remain unvalidated; preserve
+      that state and explicitly choose a canonical source before migration.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
