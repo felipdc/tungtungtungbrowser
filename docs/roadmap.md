@@ -47,10 +47,11 @@ rendering at each stage before adopting an optimization.
 - [ ] Verify storage coherence in isolated runtime experiments. When firmware
       and operating-system devices address the same disk, their writable views
       must share one block node. Independent overlays can diverge even when
-      they have the same parent. Synthetic tests with the board's block devices
-      passed writes in both directions through a shared node. Native boot and
-      migration from previously divergent state remain unvalidated; preserve
-      that state and explicitly choose a canonical source before migration.
+      they have the same parent. The [storage diagnostic](storage-isolation.md)
+      verifies separate-overlay controls, shared-node writes in both directions,
+      persisted bytes and unchanged parents without booting a native guest.
+      Native migration and repeated browser acceptance remain under evaluation;
+      preserve the existing state and explicitly choose a canonical source.
 - [ ] Measure saved-tab accumulation and graphics-preview memory. Support
       explicit tab ownership and validate the existing experimental
       `goto(reuse_tab=True)` path through sustained native navigation, so repeated
