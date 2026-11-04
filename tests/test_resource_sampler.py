@@ -56,7 +56,7 @@ class ResourceSamplerTest(unittest.TestCase):
         self.now += round(seconds * 1e9)
         self.write_counters(20_000_000)
 
-    def run_collection(self, sleep=None, *, host_memory=False):
+    def run_collection(self, sleep=None, *, host_memory=False, cpu_pressure=False):
         with ExitStack() as stack:
             stack.enter_context(patch('scripts.sample_resources.subprocess.check_output',
                                       return_value=self.inspect))
@@ -70,6 +70,7 @@ class ResourceSamplerTest(unittest.TestCase):
                                      datetime(2026, 1, 1, 11, tzinfo=timezone.utc)]
             collect('fixture', self.output, seconds=10, interval=10,
                     include_host_memory=host_memory,
+                    include_cpu_pressure=cpu_pressure,
                     proc_root=self.proc, cgroup_root=self.root / 'cgroup')
 
     def records(self):
@@ -150,6 +151,50 @@ class ResourceSamplerTest(unittest.TestCase):
         self.assertFalse(result['available'])
         self.assertIsNone(result['counter_deltas_usec'])
         self.assertIsNone(result['stall_percent'])
+
+    def test_cpu_stalls_are_separate_from_utilization_and_quota_throttling(self):
+        (self.proc / 'pressure').mkdir()
+        host = self.proc / 'pressure/cpu'
+        group = self.group / 'cpu.pressure'
+        host.write_text('some avg10=0.00 total=100\n')
+        group.write_text('some total=200\nfull total=20\n')
+
+        def contention(seconds):
+            self.sleep(seconds)
+            host.write_text('some total=3000100\nfull total=0\n')
+            group.write_text('some total=2000200\nfull total=500020\n')
+
+        self.run_collection(contention, cpu_pressure=True)
+        result = summarize(self.records())
+        self.assertEqual(result['cpu']['average_cores_used'], 1)
+        self.assertEqual(result['cpu']['counter_deltas']['throttled_usec'], 0)
+        pressure = result['cpu_pressure']
+        self.assertEqual(pressure['container']['stall_percent'], {'some': 20, 'full': 5})
+        self.assertEqual(pressure['host']['stall_percent'], {'some': 30})
+        self.assertNotIn('full', self.records()[2]['cpu_pressure_usec']['host'])
+
+    def test_cpu_pressure_missing_files_are_explicit_and_old_runs_remain_supported(self):
+        self.run_collection()
+        self.assertEqual(summarize(self.records())['cpu_pressure'], {'recorded': False})
+        self.output.unlink()
+        self.run_collection(cpu_pressure=True)
+        result = summarize(self.records())['cpu_pressure']
+        self.assertTrue(result['recorded'])
+        for scope in ('host', 'container'):
+            self.assertFalse(result[scope]['available'])
+            self.assertIsNone(result[scope]['stall_percent'])
+
+    def test_malformed_cpu_counters_preserve_an_incomplete_recording(self):
+        group = self.group / 'cpu.pressure'
+        group.write_text('some total=10\nfull total=0\n')
+
+        def malformed(seconds):
+            self.sleep(seconds)
+            group.write_text('some total=-1\nfull total=0\n')
+
+        with self.assertRaisesRegex(ValueError, 'Malformed cpu.pressure'):
+            self.run_collection(malformed, cpu_pressure=True)
+        self.assertFalse(summarize(self.records())['measurement_complete'])
 
     def test_container_exit_preserves_incomplete_evidence(self):
         def exit_process(seconds):

@@ -19,7 +19,7 @@ def counters(path):
             (line.split() for line in path.read_text().splitlines())}
 
 
-def read_pressure(path):
+def read_pressure(path, *, required=('some', 'full')):
     """Read cumulative PSI stall microseconds; unavailable is not zero."""
     try:
         lines = path.read_text().splitlines()
@@ -31,11 +31,11 @@ def read_pressure(path):
         values = dict(field.split('=', 1) for field in fields)
         total = int(values['total'])
         if kind not in ('some', 'full') or kind in result or total < 0:
-            raise ValueError('Malformed memory.pressure counters')
+            raise ValueError(f'Malformed {path.name} counters')
         result[kind] = total
-    if result.keys() != {'some', 'full'}:
-        raise ValueError('Missing memory.pressure counters')
-    return result
+    if not set(required) <= result.keys():
+        raise ValueError(f'Missing {path.name} counters')
+    return {key: result[key] for key in required}
 
 
 def memory_pressure(group):
@@ -74,6 +74,7 @@ def runtime_limits(group):
 
 
 def collect(container, output_path, *, seconds, interval, include_host_memory=False,
+            include_cpu_pressure=False,
             proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgroup')):
     if not 0 < interval <= seconds <= 3600:
         raise ValueError('Require 0 < interval <= seconds <= 3600')
@@ -110,7 +111,8 @@ def collect(container, output_path, *, seconds, interval, include_host_memory=Fa
               'interval_seconds': interval, 'host_boot_id': host_boot_id,
               'host_pid': pid, 'pid_start_ticks': start_ticks,
               'clock': 'CLOCK_MONOTONIC', 'started_monotonic_ns': started_ns,
-              'include_host_memory': include_host_memory})
+              'include_host_memory': include_host_memory,
+              'include_cpu_pressure': include_cpu_pressure})
         previous = None
         maximum = 0
         while True:
@@ -130,6 +132,13 @@ def collect(container, output_path, *, seconds, interval, include_host_memory=Fa
                       'memory_events': counters(group / 'memory.events')}
             if include_host_memory:
                 sample['host_memory'] = host_memory(proc_root)
+            if include_cpu_pressure:
+                sample['cpu_pressure_usec'] = {
+                    'container': read_pressure(group / 'cpu.pressure'),
+                    # System-level CPU full is undefined. Older kernels may
+                    # expose only some; newer kernels report full as zero.
+                    'host': read_pressure(proc_root / 'pressure/cpu', required=('some',)),
+                }
             peak = group / 'memory.peak'
             if peak.exists():
                 sample['peak_bytes_since_container_created'] = int(peak.read_text())
@@ -158,11 +167,13 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--host-memory', action='store_true',
                         help='Also record host memory headroom, swap, OOM and pressure')
+    parser.add_argument('--cpu-pressure', action='store_true',
+                        help='Also record container and host CPU scheduling pressure')
     args = parser.parse_args()
     if not 0 < args.interval <= args.seconds <= 3600:
         parser.error('Require 0 < interval <= seconds <= 3600')
     collect(args.container, args.output, seconds=args.seconds, interval=args.interval,
-            include_host_memory=args.host_memory)
+            include_host_memory=args.host_memory, include_cpu_pressure=args.cpu_pressure)
     print(args.output)
 
 

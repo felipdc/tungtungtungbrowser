@@ -224,6 +224,19 @@ For your workload, record the following before adopting a smaller configuration:
 See the [diagnostic commands and limitations](../diagnostics/README.md) for
 recording and interpreting these measurements.
 
+Add `--cpu-pressure` when investigating CPU contention. This records cumulative
+CPU pressure for the container and host alongside CPU use and quota throttling;
+the offline summary reports stall percentages over the observed interval.
+Missing pressure files remain unavailable, and counter resets or changing
+availability invalidate the summary. Older recordings remain supported.
+
+CPU pressure describes runnable work waiting for the Linux host scheduler. It
+does not measure scheduling inside iOS or establish why a native watchdog
+expired. Host CPU `full` is undefined and omitted; container `some` and `full`
+overlap and must not be added. A low CPU-use average or zero quota throttling
+alone does not establish absence of scheduler contention. See the
+[Linux pressure interface](https://docs.kernel.org/accounting/psi.html).
+
 For comparisons that change emulator settings, use the
 [translation-cache and cache-isolation procedure](translation-cache.md).
 Changing environment variables for individual graphics libraries does not

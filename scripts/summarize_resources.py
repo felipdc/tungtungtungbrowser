@@ -49,6 +49,24 @@ def validate_host_memory(host, prior):
             raise ValueError('Host pressure counter decreased; cannot combine runs')
 
 
+def validate_cpu_pressure(pressure, prior):
+    if not isinstance(pressure, dict) or pressure.keys() != {'container', 'host'}:
+        raise ValueError('CPU pressure needs container and host observations')
+    for scope, required in [('container', {'some', 'full'}), ('host', {'some'})]:
+        value = pressure[scope]
+        if value is not None:
+            if not isinstance(value, dict) or value.keys() != required:
+                raise ValueError(f'Invalid {scope} CPU pressure counters')
+            for key, counter in value.items():
+                number(counter, f'{scope} CPU pressure {key}', integer=True)
+        if prior is not None:
+            before = prior[scope]
+            if (value is None) != (before is None):
+                raise ValueError(f'{scope} CPU pressure availability changed')
+            if value is not None and any(counter < before[key] for key, counter in value.items()):
+                raise ValueError(f'{scope} CPU pressure counter decreased; cannot combine runs')
+
+
 def summarize(records):
     configuration = first = previous = terminal = None
     count = 0
@@ -70,6 +88,8 @@ def summarize(records):
             configuration = record
             if not isinstance(record.get('include_host_memory', False), bool):
                 raise ValueError('include_host_memory must be a boolean')
+            if not isinstance(record.get('include_cpu_pressure', False), bool):
+                raise ValueError('include_cpu_pressure must be a boolean')
         elif kind == 'sample':
             if configuration is None:
                 raise ValueError('Missing configuration before samples')
@@ -83,6 +103,11 @@ def summarize(records):
                     host['memory_bytes']['SwapTotal'] - host['memory_bytes']['SwapFree'])
             elif 'host_memory' in record:
                 raise ValueError('Host memory sample was not declared in configuration')
+            if configuration.get('include_cpu_pressure', False):
+                validate_cpu_pressure(record.get('cpu_pressure_usec'),
+                                      previous['cpu_pressure_usec'] if previous else None)
+            elif 'cpu_pressure_usec' in record:
+                raise ValueError('CPU pressure sample was not declared in configuration')
             elapsed = number(record.get('elapsed_seconds'), 'elapsed_seconds')
             memory = number(record.get('memory_bytes'), 'memory_bytes', integer=True)
             cpu = record.get('cpu_stat')
@@ -152,6 +177,18 @@ def summarize(records):
         key: value - first['memory_pressure_usec'][key]
         for key, value in previous['memory_pressure_usec'].items()}
     host_summary = {'recorded': False}
+    cpu_pressure_summary = {'recorded': False}
+    if configuration.get('include_cpu_pressure', False):
+        cpu_pressure_summary = {'recorded': True}
+        for scope in ('container', 'host'):
+            before, after = first['cpu_pressure_usec'][scope], previous['cpu_pressure_usec'][scope]
+            delta = None if before is None else {key: value - before[key] for key, value in after.items()}
+            cpu_pressure_summary[scope] = {
+                'available': delta is not None,
+                'counter_deltas_usec': delta,
+                'stall_percent': None if delta is None or not duration else {
+                    key: value / 1e6 / duration * 100 for key, value in delta.items()},
+            }
     if minimum_host_available is not None:
         first_host, last_host = first['host_memory'], previous['host_memory']
         host_pressure = None if first_host.get('pressure_usec') is None else {
@@ -193,6 +230,7 @@ def summarize(records):
                 key: value / 1e6 / duration * 100 for key, value in pressure_delta.items()},
         },
         'host_memory': host_summary,
+        'cpu_pressure': cpu_pressure_summary,
         'navigation_verified': False,
         'notes': [
             'Container lifetime peak may predate this observation window.',
@@ -201,6 +239,8 @@ def summarize(records):
             'Memory PSI some/full stall times overlap and must not be added.',
             'Host memory, swap, OOM and pressure include all host workloads; '
             'sampled headroom can miss shorter dips.',
+            'CPU pressure measures host scheduler stalls, not scheduling within the guest. '
+            'Host CPU full is undefined and omitted; container some/full times overlap.',
         ] + ([] if terminal else ['No terminal summary: measurement ended incompletely.']),
     }
 

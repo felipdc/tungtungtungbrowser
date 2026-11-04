@@ -85,6 +85,30 @@ class ResourceSummaryTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     summarize(rows)
 
+    def test_cpu_pressure_rejects_resets_and_partial_or_undeclared_observations(self):
+        rows = complete_run()
+        rows[0]['include_cpu_pressure'] = True
+        for row in rows[1:-1]:
+            elapsed = row['elapsed_seconds']
+            row['cpu_pressure_usec'] = {
+                'host': {'some': 100 + elapsed * 1000},
+                'container': {'some': 200 + elapsed * 1000, 'full': elapsed * 100},
+            }
+        self.assertTrue(summarize(rows)['cpu_pressure']['recorded'])
+        self.assertIsNone(summarize(rows[:2])['cpu_pressure']['host']['stall_percent'])
+        for change in ('reset', 'missing', 'availability', 'boolean', 'undeclared', 'full', 'config'):
+            with self.subTest(change=change):
+                bad = copy.deepcopy(rows)
+                if change == 'reset': bad[2]['cpu_pressure_usec']['host']['some'] = 0
+                elif change == 'missing': del bad[2]['cpu_pressure_usec']
+                elif change == 'availability': bad[2]['cpu_pressure_usec']['host'] = None
+                elif change == 'boolean': bad[2]['cpu_pressure_usec']['container']['some'] = True
+                elif change == 'undeclared': bad[0]['include_cpu_pressure'] = False
+                elif change == 'full': bad[2]['cpu_pressure_usec']['host']['full'] = 0
+                else: bad[0]['include_cpu_pressure'] = 1
+                with self.assertRaises(ValueError):
+                    summarize(bad)
+
     def test_cli_returns_incomplete_status_and_never_overwrites_report(self):
         script = Path(__file__).resolve().parents[1] / 'scripts/summarize_resources.py'
         with tempfile.TemporaryDirectory() as directory:
