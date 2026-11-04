@@ -272,6 +272,39 @@ report a navigation request, not successful page rendering. Screenshots preserve
 existing files unless `overwrite=True` is supplied. One `Browser` object
 serializes its operations; use one controller per guest.
 
+### Warm navigation observations
+
+A native foreground trial with the corrected experimental QEMU update, native
+FP enabled and TLB mode 0 completed three consecutive tab-reuse navigations.
+Their local diagnostic callbacks arrived after 67.2, 22.9 and 25.1 seconds;
+native URL submission alone took 57.2, 19.4 and 19.6 seconds. Safari retained
+the same PID and process-start time, and its saved-tab count stayed at ten.
+Three subsequent default URL opens produced callbacks in 16.3, 15.4 and 18.2
+seconds, with saved tabs increasing from ten to thirteen. Each callback passed
+the canvas, worker and WebGL checks. Native touch also passed. The database and
+WAL were read separately, so those counts are observations rather than an atomic
+snapshot guarantee. These are different sequential workloads in one guest, not an
+isolated comparison of the two navigation methods.
+
+The captures did not qualify fast, consistent rendering. For one default open,
+the 30-second capture showed the saved observation identifier, the 60-second
+capture showed the earlier collecting label again, and the 120-second capture
+showed the saved identifier. No intervening navigation or input was sent, and
+the served diagnostic source never resets that label after saving. Other
+captures showed incomplete content, overlapping clock digits or address-bar
+artifacts. All three default opens eventually displayed their matching saved
+identifiers. This points to a display-state problem that still needs tracing;
+it does not identify a specific renderer defect or prove the DOM regressed.
+
+Cold readiness in this trial took 281.8 seconds. The 600-second startup window
+averaged 2.28 CPU cores and sampled a 6.42 GiB whole-container peak. The following
+900-second warm window, including local navigation, touch and external-page
+observations, averaged 1.77 cores and reached the 6.5 GiB container limit,
+recording 372 memory-limit events and zero OOM kills. Neither a smaller
+supported host nor the experimental runtime is qualified by these results.
+Prioritize repeated successful cold starts near the current 300-second budget
+and correct warm rendering before further boot-time tuning.
+
 ## Transport failures
 
 Transport failures raise `GuestTransportError`, a subclass of `GuestError`.

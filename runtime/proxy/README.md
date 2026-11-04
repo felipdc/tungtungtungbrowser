@@ -95,16 +95,25 @@ docker compose -f runtime/compose.yaml -f runtime/compose.proxy.yaml exec egress
   --expect-country GB --timeout 20 --output /run/route-check-001
 ```
 
+Wait for the egress service to become healthy before invoking the check. A
+container being `running` does not establish that its initialization finished.
+The tool checks the local router process, shared network namespace, tunnel and
+IPv4/IPv6 DROP policies before constructing its HTTP client. If initialization
+is incomplete, it records `failure_kind: router_not_ready` with zero probe
+attempts. It does not wait, send traffic, modify the firewall or retry. These
+checks establish the expected initialization state, not a complete audit of
+every firewall rule or a guarantee that the proxy is reachable.
+
 Exit zero means the endpoint supplied a valid IP and matched all requested
 expectations at that observation. Use `--expect-ip` to check a previously
-observed exit as well. Exit one records a failed probe; exit two indicates an
-invalid configuration or output path. There is one attempt, no redirect
+observed exit as well. Exit one records a failed preflight or probe; exit two
+indicates an invalid configuration or output path. There is at most one attempt, no redirect
 following and no retry. Environment proxy variables are ignored so the check
 uses the container's configured network path. The tool never changes routing
 or enables a direct fallback.
 
-A separate disposable process bounds DNS, TLS and response reading by the
-requested total deadline, followed by bounded process cleanup. The response
+A separate disposable process bounds the local preflight, DNS, TLS and response
+reading by the requested total deadline, followed by bounded process cleanup. The response
 is limited to 16 KiB. The report distinguishes DNS, connection, TLS, HTTP,
 deadline, malformed-response and route-mismatch failures. A DNS failure alone
 does not identify its upstream cause; inspect the router's retained logs too.
@@ -119,6 +128,19 @@ This is an explicit host-side probe, not a periodic health check or a native
 Safari request. It does not prove browser rendering, leak resistance, future
 availability or the truth of an untrusted endpoint's geolocation response.
 The local Compose health check retains its existing meaning and behavior.
+
+This guard follows a native evaluation in which an unguarded diagnostic ran
+immediately after starting the egress container and observed the host route
+before initialization completed. The guest had not started. A separate check
+after initialization matched the configured proxy exit. Compose already waits
+for egress health before starting the iPhone; manually executing a diagnostic
+inside a newly started container previously bypassed that ordering.
+
+Live validation of the guarded source rejected ordinary host execution with
+zero probe attempts and confirmed the configured exit from the initialized
+router with one attempt. The guest launch and both container identities stayed
+unchanged. This exercised the helper in an existing router image; it was not a
+fresh image-build test.
 
 An unchanged gateway and a healthy tunnel do not establish that the upstream
 exit IP stayed the same. Proxy services can expire sticky sessions or replace

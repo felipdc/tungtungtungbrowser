@@ -78,6 +78,13 @@ check native rendering at each stage before adopting an optimization.
       changes with the same tab state and preserve session data.
       Automatic address-field focus recovery has passed a native local-page
       check; slow foreground and accessibility queries remain a latency issue.
+- [ ] Trace warm display updates independently of navigation callbacks. A
+      [foreground trial](browser-control.md#warm-navigation-observations)
+      retained Safari and passed consecutive local diagnostics, but later
+      captures sometimes showed an earlier page state without new input.
+      Record frame ordering, requested URL, local callback identity and fixed
+      capture times. Identify the active display device before instrumenting
+      it; keep renderer experiments separate from CPU and proxy changes.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

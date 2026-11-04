@@ -8,9 +8,11 @@ import argparse
 import ipaddress
 import json
 import multiprocessing
+import os
 from pathlib import Path
 import socket
 import ssl
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -76,12 +78,63 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def router_identity():
+    """Require this process to share the initialized router's PID/net namespace."""
+    if Path('/proc/1/cmdline').read_bytes().split(b'\0') != [
+            b'sing-box', b'run', b'-c', b'/run/proxy-config.json', b'']:
+        raise ValueError('Router has not replaced its initialization process')
+    if Path(os.readlink('/proc/1/exe')).name != 'sing-box':
+        raise ValueError('Unexpected router executable')
+    network = os.readlink('/proc/self/ns/net')
+    if network != os.readlink('/proc/1/ns/net'):
+        raise ValueError('Probe and router network namespaces differ')
+    stat = Path('/proc/1/stat').read_text()
+    fields = stat[stat.rfind(')') + 2:].split()
+    start = int(fields[19])
+    if start <= 0 or fields[0] in {'Z', 'X'}:
+        raise ValueError('Invalid router process identity')
+    return {'pid': 1, 'start_ticks': start, 'network_namespace': network}
+
+
+def router_readiness():
+    """Read local initialization state without sending network traffic.
+
+    The entrypoint execs sing-box only after installing its firewall. These
+    checks reject premature docker exec calls and ordinary host execution;
+    they are not a general firewall audit or a guarantee of upstream service.
+    """
+    try:
+        before = router_identity()
+        if socket.if_nametoindex('ttt0') <= 0:
+            raise ValueError('Tunnel is absent')
+        for family in ('iptables', 'ip6tables'):
+            result = subprocess.run([family, '-w', '1', '-S'], check=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    text=True, timeout=2)
+            rules = set(result.stdout.splitlines())
+            if not all('-P ' + chain + ' DROP' in rules
+                       for chain in ('INPUT', 'OUTPUT', 'FORWARD')):
+                raise ValueError('Drop policies are absent')
+        if router_identity() != before:
+            raise ValueError('Router changed during initialization check')
+        return {'status': 'ready', **before}
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return {'status': 'not_ready'}
+
+
 def probe_worker(connection, url, timeout, expected_ip, expected_country):
     try:
+        readiness = router_readiness()
+        if readiness['status'] != 'ready':
+            connection.send({'status': 'failed', 'failure_kind': 'router_not_ready',
+                             'probe_attempts': 0, 'router_preflight': readiness})
+            return
         # Environment proxies could bypass the TUN route being measured.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
         request = urllib.request.Request(url, headers={
             'Accept': 'application/json', 'User-Agent': 'tungtungtungbrowser-route-check/1'})
+        connection.send({'event': 'request_started', 'probe_attempts': 1,
+                         'router_preflight': readiness})
         try:
             with opener.open(request, timeout=timeout) as response:
                 status = response.status
@@ -123,7 +176,7 @@ def check(url, output, *, timeout=20, expected_ip=None, expected_country=None, w
         raise ValueError('Keep route evidence outside the source checkout')
     output.mkdir(mode=0o700, exist_ok=False)
     report = {'status': 'checking', 'started_unix': time.time(), 'endpoint_origin': origin,
-              'timeout_seconds': timeout, 'probe_attempts': 1, 'redirects_followed': False,
+              'timeout_seconds': timeout, 'probe_attempts': 0, 'redirects_followed': False,
               'environment_proxies_used': False, 'routing_modified': False,
               'native_browser_verified': False, 'future_availability_verified': False,
               'expected': {'ip': expected_ip, 'country_code': expected_country}}
@@ -144,14 +197,22 @@ def check(url, output, *, timeout=20, expected_ip=None, expected_country=None, w
     try:
         process.start()
         child.close()
-        remaining = max(0, timeout - (time.monotonic() - started))
-        if parent.poll(remaining):
+        while True:
+            remaining = max(0, timeout - (time.monotonic() - started))
+            if not parent.poll(remaining):
+                report.update(status='failed', failure_kind='deadline')
+                break
             try:
-                report.update(parent.recv())
+                message = parent.recv()
             except EOFError:
                 report.update(status='failed', failure_kind='probe_process_exited')
-        else:
-            report.update(status='failed', failure_kind='deadline')
+                break
+            if message.get('event') == 'request_started':
+                report.update({key: value for key, value in message.items() if key != 'event'})
+                save()
+                continue
+            report.update(message)
+            break
     except BaseException:
         report.update(status='failed', failure_kind='probe_interrupted')
         raise
