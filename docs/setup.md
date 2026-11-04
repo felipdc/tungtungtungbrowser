@@ -51,6 +51,44 @@ The optional [ARM64 memory-access check](../native/README.md#arm64-linux-memory-
 can test some native instruction requirements before a runtime build. Passing
 it does not establish ARM runtime support or guest compatibility.
 
+## Check the built executable inside the runtime container
+
+A QEMU binary can run on its build host and still fail to load in the runtime
+container. Before booting a newly built binary, use the same image, mounts and
+Compose overlays as the intended runtime to check its dynamic loader:
+
+```sh
+docker compose -f runtime/compose.yaml run --rm --no-deps \
+  --entrypoint /runtime/qemu/build/qemu-system-aarch64 iphone --version
+```
+
+Include any additional Compose files used by your deployment. If an external
+overlay selects a different executable through `QEMU`, use that executable's
+container path as the entry point instead. A custom wrapper must support
+`--version`, or the check must target its underlying QEMU binary directly.
+Require exit status zero and the expected QEMU version. This invocation does
+not start a guest or open its disks; it does not validate firmware, rendering,
+the proxy or Safari readiness. The filesystem check below is a separate check.
+
+Keep the output and binary hash with the build record. If the loader reports a
+missing library, resolve the build/container dependency mismatch before starting
+the guest. For example, one experimental build auto-enabled FUSE after its
+development package became available on the host. Its configure arguments
+matched the baseline, but its executable required `libfuse3.so.4`, absent from
+the runtime image, and exited with status 127 before QEMU initialization. The
+baseline had FUSE disabled. Explicitly disabling that optional feature in the
+candidate's configure invocation restored the intended dependency set.
+
+For controlled rebuilds, preserve the baseline executable and source diff in
+an external directory. Retain the configure invocation, generated
+`config-host.h`, `meson-info/intro-buildoptions.json` and shared-library
+dependencies from the build directory. Compare the generated features and
+dependencies as well as the arguments: an `auto` feature can resolve differently
+after host packages change. Reconfigure through the pinned QEMU configure
+wrapper with the original arguments and explicit feature changes; a direct
+Meson reconfiguration in this fork also changed the effective warning policy
+in one observed build. Check the final build settings again before measuring.
+
 ## Filesystem access
 
 The default container runs as UID 0 with all Linux capabilities dropped. It

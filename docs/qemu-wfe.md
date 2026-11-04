@@ -37,6 +37,9 @@ ninja -C "$TTT_QEMU_SOURCE/build" -j2 qemu-system-aarch64
 This patch modifies GPL/LGPL-covered QEMU files; it is not covered by the
 controller's MIT license. See [third-party notices](../THIRD_PARTY_NOTICES.md).
 Keep built binaries, guest data and experimental output outside this repository.
+Before booting the candidate, compare its generated configuration and run the
+[container executable check](setup.md#check-the-built-executable-inside-the-runtime-container).
+Matching configure arguments alone do not pin automatically detected libraries.
 
 ## Check bounded handoffs before running iOS
 
