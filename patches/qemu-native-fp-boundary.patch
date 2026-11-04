@@ -1,0 +1,113 @@
+Optional experiment for qemu-vphone 14c9913d2231080bd234c69421ed4f293a25f767.
+Not applied by the default runtime build. See docs/native-fp.md.
+
+File-specific licenses retained:
+- accel/tcg/cpu-exec.c: LGPL-2.1-or-later, Fabrice Bellard.
+- include/accel/tcg/cpu-ops.h: GPL-2.0-or-later, SUSE LLC.
+- target/arm/cpu.c: GPL-2.0-or-later, SUSE LINUX Products GmbH.
+- target/arm/tcg/host-fpcr.h: GPL-2.0-or-later; upstream Inferno port attribution.
+
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index c1e3ad05b3..f460ba34ad 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -493,7 +493,13 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
+     }
+ 
+     qemu_thread_jit_execute();
++    if (cpu->cc->tcg_ops->tb_exec_enter) {
++        cpu->cc->tcg_ops->tb_exec_enter(cpu);
++    }
+     ret = tcg_qemu_tb_exec(cpu_env(cpu), tb_ptr);
++    if (cpu->cc->tcg_ops->tb_exec_exit) {
++        cpu->cc->tcg_ops->tb_exec_exit(cpu);
++    }
+     cpu->neg.can_do_io = true;
+     /*
+      * TODO: Delay swapping back to the read-write region of the TB
+@@ -572,6 +578,11 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
+     /* Non-buggy compilers preserve this; assert the correct value. */
+     assert(cpu == current_cpu);
+ 
++    /* A guest exception may have bypassed the normal translated-chain exit. */
++    if (cpu->cc->tcg_ops->tb_exec_exit) {
++        cpu->cc->tcg_ops->tb_exec_exit(cpu);
++    }
++
+     /*
+      * For softmmu, a tlb_fill fault during translation will land here,
+      * and we need to release any page locks held.  In system mode we
+diff --git a/include/accel/tcg/cpu-ops.h b/include/accel/tcg/cpu-ops.h
+index 66346ebb6b..fc684adeec 100644
+--- a/include/accel/tcg/cpu-ops.h
++++ b/include/accel/tcg/cpu-ops.h
+@@ -94,6 +94,16 @@ struct TCGCPUOps {
+     void (*cpu_exec_enter)(CPUState *cpu);
+     /** @cpu_exec_exit: Callback for cpu_exec cleanup */
+     void (*cpu_exec_exit)(CPUState *cpu);
++    /**
++     * @tb_exec_enter: Prepare host state immediately before a translated chain.
++     * Translation and the surrounding emulator loop run outside this scope.
++     */
++    void (*tb_exec_enter)(CPUState *cpu);
++    /**
++     * @tb_exec_exit: Restore host state after a translated chain, including
++     * nonlocal exits. Must be harmless when no chain is currently entered.
++     */
++    void (*tb_exec_exit)(CPUState *cpu);
+     /** @debug_excp_handler: Callback for handling debug exceptions */
+     void (*debug_excp_handler)(CPUState *cpu);
+ 
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index a10bc88a98..1bbb359a8b 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -2121,12 +2121,12 @@ static vaddr aprofile_pointer_wrap(CPUState *cs, int mmu_idx,
+     return result;
+ }
+ 
+-static void arm_cpu_exec_enter(CPUState *cs)
++static void arm_cpu_tb_exec_enter(CPUState *cs)
+ {
+     arm_host_fpcr_enter(&ARM_CPU(cs)->env);
+ }
+ 
+-static void arm_cpu_exec_exit(CPUState *cs)
++static void arm_cpu_tb_exec_exit(CPUState *cs)
+ {
+     arm_host_fpcr_exit(&ARM_CPU(cs)->env);
+ }
+@@ -2146,8 +2146,8 @@ static const TCGCPUOps arm_tcg_ops = {
+     .tlb_fill_align = arm_cpu_tlb_fill_align,
+     .pointer_wrap = aprofile_pointer_wrap,
+     .cpu_exec_interrupt = arm_cpu_exec_interrupt,
+-    .cpu_exec_enter = arm_cpu_exec_enter,
+-    .cpu_exec_exit = arm_cpu_exec_exit,
++    .tb_exec_enter = arm_cpu_tb_exec_enter,
++    .tb_exec_exit = arm_cpu_tb_exec_exit,
+     .cpu_exec_halt = arm_cpu_exec_halt,
+     .cpu_exec_reset = cpu_reset,
+     .do_interrupt = arm_cpu_do_interrupt,
+diff --git a/target/arm/tcg/host-fpcr.h b/target/arm/tcg/host-fpcr.h
+index 982f302b5c..1bef34eb79 100644
+--- a/target/arm/tcg/host-fpcr.h
++++ b/target/arm/tcg/host-fpcr.h
+@@ -5,13 +5,15 @@
+  *
+  * Ported from Inferno (AppleHax) 2eed395 "arm: native A64 FP / NEON on TCG".
+  *
+- * While a vCPU thread runs generated code (between cpu_exec_enter and
+- * cpu_exec_exit), the x86 MXCSR rounding mode follows FPCR.RMode, so the
++ * While a vCPU thread runs generated code (between tb_exec_enter and
++ * tb_exec_exit), the x86 MXCSR rounding mode follows FPCR.RMode, so the
+  * INDEX_op_*_fp opcodes round like the guest. Exceptions stay masked and
+  * flush-to-zero stays off (the translator only uses the native path when
+  * FPCR.FZ is clear). The exception flags the native code raises accumulate in
+  * MXCSR and are folded into FPSR's cumulative bits whenever FPSR is read and
+- * when the thread leaves generated code.
++ * when the thread leaves generated code. Translation and the emulator loop
++ * must run with the host's original FP state, so their status cannot leak into
++ * guest FPSR. Nonlocal guest exits restore that state through TCG cleanup.
+  *
+  * Everything here is a no-op unless arm_native_fp_enabled (VPHONE_NATIVE_FP,
+  * on by default), and only acts on the current thread's register when called
