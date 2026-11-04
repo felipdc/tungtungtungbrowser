@@ -13,8 +13,11 @@ Linux host rented from a cloud provider.
 
 This is an experimental runtime. Native Safari navigation, external HTTPS,
 page JavaScript, dedicated/shared workers, canvas, WebGL and touch input have
-been exercised. Physical-device fingerprint equivalence, sustained workload
-limits and fast cold startup remain under development.
+been exercised. Reliable cold starts, responsive use of warmed browsers,
+physical-device fingerprint equivalence and sustained workload limits remain
+under development. The current cold-start target is roughly 300 seconds;
+repeatable startup and warm navigation take priority over reducing that time
+further. This is a development target, not a startup guarantee.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.

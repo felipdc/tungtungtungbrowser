@@ -194,6 +194,12 @@ selected source's `configure`, retaining the control's options including
 toolchain, lockfile, static-library and final-binary hashes, and each build's
 exit status.
 
+Wait for the entire distribution command to exit. The pinned renderer's
+`xtask dist` builds the release library, localizes its static symbols, and then
+runs another Cargo invocation to discover native linker libraries before
+writing package metadata. The first `Finished release` line or an archive
+appearing on disk does not establish that the distribution is complete.
+
 Before a native boot, check the resulting binary inside the intended runtime
 environment: required shared libraries must resolve, the expected machine
 must be available, and the graphics device must initialize with only the CPU
@@ -204,3 +210,12 @@ a standalone renderer C API check covers the bridge, not QEMU's machine wiring.
 If the selected QEMU includes the optional native-FP changes, retain the
 [numerical regression gate](native-fp.md) as well. Only a subsequent cold boot
 and warm workload can qualify the instrumented native runtime.
+
+Run the loader check in the exact deployment image, even when the binary has
+already run in a local test image. QEMU can select a system `libfdt` during
+configuration; that binary then needs `libfdt.so.1` at runtime. The current
+runtime Dockerfile includes `libfdt1`, but a retained older image may not. A
+native preflight caught this mismatch before a guest was started. Rebuild the
+deployment image from its intended Dockerfile, or retain the control build's
+internal libfdt configuration, and record the resulting dependency change.
+Preserve the failed preflight separately from the corrected check.
