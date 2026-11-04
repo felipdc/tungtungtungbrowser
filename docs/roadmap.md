@@ -44,6 +44,11 @@ rendering at each stage before adopting an optimization.
       passed local rendering, touch and one session transition each, but did
       not improve cold startup. Repeat successful workloads before adopting
       either TLB mode or claiming a resource reduction.
+      A [guest CPU-count comparison](cpu-scheduling.md) reached foreground
+      Safari sooner with three application CPUs, but both worker checks timed
+      out. Its two-CPU control passed local rendering and touch, then hit another
+      native snapshot watchdog. Keep CPU settings experimental; host CPU
+      pressure now has a separate optional recorder and offline summary.
 - [ ] Verify storage coherence in isolated runtime experiments. When firmware
       and operating-system devices address the same disk, their writable views
       must share one block node. Independent overlays can diverge even when
