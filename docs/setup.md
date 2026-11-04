@@ -30,6 +30,11 @@ CLI. The upstream process downloads its own firmware and boot assets. Use
 `--list` for supported pairings and `--dry-run` to inspect a creation flow.
 The first boot includes data migration and is not a normal startup benchmark.
 
+An experimental [native touch repair](touch-repair.md) can be prepared from an
+exact matching extracted cache using a separate offline tool. It preserves
+the source file and verifies the changed code page's signature. VM creation
+does not install this optional, build-specific repair automatically.
+
 After creation, cleanly stop the upstream VM before starting the Compose
 runtime. Confirm no emulator still owns `Disk.img`. Keep VM bundles, proxy
 credentials, deployment configuration and captured page content in external

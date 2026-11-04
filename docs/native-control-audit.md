@@ -283,10 +283,12 @@ and worker checks still passed. This reversible result establishes the repair's
 effect on those touch fields; it does not establish the original file's stock
 provenance or the outcome of unrelated browsing workloads.
 
-This is a build-specific experimental result. The public runtime does not yet
-install the framework repair or replace the pinned HID helper. Package the
-guarded repair and contact scaling before claiming that a fresh checkout has
-corrected input. The nonzero requested-pressure case still produced zero native
+This is a build-specific experimental result. The public
+[offline preparation tool](touch-repair.md) can create and reverse the exact
+guarded code/signature repair on a separate extracted file. The public runtime
+does not yet install it or replace the pinned HID helper. Complete installation
+and contact scaling before claiming that a fresh checkout has corrected input.
+The nonzero requested-pressure case still produced zero native
 pressure; it does not establish force support. Drag, multitouch, stylus/twist,
 other framework builds and complete physical-device equivalence remain untested.
 

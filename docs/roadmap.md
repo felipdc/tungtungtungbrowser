@@ -35,8 +35,9 @@ this repository.
       native touch handler. A guarded two-load repair with its code-page hash
       passed a post-reboot Safari test. Combined with a separate calibrated HID
       helper, four trusted contacts had consistent touch/pointer fields and
-      zero pointer dimensions on release. Package the build verification,
-      rollback, signature update and HID scaling in a reproducible runtime
+      zero pointer dimensions on release. The [offline preparation tool](touch-repair.md)
+      now packages exact build verification, reversible copies and signature
+      verification. Integrate native installation and HID scaling into runtime
       setup; the public runtime does not install these experimental changes.
       Validate other builds, drags, multitouch and stylus behavior separately.
 - [ ] Verify native touchscreen registration during readiness. A USB device
