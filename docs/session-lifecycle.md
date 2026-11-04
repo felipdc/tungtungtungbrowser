@@ -88,3 +88,30 @@ sample hit the memory limit without an OOM kill; the second had no memory-limit
 events or OOM kills. Both runs failed their initial page checks, and their
 workloads and warmed caches differed. These measurements do not qualify a
 resource optimization or a smaller supported host.
+
+## Follow-up with native logging
+
+A subsequent trial recorded native system logs before sending Home. Safari
+passed a later local page check, then disappeared during the transition. The
+log and a matching-boot crash report identified a background `scene-update`
+watchdog with a 10-second allowance. The sampled main-thread stack included
+UIKit layout and snapshot work. This establishes the termination and sampled
+work, not which function consumed the deadline.
+
+A reversible experiment removed two unused Home widget stacks and the Today
+widgets. After a clean restart with the same two guest CPUs, 2 GiB guest memory
+and 1024 MiB translation cache, Safari foreground readiness took 299 seconds.
+The initial local canvas, worker, WebGL and subsequent calibrated touch checks
+passed. On the next Home/Safari transition, the original Safari process still
+existed at the Home observation but exited before the launch response. The
+recorder rejected that response because its PID differed from the original.
+Matching-boot reports identified another background watchdog and a
+`scene-create` watchdog in the replacement process. An intermediate successful
+process check therefore does not establish continuity through the return.
+
+Both 600-second startup samples peaked at approximately 6.32 GiB, with average
+CPU use of 2.23 cores before cleanup and 2.28 afterward. Neither sample had
+memory-limit events or OOM kills. The initial startup failed before cleanup,
+the workloads and caches differed, and both transitions failed. Widget cleanup
+has not established a performance or reliability improvement and remains an
+experiment. External-page acceptance was not attempted in these trials.
