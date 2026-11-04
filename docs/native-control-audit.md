@@ -249,9 +249,39 @@ radius into `Touch.radiusX`, rotation into `Touch.radiusY`, and the first radius
 into `Touch.force`. An isolated AArch64 instruction probe reproduced that
 mapping, including the observed equal-radius, zero-pressure cases. A candidate
 change to two loads restored the expected mapping for those cases, a distinct
-value case and a released contact. This establishes an instruction-level repair
-candidate; it has not been installed or validated in Safari. Native HID radius
-scaling, release geometry and stylus/twist behavior remain separate issues.
+value case and a released contact.
+
+That candidate subsequently passed a live Safari experiment. The repair checked
+the complete shared-cache file hash and both original instruction words, saved
+rollback data, and changed the two loads together with the affected code page's
+SHA-256 signature slot. The host-side candidate check verified every code-page
+slot. The first guest write attempt stopped at a read-only-volume error without
+changing bytes. A separate application after the supported native remount path
+verified the complete resulting file hash. After a clean shutdown and new boot,
+the file still matched and the System volume was read-only again.
+
+Updating the instructions alone is insufficient: the pinned runtime's
+[`DyldSharedCacheCodeSignature.swift`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneExecutable/VPhoneCommand/FirmwarePatcher/DyldSharedCache/DyldSharedCacheCodeSignature.swift)
+explains the guest's page-hash validation and the existing custom-firmware trust
+prerequisites. A repair must preserve the code/signature pair in both directions.
+Do not apply offsets or signature assumptions to another framework build.
+
+With the framework repair, the existing SDK tap returned equal X/Y touch radii
+and zero force through all four property readers. Its oversized contact and
+nonzero pointer-up dimensions remained. A separate native HID helper then
+tested four calibrated contacts, clearing contact radii on release. Safari
+reported radii `5 / 5`, `11 / 11`, approximately `7 / 7`, and approximately
+`24.1702 / 24.1702`, all with zero force. Pointer-down dimensions were twice
+those radii, pointer pressure was zero, and pointer-up dimensions were zero.
+Every tap produced a trusted callback, and all four property-reading paths
+agreed. The local page rendered its canvas and completed both worker checks.
+
+This is a build-specific experimental result. The public runtime does not yet
+install the framework repair or replace the pinned HID helper. Package the
+guarded repair and contact scaling before claiming that a fresh checkout has
+corrected input. The nonzero requested-pressure case still produced zero native
+pressure; it does not establish force support. Drag, multitouch, stylus/twist,
+other framework builds and complete physical-device equivalence remain untested.
 
 The framework metadata agrees between WebCore and WebKit, but metadata alone
 does not establish stock provenance. An attempted comparison with the original
@@ -262,7 +292,8 @@ platform conditionals when consulting upstream source:
 selects `WebKitAdditions/TouchIOS.h` for iOS. The generic `Touch.cpp` constructor
 is not the implementation of that path. Any repair must verify the actual
 framework build and original bytes, preserve rollback data, and pass a native
-Safari test before adoption.
+Safari test before adoption. The live tap results above do not resolve the
+stock-provenance limitation.
 
 ## Screen evidence
 

@@ -164,9 +164,47 @@ This diagnostic ran after the browser resource recordings. Its first app launch
 stayed blank while the container reached its 6.5 GiB memory limit. A separate
 launch rendered successfully after the diagnostic limit was raised to 6.75 GiB.
 The original failed launch was retained. These taps are not evidence of stable
-operation at the baseline memory limit, and the field discrepancy remains
-unresolved. Native event capture alone does not establish the exact conversion
+operation at the baseline memory limit, and the field discrepancy was still
+unresolved at that stage. Native event capture alone does not establish the exact conversion
 or property-read path responsible for it.
+
+## Follow-up native repair
+
+A later build-specific framework repair corrected the field mapping and its
+code-page signature hash. After reboot, Safari reported equal touch radii and
+zero force through all four property readers. Combining that repair with the
+calibrated native helper produced consistent touch/pointer fields for four
+contacts, with zero pointer dimensions on release. The original SDK helper
+still generated an oversized contact when used with the repaired framework.
+See the [native control audit](../docs/native-control-audit.md) for the procedure
+and limits. These experimental changes are not installed by the public runtime.
+
+## Check a saved calibrated tap
+
+The checker reads one `input-*.json` callback saved by this server. Specify the
+expected CSS radius for the controlled contact; this is an explicit test
+expectation, not a radius inferred from the record or prescribed for human taps.
+
+```sh
+python3 scripts/check_touch_probe.py /path/to/input-contact.json \
+  --radius 5 --require-property-reads
+```
+
+It checks one trusted pointer/touch/click sequence, contact identifiers, both
+touch radii, pointer dimensions, force/pressure, release dimensions and contact
+timestamps. Force and pressure default to zero; `--force` and `--pressure` set
+the expected start values. Release force and pressure must be zero. Touch-end
+radii are expected to retain the contact size, as in the tested Safari path.
+When property reads are present, all four readers must agree with the direct
+fields. Older callbacks can omit them unless `--require-property-reads` is used;
+the report then explicitly leaves `property_read_paths_verified` false.
+
+The command prints a JSON report and exits with `0` for matching observations,
+`1` for failed checks, or `2` for invalid arguments/input. It sends no commands
+to the guest and does not modify the callback. A pass does not establish human
+input, complete device fidelity, supported pressure input, browser rendering,
+or performance. Keep screenshots, the diagnostic revision and device/OS
+metadata alongside the original callback outside the source repository.
 
 This local HTTP test does not establish TLS behavior, service-worker coherence,
 public IP/DNS/WebRTC isolation, external-page rendering or parity with a physical
