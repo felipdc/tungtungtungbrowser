@@ -239,18 +239,21 @@ acknowledgments took 0.59–1.13 seconds; complete local-page callbacks took
 14.97–21.45 seconds. Fixed captures showed each completed observation by
 30 seconds. A later warm success does not change the original cold result.
 
-Two bounded allocation-log prefixes from this process replayed consistently:
+Three bounded allocation-log prefixes from this process replayed consistently:
 
 | Capture | Pooled capacity | Logged live placements | Unaccounted capacity | Blocks without logged placements |
 | --- | --- | --- | --- | --- |
 | After the cold-page failure | 1,024 MiB | 708.6 MiB | 315.4 MiB | 1 |
 | After three warm pages and touch | 1,280 MiB | 824.2 MiB | 455.8 MiB | 2 |
+| After further external browsing | 1,536 MiB | 944.3 MiB | 591.7 MiB | 0 |
 
 The warm pool held eight buffer blocks and twelve image blocks. Its two blocks
 without placements total only 128 MiB; the remaining unaccounted capacity is
 distributed within occupied blocks. Changing block sizes or retention needs a
 separate allocation and rendering experiment. These figures do not establish
 that any particular amount of resident memory can be released.
+The later browsing snapshot had no blocks without placements, so releasing
+empty blocks alone would not address that observed pool capacity.
 
 Each capture retained the full prefix, binary hash, original launch identity,
 process ancestry, logging environment and stdout/stderr-to-log association.
@@ -267,6 +270,12 @@ these are process observations rather than whole-container totals. The
 container peak, with no memory-limit or OOM events. Default URL opening also
 increased saved tabs from ten to thirteen during the three local navigations;
 future memory comparisons must control tab state.
+
+A subsequent 420-second external-browsing window averaged 1.55 CPU cores and
+reached the 6.5 GiB container limit. It recorded 471 memory-limit events and no
+OOM kills. At its allocation snapshot, anonymous mappings accounted for about
+2,326 MiB of PSS, guest backing for 2,019 MiB and allocation-file mappings for
+1,545 MiB. The lower warm local-page peak does not qualify a smaller container.
 
 This was a diagnostic rebuild with additional logging and some different
 autodetected dependencies. Its failed cold workload and different build prevent
