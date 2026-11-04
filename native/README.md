@@ -1,5 +1,14 @@
 # Native diagnostics and workarounds
 
+## Direct process identity observer
+
+`process_observer.c` is an optional read-only native service for inspecting a
+known PID through kernel metadata. It avoids application enumeration, retains
+identity changes and errors, and makes no foreground claim. The
+[observer guide](../docs/process-observer.md) covers building, verified
+installation, the bounded Python client, native results and the unresolved
+post-Home timeout. It is not enabled by runtime creation.
+
 ## QEMU wait-instruction check
 
 `check_qemu_wfe.S` is a small AArch64 program for the optional

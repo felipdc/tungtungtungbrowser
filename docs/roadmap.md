@@ -18,7 +18,10 @@ check native rendering at each stage before adopting an optimization.
       startup budget. Measure warm navigation, page execution, native input and
       Home/Safari return latency separately from boot. Keep the original launch
       clock and cold outcome when a later warm observation succeeds; it does
-      not turn the failed cold sequence into a pass. Validate repeated
+      not turn the failed cold sequence into a pass. Qualify repeated navigation
+      with Safari kept in the foreground as the primary browser request path.
+      Track background/Home behavior separately and preserve its failures.
+      Validate repeated
       Home/Safari transitions and process identity as well as initial launch.
       A [native transition trial](crash-diagnostics.md) passed
       local page and touch checks but hit a background scene-update watchdog;
@@ -26,6 +29,10 @@ check native rendering at each stage before adopting an optimization.
       The [session-transition recorder](session-lifecycle.md) provides a
       repeatable request and evidence sequence through the published controller;
       its completion still requires separate screenshot review.
+      The optional [direct process observer](process-observer.md) cross-checks
+      kernel PID/start-time identity without enumerating applications. Native
+      installation checks passed, but a post-Home query timed out; it remains
+      a diagnostic and does not replace foreground or rendering checks.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
