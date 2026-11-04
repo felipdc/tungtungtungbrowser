@@ -7,13 +7,20 @@ this repository.
 
 ## Current runtime work
 
-Prioritize repeatable startup and native control, then consistent external-page
-browsing, then measured resource reductions. Retain failures and check native
-rendering at each stage before adopting an optimization.
+Prioritize reliable cold startup and responsive, repeatable use of warmed
+browsers, then consistent external-page browsing and measured resource
+reductions. Roughly 300 seconds is an acceptable cold-start budget for the
+current work; reducing it further is not the main optimization target. This is
+a development target, not a supported startup guarantee. Retain failures and
+check native rendering at each stage before adopting an optimization.
 
-- [ ] Make cold startup and Safari readiness reliable, with measured timings.
-      Validate repeated Home/Safari transitions and process identity as well as
-      initial launch. A [native transition trial](crash-diagnostics.md) passed
+- [ ] Make cold startup and Safari readiness reliable within the approximate
+      startup budget. Measure warm navigation, page execution, native input and
+      Home/Safari return latency separately from boot. Keep the original launch
+      clock and cold outcome when a later warm observation succeeds; it does
+      not turn the failed cold sequence into a pass. Validate repeated
+      Home/Safari transitions and process identity as well as initial launch.
+      A [native transition trial](crash-diagnostics.md) passed
       local page and touch checks but hit a background scene-update watchdog;
       its experimental fast state observer remains unadopted.
       The [session-transition recorder](session-lifecycle.md) provides a
