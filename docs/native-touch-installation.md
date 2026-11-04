@@ -162,6 +162,13 @@ deadline. That failed measurement is retained independently from the passing
 installation, rendering and touch checks. These results do not demonstrate
 lower memory consumption, faster startup or general worker responsiveness.
 
+A later cold boot of the same persistent trial did not establish Safari
+foreground readiness within 600 seconds. Its separate, longer worker
+measurement therefore did not start. The display remained on Home with
+rendering artifacts, and the container reached its 6.5 GiB memory limit without
+an OOM kill. These observations do not establish the cause of the startup
+failure. Repeated startup and browser reliability remain unqualified.
+
 Creation and startup do not install this repair automatically. Other framework
 builds, physical devices and complete equivalence to a physical iPhone remain
 outside the supported validation scope.
