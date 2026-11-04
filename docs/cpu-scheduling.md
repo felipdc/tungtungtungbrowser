@@ -88,3 +88,60 @@ external-page acceptance. Three guest application CPUs remain unadopted;
 runtime defaults are unchanged. The next measurements should investigate
 native scene-snapshot completion and guest scheduling while accounting for
 inspection overhead and preserving the original failed operation.
+
+## Separate cold readiness from warm responsiveness
+
+The current development priority accepts cold startup around 300 seconds while
+requiring reliable startup and responsive use of an already-running browser.
+Measure those separately. A later successful warm page does not replace a failed
+cold page result, and an accepted native request does not prove rendered output.
+
+A subsequent trial changed only TLB mode from 0 to 2 relative to the two-CPU
+control above. It retained the same immutable parent disks, copied renderer
+cache, native controller, guest limits and software-rendered display. Safari
+foreground readiness took 282.16 seconds, within the approximate startup budget.
+The first local page rendered the expected canvas and passed WebGL checks, but
+both workers exceeded their 15-second deadline. That cold sequence remained a
+failure and sent no touch or Home input.
+
+After the original 600-second recording finished, a separately labelled warm
+sequence used the same guest session and configuration. Its navigation was a
+new request with separate evidence; no individual action was retried.
+
+| Warm observation | Result |
+| --- | ---: |
+| Native navigation acknowledgment | 0.91 s |
+| Local diagnostic callback, from navigation request | 22.91 s |
+| Dedicated / shared worker response | 6.50 / 6.25 s |
+| Calibrated touch request to recorded page event | 5.43 s |
+| Native foreground inspection | 37.91 s |
+| Process inventory after Home | 61.88 s |
+| Safari continuity after Home | Failed; original process absent |
+
+Canvas, WebGL and touch-field checks passed in the warm sequence. The capture
+15 seconds after Home still showed Safari with its recorded touch. The later
+failure capture showed Home with rendering artifacts. The process inventory
+returned no Safari process, so the recorder stopped without requesting a
+return launch. External browsing was not attempted in this trial.
+
+A matching-boot crash report identified a 10-second background scene-update
+watchdog for the original Safari PID. Its sampled main thread was waiting for
+a synchronous XPC reply in `BKSHIDKeyboardService` while UIKit prepared a
+scene snapshot. A widget renderer also had a matching-boot scene-update
+watchdog. These observations narrow the native paths to investigate; they do
+not prove a keyboard-device defect or identify the component responsible for
+the wait. Clock maintenance also recorded a transport timeout during the slow
+Home/process-inspection interval; its failed result was preserved.
+
+The cold 600-second recording sampled a 6.44 GiB whole-cgroup memory peak and
+averaged 2.31 host CPU cores. The separate 300-second warm recording sampled
+6.43 GiB and averaged 2.14 cores. Both had zero memory-limit events, OOM kills
+and CPU-quota throttling. The warm window includes the failed transition and
+the remaining observation time; it is not a successful browsing benchmark.
+Container CPU pressure during that window was 1.66% `some` and 0.25% `full`.
+
+Warm-up improved local page execution in this session but did not establish
+reliable lifecycle control. Prioritize native lifecycle completion and the
+cost of foreground/process inspection before seeking further cold-start
+reductions. This single trial does not qualify TLB mode 2, smaller memory
+limits or a change to the default runtime pin.
