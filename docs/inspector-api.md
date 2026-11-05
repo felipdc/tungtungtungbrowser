@@ -119,6 +119,10 @@ invalidate the main page or its response waiters. A live target's error, a
 different protocol error, or a transport timeout still fails the session; no
 resume command is replayed.
 
+This case was observed during a native page reload and reproduced in protocol
+tests. The subsequent native runs failed at the service handoff before reaching
+the changed code, so native qualification of this fix remains outstanding.
+
 ```python
 import asyncio
 import os
@@ -198,6 +202,10 @@ address field and returned localized placeholder text as its value. That text
 is deliberately not treated as a verified empty address. No destination URL was
 submitted and tab closure was not established. This option remains experimental
 while native empty-field identification and initialization are being qualified.
+A later recovery used retained ownership evidence and the exact native
+placeholder reviewed in that guest to close the tab and verify preservation of
+the original tab. That private recovery does not qualify general SDK cleanup
+from an empty field.
 
 The experimental `new_tab_url` option opens a new native Safari tab and owns its
 cleanup. Safari must already be warmed and verified in the foreground. Supply a
@@ -502,3 +510,33 @@ offers; its cause has not been isolated. Final accessibility settings were both
 off. The original tab rendered in the final host capture, and shutdown completed
 in 7.68 seconds without forced termination. Parent disks, parent cache and six
 original baseline files were unchanged; no experimental guest state was promoted.
+
+## Latest warm-control observations
+
+A fresh disposable guest reached verified foreground Safari in 271.13 seconds.
+The native inspection handoff still failed intermittently. Correlated service
+logs showed shutdown after a two-second no-client window despite the bridge's
+queued native connection; foreground readiness alone does not qualify control
+readiness.
+
+Once warmed, inspection of a restored existing external page produced these
+samples. Both the native JPEG and host display PNG showed rendered content.
+
+| Operation | Duration |
+| --- | ---: |
+| Attach native inspection | 2.54 s |
+| Body selector condition | 0.36 s |
+| Read rendered HTML | 1.46 s |
+| XPath body lookup | 0.73 s |
+
+This was an existing-page read, not the full create-to-second-page workflow.
+An API-triggered reload subsequently exposed the retired-frame resume race
+noted above. Follow-up native sessions failed at handoff, before exercising its
+fix. No complete application-JSON-to-second-page acceptance is established.
+
+The final runtime cgroup reached its 6.50-GiB limit, recorded 2,592 memory-limit
+events and no OOM or OOM-kill events. These cumulative values do not establish
+resource savings. Both accessibility switches were independently verified off
+at the end, the owned test tab had been verified closed, and guest shutdown
+completed in 7.78 seconds with exit zero and no forced termination. Parent disks,
+parent cache and six original baseline files remained unchanged.
