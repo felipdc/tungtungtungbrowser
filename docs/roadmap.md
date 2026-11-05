@@ -249,6 +249,14 @@ bottleneck, retaining failed outcomes and native rendering checks.
 
 ## Browser API implementation backlog
 
+The [experimental Inspector API](inspector-api.md) now implements owned attachment
+to an existing tab, DOM serialization, CSS/XPath lookup, attached/detached and URL
+waits, bounded delays, request/response expectations and complete response bodies.
+Native large-document reads and application JSON capture passed after replacing
+a stalled WebSocket forwarding path with a direct stream. A subsequent native
+address-field query failed on the next navigation. The complete workflow and the
+broader contracts below remain open; selector clicks are not implemented yet.
+
 - [ ] **Original response HTML:** retrieve the main document response body
       before DOM parsing/loading completes, including URL, status, headers,
       encoding and redirect history. Define whether the API streams bytes or

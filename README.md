@@ -22,8 +22,10 @@ further. This is a development target, not a startup guarantee.
 Current performance is provisionally accepted for API development. The main
 priority is a complete session workflow: navigate, wait for page conditions,
 read rendered HTML, observe requests and response bodies, capture screenshots,
-use CSS/XPath actions across pages, then close and clean up. These expanded
-APIs are planned, not yet implemented; see the [API roadmap](docs/roadmap.md).
+use CSS/XPath actions across pages, then close and clean up. An optional
+[native Inspector API](docs/inspector-api.md) now provides HTML reads, CSS/XPath
+lookup, condition waits and request/response capture. Selector actions and the
+complete repeatable workflow remain unfinished; see the [API roadmap](docs/roadmap.md).
 Further runtime optimization should address failures measured in that workflow.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
@@ -197,9 +199,11 @@ automatically. Live Safari validation is still required. The controller uses
 native interfaces without injected page scripts or JavaScript property
 replacements.
 
-HTML retrieval, DOM snapshots, selector waits and network observation or
-interception are [planned APIs](docs/roadmap.md#browser-api-expansion--pursue-after-the-current-runtime-work).
-They are not current SDK features.
+The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
+attached/detached selector waits and native request/response observation, including
+response bodies. It has a separate native bridge build and installer. Request
+modification, streaming HTML, selector clicks and full lifecycle coverage remain
+on the [API roadmap](docs/roadmap.md#browser-api-implementation-backlog).
 
 ## Proxy, resources and diagnostics
 
@@ -225,8 +229,9 @@ required by the tested candidate.
 
 ## Development and licensing
 
-See the [development roadmap](docs/roadmap.md) for planned DOM, wait and
-network APIs. These are future capabilities.
+See the [Inspector API guide](docs/inspector-api.md) for current experimental
+DOM/network operations and the [development roadmap](docs/roadmap.md) for the
+remaining workflow and action APIs.
 
 Run `python3 -m unittest discover -s tests -v`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for validation and repository boundaries.

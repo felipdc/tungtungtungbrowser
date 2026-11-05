@@ -1,5 +1,12 @@
 # Native diagnostics and workarounds
 
+## Inspector session bridge
+
+`inspector_bridge.c` owns a local native Web Inspector service and carries its
+plist stream directly over host-only VSOCK. It changes no preferences and injects
+no page scripts. The [Inspector API guide](../docs/inspector-api.md) covers the
+separate build/installer, session ownership, native checks and remaining limits.
+
 ## Accessibility settings reader
 
 `accessibility_state.c` reads the mobile user's native application-accessibility
