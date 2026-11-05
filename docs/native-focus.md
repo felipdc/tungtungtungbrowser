@@ -94,3 +94,10 @@ retained separately; the two-page result does not qualify zero-delay control.
 The field reader independently verified an editing address field before and
 after paste, when its native frame moved from y=770 to y=488. The complete
 application-JSON-to-second-page-and-selector-click workflow remains unfinished.
+
+At the end of the run, the runtime cgroup reached a 6.50-GiB peak against its
+6.5-GiB limit and recorded 797 memory-limit events, with no OOM kill. These are
+cumulative values for the whole boot and investigation, not memory attributed
+to the focus helper or the two navigations. No memory reduction is established.
+Guest shutdown completed in 7.28 seconds without forced termination; the
+parent overlays, parent cache and six original baseline files were unchanged.
