@@ -84,8 +84,10 @@ The CLI equivalent is `tap X Y --hold-ms 800`. `hold_ms` accepts an integer
 from 1 to 1000; the default remains 50. The installed helper already supports
 that bounded duration, so this option does not require replacing its binary.
 The default daemon-backed tap uses the same requested hold in its balanced
-touch sequence. Longer holds through either backend require native UI
-validation; accepting the argument does not establish gesture recognition.
+touch sequence. An 800 ms helper-backed hold has opened Safari's tab-overview
+context menu in a live trial. Other durations, controls and the daemon-backed
+long hold still require native UI validation; accepting the argument does not
+establish gesture recognition.
 
 Coordinates are native screen points. The backend reads `device.screen`,
 requires the tested unlocked portrait geometry, validates the point, and
@@ -147,6 +149,21 @@ verified the candidate module's path, used Python's safe-path mode, and passed;
 the successful Python tap was not repeated. When testing multiple checkouts,
 verify which module `python -m` imports rather than assuming `PYTHONPATH` takes
 precedence over the working directory.
+
+A later native UI trial used four 50 ms taps and one 800 ms hold to open the
+Safari menu, enter the tab overview, open its close-all context menu, and
+complete both closure steps. Each action used a recently reviewed screenshot
+and checked the foreground Safari process before input. All five helper calls
+reported completed holds and balanced press/release dispatch, with no input
+retries. Screenshots showed the expected successive controls and the final
+Start Page; Safari retained the same PID and process-start time.
+
+Read-only copies of the saved-tab database showed the active group changing
+from seven entries to one, with three entries in other groups unchanged.
+Those live copies are not atomic snapshots. This qualifies the observed UI
+sequence, not a general tab-management API, persistent cleanup after reboot,
+or a resource reduction. That boot's original shared-worker deadline failure
+remains a failed cold-page result despite the later successful UI actions.
 
 Live validation must load the local diagnostic page, invoke `Browser.tap` on
 its visible button, retain the callback and native screenshot, and run
