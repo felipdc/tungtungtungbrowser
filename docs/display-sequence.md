@@ -89,3 +89,50 @@ startup budget, but its screenshot was blank and the first page reached Safari's
 error screen. The warm result preserves that cold failure. It also does not
 explain the earlier status-label regression in the broader browser diagnostic,
 qualify external-page reliability, or justify a runtime-default change.
+
+### Navigation and capture disagreement
+
+A later three-page sequence used disjoint ranges: A = 17–20, B = 65–68 and
+C = 129–132. A and C used default native URL opening. B used one address-bar
+navigation after a separately verified settled focus state; its original
+[focus-transition failures](native-control-audit.md#field-comparison-and-a-failed-focus-transition)
+were retained. Each page received an immediate QMP capture and sequential
+QMP/native/QMP groups scheduled 15, 45 and 90 seconds after navigation.
+
+A reached 20 in both capture paths. B showed 66 in all three 15-second captures
+and 68 in both later groups, with matching DOM/canvas regions and completion
+identifier. Its saved-tab count and active-tab record were preserved in
+sequential copies. This supports that one navigation; it does not qualify
+sustained tab reuse or pixel correctness outside the diagnostic regions.
+
+C exposed a display failure despite completing all callbacks:
+
+| Scheduled group | QMP before | Native iOS | QMP after |
+| --- | --- | --- | --- |
+| Immediate | Previous page B at 68 | Not requested | Not requested |
+| 15 seconds | Blank content | C at 129 | C at 130 |
+| 45 seconds | Blank content | C complete at 132 | Blank content |
+| 90 seconds | C complete at 132 | C complete at 132 | C complete at 132 |
+
+The 45-second QMP images were byte-identical. The native request between them
+took 7.87 seconds and showed both matching regions and the expected completed
+run identifier. QMP had already shown C at the earlier checkpoint, so the later
+blank content is a regression rather than initial loading latency. The eventual
+matching 90-second group does not erase it. Overlapping toolbar symbols and
+rectangular background artifacts also remained visible; counter agreement is
+not a complete rendering pass.
+
+These observations distinguish page execution, native screenshots and the host
+display capture. They do not prove whether the fault lies in guest composition,
+the emulated display update or QMP readback. The captures are sequential and
+native capture can perturb the workload. Preserve their original timing and
+raw pixels before changing the capture backend or renderer defaults. The same
+Safari process remained alive throughout, which does not establish visual
+correctness or external-page acceptance.
+
+The 600-second focus/navigation window averaged 1.85 host CPU cores and reached
+the container's 6.50-GiB memory limit, recording 593 `memory.events:max` events
+and no OOM kills. These are resource-limit events, not 593 application failures.
+The preceding 300-second warm window averaged 1.99 cores and peaked at 6.39 GiB.
+The different workloads and failed display check do not establish resource
+savings or qualify a smaller memory limit.

@@ -87,10 +87,14 @@ check native rendering at each stage before adopting an optimization.
       first failed native symbol binding. A follow-up verified the required
       names and exact application-container process path. A larger root-request
       budget and explicit handling of absent identifiers subsequently passed
-      three reads of one unchanged native address field. Qualify accessibility
-      initialization, successful control comparisons and focus/navigation
-      transitions while preserving foreground and process ownership checks
-      before adopting a narrower query path.
+      three reads of one unchanged native address field. A later exact
+      controller comparison and one settled-state navigation passed, retaining
+      the saved tab count and active-tab record, but initialization and the
+      immediate post-tap read failed. Qualify bounded settling and sustained
+      focus/navigation transitions while preserving foreground and process
+      ownership checks before adopting a narrower query path. Measure the whole
+      control operation; a subsecond native scan still incurred multi-second
+      RPC and foreground overhead.
 - [ ] Trace warm display updates independently of navigation callbacks. A
       [foreground trial](browser-control.md#warm-navigation-observations)
       retained Safari and passed consecutive local diagnostics, but later
@@ -99,7 +103,11 @@ check native rendering at each stage before adopting an optimization.
       capture times. The [local sequence page](display-sequence.md) separates
       DOM/canvas values from callback delivery evidence. Identify the active
       display device before instrumenting it; keep renderer experiments separate
-      from CPU and proxy changes.
+      from CPU and proxy changes. A subsequent disjoint-range navigation showed
+      completed content in a native screenshot while both surrounding QMP
+      captures were blank, after QMP had already shown the new page. Trace this
+      [capture disagreement](display-sequence.md#navigation-and-capture-disagreement)
+      without treating callback completion or eventual agreement as a pass.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

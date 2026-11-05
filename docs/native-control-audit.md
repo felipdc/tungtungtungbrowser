@@ -309,6 +309,58 @@ navigation remained correct, or whether guest compositing or display capture
 caused the stale content. Warm control latency and sustained visual correctness
 remain separate adoption requirements.
 
+### Field comparison and a failed focus transition
+
+A later run obtained an exact comparison with the published tree query: the
+focused helper and controller returned the same URL, traits, frame and owning
+Safari PID. The helper RPC took 9.81 seconds, including a 2.70-second native
+scan; the subsequent controller query took 7.39 seconds. This first successful
+comparison establishes agreement for that state, not a latency advantage.
+
+Two earlier operations in the same run remained failed. The initial published
+tree query returned native error `-25216` after 19.79 seconds. After the separate
+successful comparison, one calibrated tap targeted the verified address-field
+frame. A read after the 0.5-second settle interval then exhausted its two-second
+root budget with the same error, visiting no elements. That sequence stopped
+before selecting, entering or submitting text. Neither Command-L nor the tap
+was repeated.
+
+A distinct later read, after the failed operation had terminated, found the
+same field in editing state with the same process identity. Its RPC took
+3.61 seconds and its native scan took 1.33 seconds. After fresh foreground
+verification, one selection and text-entry sequence entered the new URL. The
+readback matched the entire requested URL and editing state before one Return
+was sent. That read took 8.78 seconds end to end despite a 0.75-second native
+scan. Sequential database/WAL copies retained twelve saved tabs and the same
+active-tab record; their atomic consistency was not proven. The local sequence
+page showed the new counter range at the scheduled 15-second capture and the
+matching completion identifier at 45 and 90 seconds, with Safari's PID and
+start time unchanged.
+
+This is one manually separated settled-state follow-up. It does not qualify
+automatic recovery, make the original failures successful, or validate the
+published tab-reuse path with a new backend. A faster native field scan alone
+does not establish faster control: foreground verification in the broader run
+ranged from 3.66 to 50.34 seconds, and transport/dispatch time remained material.
+Keep initialization, settling, native scan, end-to-end RPC and verified rendered
+navigation as separate measurements. Retain all process and foreground guards;
+never repeat native input merely because a read timed out.
+
+The run reached verified foreground Safari in 229.4 seconds. Its first local
+diagnostic callback arrived 353.9 seconds after boot and passed both workers,
+canvas and WebGL checks; this does not establish first-page readiness within
+300 seconds. A distinct warm navigation completed its callback in 18.17 seconds
+after a 0.68-second acknowledgement. Its 15-second capture still had a blank
+canvas, while the 30- and 60-second captures showed the expected canvas and
+matching observation identifier. A subsequent default navigation exposed a
+[QMP/native screenshot disagreement](display-sequence.md#navigation-and-capture-disagreement).
+The bounded crash inventory also contained an `AccessibilityUIServer`
+process-launch watchdog termination whose boot-session UUID matched the native
+boot identity. Its report described exhaustion of a 30-second allowance. This
+is a current-boot failure even though Safari remained alive and later queries
+succeeded; no causal link to the later field timeouts has been established.
+Repeated startup and warm browsing reliability remain unqualified.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.
