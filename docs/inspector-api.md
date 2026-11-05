@@ -152,6 +152,14 @@ workflow is still unqualified**. The previous transport failures and later
 navigation failure remain separate observations. These are samples, not latency
 guarantees or evidence of physical-device equivalence.
 
+The final sample from that longer API investigation reported approximately
+6.49 GiB current and 6.50 GiB peak container memory, 7,591 `memory.events:max`
+events, and zero `oom`/`oom_kill` events. These are cumulative values for the
+boot, not an isolated per-operation measurement. They establish memory-limit
+pressure during this run, but do not establish that it caused the accessibility
+failure. No smaller memory profile is promoted from these API results. The guest
+later stopped cleanly in 6.38 seconds; the parent disks and cache were unchanged.
+
 The offline tests cover immediate replies, a stream larger than the previous
 stall window, process changes, response-body completion, redirect invalidation,
 retention limits, cancellation, timeouts and socket release. Native fixture
