@@ -39,6 +39,10 @@ check native rendering at each stage before adopting an optimization.
       boot. Audit inherited accessibility settings before changing them; their
       role is unproven. Preserve the separate warm success and subsequent
       address-field and periodic-clock failures.
+      The subsequent [settings-only observation](accessibility-state.md)
+      found both native accessibility switches off before and after warm
+      browsing, while a same-boot launch watchdog remained. Those later samples
+      do not establish boot-time settings or explain the cold first-page failure.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
@@ -144,8 +148,14 @@ check native rendering at each stage before adopting an optimization.
       preserve that failed boot when repeating the controlled comparison.
       A [default-off QOM control](display-refresh.md) now allows the experiment
       to be changed after warm-up. Its source-function checks, full build and
-      paused-device property check passed; compare native warm captures and
-      resource windows before adopting it.
+      paused-device property check passed. A native off/on/off sequence also
+      passed property changes and sampled page consistency, but did not
+      reproduce the stale-frame fault or demonstrate a resource saving. The
+      final window reached the container memory limit without an OOM kill.
+      Keep the option disabled; qualify sustained browsing and memory pressure
+      before adopting it. Preserve the expired downstream review gate as an
+      orchestration failure and budget human review separately from native
+      operation deadlines in future runs.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

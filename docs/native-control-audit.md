@@ -516,6 +516,13 @@ contribute to this watchdog remains an untested hypothesis; this trial did not
 record their initial values. Do not automatically disable accessibility that
 another client or the device owner enabled.
 
+The optional [native settings reader](accessibility-state.md) now observes the
+two getters without enabling them or requesting a tree. Its first successful
+native invocation in a later boot reported both switches off after a cold-page
+failure and before any UI-tree query. That measurement weakens the hypothesis
+of a persistent enabled state in that boot, but does not establish the settings
+during the earlier watchdog or identify its cause.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.

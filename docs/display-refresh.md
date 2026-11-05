@@ -108,4 +108,51 @@ samples with the entire workload, including extra encodes and native captures.
 Repeated, ordered control/experimental windows are needed to assess cache and
 order effects. A faster screenshot reply or a successful callback alone does
 not establish faster usable browsing, physical-device fidelity or consistent
-external-page behavior. Native qualification remains outstanding.
+external-page behavior. Repeated native qualification remains outstanding.
+
+## Native off/on/off observation
+
+A CPU-only native run on 2026-11-05 left the property disabled during startup.
+Safari foreground identity was verified at 216.0 seconds, but its first local
+page displayed a repeated-problem error and produced no diagnostic callback
+within the 180-second observation. That cold sequence failed. A separate warm
+navigation was acknowledged in 0.65 seconds and completed its diagnostic
+callback in 16.00 seconds. Both workers, canvas and WebGL checks passed; the
+30- and 60-second captures showed the matching completed page. Two subsequent
+external HTTPS pages showed the expected content in paired QMP/native/QMP
+captures at 30 and 60 seconds. Their request acknowledgements took 1.06 and
+0.77 seconds, which are not page-load times.
+
+With the second external page already loaded, the same Safari process remained
+alive through three 60-second windows: disabled, enabled, then disabled again.
+Actual QMP property changes and readback passed. Two sequential QMP/native/QMP
+capture groups per window produced 18 verified images. All showed the expected
+page, including the initial disabled control. The earlier stale-content failure
+was not reproduced, so these images establish neither a fix nor a benefit.
+
+| Window | Average container CPU cores | Sampled peak container memory |
+| --- | ---: | ---: |
+| Disabled, first | 1.88 | 6.30 GiB |
+| Enabled | 2.05 | 6.47 GiB |
+| Disabled, second | 1.96 | 6.50 GiB |
+
+The final window reached the 6.5-GiB cgroup limit and recorded 326 `memory.events`
+`max` increments, with no OOM or OOM-kill increments. These are ordered windows
+in one session, including captures and tracing; they are not randomized or
+independent trials. Memory pressure and work retained from earlier windows
+prevent attributing the differences solely to the property. No resource saving
+was demonstrated.
+
+The trace recorded 12 display requests and six complete render jobs with zero
+reported stage errors. Each enabled request rendered; six disabled requests
+used the existing surface without rendering. QMP capture calls took 35–145 ms,
+while native capture calls took 2.03–3.20 seconds. These host request durations
+do not identify the instant captured by the native backend or establish fresh
+pixels. The final property value was `false`, and tracing was disabled afterward.
+
+The controller's subsequent visual-review deadline expired while the evidence
+was being inspected. It skipped the downstream acceptance request and finalized
+the run. The later offline image review does not rewrite that orchestration
+failure. Native shutdown completed in 16.2 seconds without forced termination;
+the parent disks, renderer cache and original baseline files were unchanged.
+The optional patch remains disabled and outside the default runtime build.

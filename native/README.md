@@ -1,5 +1,13 @@
 # Native diagnostics and workarounds
 
+## Accessibility settings reader
+
+`accessibility_state.c` reads the mobile user's native application-accessibility
+and automation switches without enabling them or querying a UI tree. The
+[guide](../docs/accessibility-state.md) covers the Linux build, process result,
+native observation and limits. It is an optional diagnostic and does not run
+as part of browser startup or navigation.
+
 ## Renderer allocation log check
 
 `check_graphics_memory.rs` exercises small buffer and image allocations through
