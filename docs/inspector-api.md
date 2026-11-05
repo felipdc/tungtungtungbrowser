@@ -286,3 +286,12 @@ adopted. The original cold sequence timed out during Safari launch at 300.27
 seconds. Later warm results do not turn that startup into a success. Background
 archive work overlapped the cold sequence, so it is not a controlled startup
 performance comparison.
+
+The final container sample was approximately 6.49 GiB current and 6.50 GiB peak,
+with 2,948 memory-limit events and no OOM or OOM-kill events. These cumulative
+values show memory pressure, but do not identify the cause of the black captures
+or establish a resource reduction. The original retained tab rendered in the
+final host capture. Shutdown completed in 16.49 seconds without forced
+termination; parent overlays, parent cache and six original baseline files were
+unchanged. Neither the experimental helper nor this disposable guest state was
+promoted.
