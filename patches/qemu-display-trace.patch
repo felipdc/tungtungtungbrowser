@@ -1,0 +1,151 @@
+--- a/hw/display/apple-gfx.c
++++ b/hw/display/apple-gfx.c
+@@ -52,6 +52,7 @@
+ typedef struct AppleGFXRenderJob {
+     AppleGFXDisplay *d;
+     RvgFrameTarget *target;
++    uint64_t trace_id;
+     /* The surface's size when the render started, which the target has. */
+     uint32_t width;
+     uint32_t height;
+@@ -63,11 +64,30 @@
+ 
+ static void apple_gfx_render_frame_completed_bh(void *opaque);
+ 
++/* Trace clocks are read only when the corresponding event is enabled. */
++static void apple_gfx_trace_state(AppleGFXDisplay *d, const char *stage)
++{
++    if (trace_event_get_state_backends(TRACE_APPLE_GFX_FRAME_STATE)) {
++        trace_apple_gfx_frame_state(qemu_clock_get_ns(QEMU_CLOCK_REALTIME),
++                                   stage, d, d->render_sequence,
++                                   d->frame_dirty, d->rendering);
++    }
++}
++
++static void apple_gfx_trace_stage(AppleGFXRenderJob *job, const char *stage,
++                                 RvgStatus status)
++{
++    if (trace_event_get_state_backends(TRACE_APPLE_GFX_FRAME_STAGE)) {
++        trace_apple_gfx_frame_stage(qemu_clock_get_ns(QEMU_CLOCK_REALTIME),
++                                   stage, job->d, job->trace_id, status);
++    }
++}
++
+ static int apple_gfx_do_render(void *opaque)
+ {
+     AppleGFXRenderJob *job = opaque;
+     RvgFrame *frame;
+-    RvgStatus status;
++    RvgStatus status, commit_status, wait_status;
+ 
+     /*
+      * This runs on a pool thread, not under the BQL: the encode takes the
+@@ -76,17 +96,25 @@
+      * of the target's pixels runs here too, so that a slow one never holds
+      * the main loop, and with it the guest's other devices.
+      */
++    apple_gfx_trace_stage(job, "encode-begin", RVG_OK);
+     status = rvg_display_encode_frame(job->d->pgdisp, job->target, NULL,
+                                       &frame);
++    apple_gfx_trace_stage(job, "encode-end", status);
+     if (status == RVG_OK) {
+         size_t stride = (size_t)job->width * 4;
+ 
+-        rvg_frame_commit(frame);
+-        rvg_frame_wait(frame);
++        apple_gfx_trace_stage(job, "commit-begin", RVG_OK);
++        commit_status = rvg_frame_commit(frame);
++        apple_gfx_trace_stage(job, "commit-end", commit_status);
++        apple_gfx_trace_stage(job, "wait-begin", RVG_OK);
++        wait_status = rvg_frame_wait(frame);
++        apple_gfx_trace_stage(job, "wait-end", wait_status);
+         rvg_frame_release(frame);
+         job->pixels = g_malloc(stride * job->height);
++        apple_gfx_trace_stage(job, "read-begin", RVG_OK);
+         status = rvg_frame_target_read_pixels(job->target, job->pixels, stride,
+                                               stride * job->height);
++        apple_gfx_trace_stage(job, "read-end", status);
+         if (status != RVG_OK) {
+             qemu_log_mask(LOG_GUEST_ERROR,
+                           "%s: rvg_frame_target_read_pixels: %s\n", __func__,
+@@ -141,9 +169,16 @@
+ 
+     job = g_new0(AppleGFXRenderJob, 1);
+     job->d = d;
++    job->trace_id = ++d->render_sequence;
+     job->target = rvg_frame_target_retain(d->target);
+     job->width = surface_width(d->surface);
+     job->height = surface_height(d->surface);
++
++    if (trace_event_get_state_backends(TRACE_APPLE_GFX_FRAME_JOB)) {
++        trace_apple_gfx_frame_job(qemu_clock_get_ns(QEMU_CLOCK_REALTIME),
++                                 d, job->trace_id, job->target,
++                                 job->width, job->height);
++    }
+ 
+     thread_pool_submit_immediate(d->state->pool, apple_gfx_do_render, job,
+                                  NULL);
+@@ -174,6 +209,16 @@
+         }
+         dpy_gfx_update_full(d->con);
+     }
++
++    if (trace_event_get_state_backends(TRACE_APPLE_GFX_FRAME_COPY)) {
++        trace_apple_gfx_frame_copy(qemu_clock_get_ns(QEMU_CLOCK_REALTIME),
++                                  d, job->trace_id, job->encoded,
++                                  surface &&
++                                  job->width == surface_width(surface) &&
++                                  job->height == surface_height(surface),
++                                  job->target == d->target);
++    }
++    apple_gfx_trace_state(d, "completion");
+     rvg_frame_target_release(job->target);
+     g_free(job->pixels);
+     g_free(job);
+@@ -202,6 +247,7 @@
+     AppleGFXDisplay *d = opaque;
+ 
+     d->frame_dirty = true;
++    apple_gfx_trace_state(d, "present");
+     if (apple_gfx_watched(d)) {
+         apple_gfx_render_new_frame(d);
+     }
+@@ -218,6 +264,7 @@
+     AppleGFXDisplay *d = opaque;
+ 
+     assert(bql_locked());
++    apple_gfx_trace_state(d, "request");
+     d->watched_until_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
+                           APPLE_GFX_WATCH_MS;
+     /*
+@@ -226,6 +273,7 @@
+      * under way the surface already has the newest frame.
+      */
+     if (!apple_gfx_render_new_frame(d)) {
++        apple_gfx_trace_state(d, "request-no-render");
+         graphic_hw_update_done(d->con);
+     }
+ }
+--- a/hw/display/apple-gfx.h
++++ b/hw/display/apple-gfx.h
+@@ -39,6 +39,7 @@
+     DisplaySurface *surface;
+     RvgFrameTarget *target; /* The surface's size, BGRA8; NULL if refused */
+     bool rendering; /* A render into the surface is under way */
++    uint64_t render_sequence; /* Diagnostic job identity, BQL protected */
+     /*
+      * The guest presented a frame, or the surface changed, since the last
+      * render began
+--- a/hw/display/trace-events
++++ b/hw/display/trace-events
+@@ -196,6 +196,10 @@
+ dm163_refresh_rate(uint32_t rr) "refresh rate %d"
+ 
+ # apple-gfx.c
++apple_gfx_frame_state(int64_t ns, const char *stage, void *display, uint64_t job, bool dirty, bool rendering) "ns=%"PRId64" stage=%s display=%p job=%"PRIu64" dirty=%d rendering=%d"
++apple_gfx_frame_job(int64_t ns, void *display, uint64_t job, void *target, uint32_t width, uint32_t height) "ns=%"PRId64" display=%p job=%"PRIu64" target=%p width=%u height=%u"
++apple_gfx_frame_stage(int64_t ns, const char *stage, void *display, uint64_t job, int status) "ns=%"PRId64" stage=%s display=%p job=%"PRIu64" status=%d"
++apple_gfx_frame_copy(int64_t ns, void *display, uint64_t job, bool encoded, bool same_size, bool same_target) "ns=%"PRId64" display=%p job=%"PRIu64" encoded=%d same_size=%d same_target=%d"
+ apple_gfx_read(uint64_t offset, uint64_t res) "offset=0x%"PRIx64" res=0x%"PRIx64
+ apple_gfx_write(uint64_t offset, uint64_t val) "offset=0x%"PRIx64" val=0x%"PRIx64
+ apple_gfx_raise_irq(uint32_t vector) "vector=0x%x"

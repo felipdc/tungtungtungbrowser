@@ -108,6 +108,10 @@ check native rendering at each stage before adopting an optimization.
       captures were blank, after QMP had already shown the new page. Trace this
       [capture disagreement](display-sequence.md#navigation-and-capture-disagreement)
       without treating callback completion or eventual agreement as a pass.
+      An optional [display-stage trace](display-trace.md) now has a compiled
+      candidate, twelve sanitizer-checked equivalence scenarios and verified QMP
+      event controls. Use it in a bounded native reproduction before changing
+      display behavior; local checks do not resolve the observed regression.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

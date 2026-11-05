@@ -18,6 +18,14 @@ identity changes and errors, and makes no foreground claim. The
 installation, the bounded Python client, native results and the unresolved
 post-Home timeout. It is not enabled by runtime creation.
 
+## QEMU display trace check
+
+The separate [display trace check](../docs/display-trace.md) uses
+`check_qemu_display_trace.c.in` as a synthetic renderer/queue harness for the
+actual pinned QEMU display functions. It compares unmodified and instrumented
+behavior, including failure paths, under ASan/UBSan. It starts no VM and does
+not establish native rendering correctness.
+
 ## QEMU wait-instruction check
 
 `check_qemu_wfe.S` is a small AArch64 program for the optional

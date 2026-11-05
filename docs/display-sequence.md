@@ -136,3 +136,7 @@ and no OOM kills. These are resource-limit events, not 593 application failures.
 The preceding 300-second warm window averaged 1.99 cores and peaked at 6.39 GiB.
 The different workloads and failed display check do not establish resource
 savings or qualify a smaller memory limit.
+
+The optional [host display trace](display-trace.md) separates queued rendering,
+encoding, waiting, readback and surface-copy observations. Its local equivalence
+checks and QMP event controls passed; native qualification is still pending.
