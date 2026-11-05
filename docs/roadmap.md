@@ -267,7 +267,11 @@ address-field query failed on the next navigation. An optional
 external navigations with CSS/XPath lookup, HTML, response bodies, screenshots
 and cleanup in one warm session. Initial focus and foreground verification
 remain possible failure points. The complete workflow and the broader contracts
-below remain open; selector clicks are not implemented yet.
+below remain open; selector clicks are not implemented yet. Verified native
+`focus()` now supports CSS and XPath, and document reads are serialized to avoid
+invalidating node IDs during concurrent operations. An accessibility hit-test
+experiment also accepted a covered control, so it cannot yet qualify touch
+actionability.
 
 - [ ] **Original response HTML:** retrieve the main document response body
       before DOM parsing/loading completes, including URL, status, headers,

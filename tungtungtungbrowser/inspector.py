@@ -184,6 +184,7 @@ class InspectorSession:
         self._inspector = self._app = self._page = self.target_id = None
         self._attached = False
         self._send_lock = asyncio.Lock()
+        self._dom_lock = asyncio.Lock()
         self._native_lock = asyncio.Lock()
         self._native_tasks = set()
         self.cleanup_errors = []
@@ -529,10 +530,11 @@ class InspectorSession:
 
     async def content(self):
         """Serialize the current rendered DOM; this is not the original HTML response."""
-        target, generation, document = await self._document()
-        result = await self._command('DOM.getOuterHTML', target=target, nodeId=document['root']['nodeId'])
-        self._same_document(target, generation)
-        return result['outerHTML']
+        async with self._dom_lock:
+            target, generation, document = await self._document()
+            result = await self._command('DOM.getOuterHTML', target=target, nodeId=document['root']['nodeId'])
+            self._same_document(target, generation)
+            return result['outerHTML']
 
     def _same_document(self, target, generation):
         if target != self.target_id or generation != self.document_generation:
@@ -549,27 +551,73 @@ class InspectorSession:
         return target, generation, document
 
     async def query_selector(self, selector, *, strategy='css'):
+        # WebKit getDocument resets native node IDs even without a navigation.
+        # Keep resolution and use together so another SDK read cannot reset them.
+        async with self._dom_lock:
+            return (await self._resolve_selector(selector, strategy=strategy))[2]
+
+    async def _resolve_selector(self, selector, *, strategy, strict=False):
         if not isinstance(selector, str) or not 1 <= len(selector) <= 8192:
             raise ValueError('selector must contain 1–8192 characters')
         if strategy not in ('css', 'xpath'):
             raise ValueError('strategy must be css or xpath')
         target, generation, document = await self._document()
         if strategy == 'css':
-            result = await self._command('DOM.querySelector', target=target, nodeId=document['root']['nodeId'], selector=selector)
-            if target != self.target_id or generation != self.document_generation:
-                raise DocumentChangedError('Document changed during selector lookup')
-            return result.get('nodeId') or None
-        search = await self._command('DOM.performSearch', target=target, query=selector, nodeIds=[document['root']['nodeId']])
+            method = 'DOM.querySelectorAll' if strict else 'DOM.querySelector'
+            result = await self._command(method, target=target, nodeId=document['root']['nodeId'], selector=selector)
+            self._same_document(target, generation)
+            if strict:
+                nodes = result['nodeIds']
+                if len(nodes) > 1:
+                    raise InspectorError('Selector matches multiple nodes; action not sent')
+                node = nodes[0] if nodes else None
+            else:
+                node = result.get('nodeId') or None
+            return target, generation, node
+        # Inspector's search also tries CSS and literal text. A parenthesized
+        # XPath expression excludes CSS, and a fresh always-true predicate keeps
+        # ordinary page text from matching the search expression itself.
+        expression = '(' + selector + ")[boolean('" + uuid.uuid4().hex + "')]"
+        search = await self._command('DOM.performSearch', target=target, query=expression,
+                                     nodeIds=[document['root']['nodeId']], caseSensitive=True)
         try:
+            self._same_document(target, generation)
+            if strict and search['resultCount'] > 1:
+                raise InspectorError('XPath matches multiple nodes; action not sent')
             if not search['resultCount']:
-                return None
+                return target, generation, None
             result = await self._command('DOM.getSearchResults', target=target, searchId=search['searchId'], fromIndex=0, toIndex=1)
             if target != self.target_id or generation != self.document_generation:
                 raise DocumentChangedError('Document changed during XPath lookup')
-            return result['nodeIds'][0]
+            return target, generation, result['nodeIds'][0]
         finally:
             if target in self._targets:
                 await self._command('DOM.discardSearchResults', target=target, searchId=search['searchId'])
+
+    async def focus(self, selector, *, strategy='css'):
+        """Focus one DOM element through WebKit and verify its focused state.
+
+        This can scroll the page and dispatch ordinary focus events. It does not
+        establish native keyboard ownership, touch geometry or clickability.
+        """
+        async with self._native_lock, self._dom_lock:
+            target, generation, node = await self._resolve_selector(selector, strategy=strategy, strict=True)
+            if node is None:
+                raise InspectorError('Selector did not match a node; focus not sent')
+            before = (await self._command('DOM.getAccessibilityPropertiesForNode',
+                                         target=target, nodeId=node))['properties']
+            self._same_document(target, generation)
+            if (before.get('nodeId') != node or before.get('exists') is not True
+                    or any(before.get(key) is True for key in ('disabled', 'hidden', 'ignored'))):
+                raise InspectorError('Node is absent, disabled, hidden or ignored; focus not sent')
+            await self._command('DOM.focus', target=target, nodeId=node)
+            self._same_document(target, generation)
+            after = (await self._command('DOM.getAccessibilityPropertiesForNode',
+                                        target=target, nodeId=node))['properties']
+            self._same_document(target, generation)
+            if after.get('nodeId') != node or after.get('focused') is not True:
+                raise InspectorError('Native DOM focus was not verified; action was not repeated')
+            return {'method': 'native_dom_focus', 'node_id': node, 'focused': True}
 
     async def wait_for_selector(self, selector, *, strategy='css', state='attached', timeout=30, interval=0.25):
         if state not in ('attached', 'detached'):
@@ -594,7 +642,8 @@ class InspectorSession:
         async with asyncio.timeout(_timeout(timeout)):
             while True:
                 try:
-                    _, _, document = await self._document()
+                    async with self._dom_lock:
+                        _, _, document = await self._document()
                     url = document['root'].get('documentURL', '')
                     if fnmatch.fnmatchcase(url, pattern):
                         return url
@@ -631,7 +680,8 @@ class InspectorSession:
             raise InspectorError('Native navigation requires a Browser instance')
         web_url(url)
         expected_url = await self._unique_tab_url()
-        target, generation, document = await self._document()
+        async with self._dom_lock:
+            target, generation, document = await self._document()
         if document['root'].get('documentURL') != expected_url:
             raise DocumentChangedError('Tab listing and inspected document URL disagree')
         def navigate():

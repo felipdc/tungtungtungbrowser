@@ -204,8 +204,8 @@ address field after keyboard layout changes, reducing whole-tree accessibility
 queries during tab reuse. It has a separate native build and installer.
 
 The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
-attached/detached selector waits and native request/response observation, including
-response bodies. It has a separate native bridge build and installer. Request
+attached/detached selector waits, verified CSS/XPath DOM focus and native
+request/response observation, including response bodies. It has a separate native bridge build and installer. Request
 modification, streaming HTML, selector clicks and full lifecycle coverage remain
 on the [API roadmap](docs/roadmap.md#browser-api-implementation-backlog).
 

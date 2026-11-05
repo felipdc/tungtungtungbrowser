@@ -202,6 +202,66 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         s._inspector.results['DOM.getDocument'] = {'root': {'nodeId': 1}}
         self.assertIsNone(await s.query_selector('.missing'))
 
+    async def test_xpath_expression_does_not_fall_through_to_css_or_ordinary_text(self):
+        s = session_fixture()
+        expressions = []
+        discarded = []
+        async def command(method, **params):
+            if method == 'DOM.getDocument':
+                return {'root': {'nodeId': 1}}
+            if method == 'DOM.performSearch':
+                query = params['query']
+                expressions.append(query)
+                self.assertRegex(query, r"^\(.*\)\[boolean\('[0-9a-f]{32}'\)\]$")
+                self.assertTrue(params['caseSensitive'])
+                # Native evidence: bare `button` adds CSS/text matches, while
+                # document-relative XPath button has no matching child.
+                count = 7 if query == 'button' else int(query.startswith('(//button)'))
+                return {'searchId': 'search', 'resultCount': count}
+            if method == 'DOM.getSearchResults':
+                return {'nodeIds': [9]}
+            if method == 'DOM.discardSearchResults':
+                discarded.append(params['searchId'])
+                return {}
+            self.fail('Unexpected protocol command: ' + method)
+        s._command = command
+        self.assertIsNone(await s.query_selector('button', strategy='xpath'))
+        self.assertEqual(await s.query_selector('//button', strategy='xpath'), 9)
+        self.assertIsNone(await s.query_selector('button', strategy='xpath'))
+        self.assertNotEqual(expressions[0], expressions[2])
+        self.assertEqual(discarded, ['search'] * 3)
+
+    async def test_concurrent_dom_reads_do_not_reset_ids_during_serialization(self):
+        s = session_fixture()
+        entered, release = asyncio.Event(), asyncio.Event()
+        revision = 0
+        async def command(method, **params):
+            nonlocal revision
+            if method == 'DOM.getDocument':
+                revision += 1
+                return {'root': {'nodeId': revision, 'documentURL': 'https://fixture.invalid/'}}
+            if method == 'DOM.getOuterHTML':
+                entered.set()
+                await release.wait()
+                if params['nodeId'] != revision:
+                    raise InspectorError('Missing node for given nodeId')
+                return {'outerHTML': '<p>current</p>'}
+            if method == 'DOM.querySelector':
+                self.assertEqual(params['nodeId'], revision)
+                return {'nodeId': 9}
+            self.fail('Unexpected protocol command: ' + method)
+        s._command = command
+        html = asyncio.create_task(s.content())
+        await entered.wait()
+        node = asyncio.create_task(s.query_selector('p'))
+        url = asyncio.create_task(s.wait_for_url('https://fixture.invalid/'))
+        await asyncio.sleep(0)
+        self.assertEqual(revision, 1)
+        release.set()
+        self.assertEqual(await asyncio.gather(html, node, url),
+                         ['<p>current</p>', 9, 'https://fixture.invalid/'])
+        self.assertFalse(s._dom_lock.locked())
+
     async def test_new_page_hold_is_acknowledged_and_resumed_after_setup_failure(self):
         s = session_fixture()
         await s._root_command('Target.setPauseOnStart', pauseOnStart=True)

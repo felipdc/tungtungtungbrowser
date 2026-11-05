@@ -1,6 +1,6 @@
 # Experimental native Inspector API
 
-`InspectorSession` adds rendered HTML, CSS/XPath lookup, condition waits and
+`InspectorSession` adds rendered HTML, CSS/XPath lookup and focus, condition waits and
 request/response observation to the native `Browser` controller. It attaches to
 one existing Safari tab or creates and owns a new bootstrap tab. This is an experimental API, not a complete Playwright
 or WebDriver replacement. Selector clicks, frame-scoped locators, visibility
@@ -61,6 +61,14 @@ after its clean stop, an explicit start of the original service became ready in
 0.77 seconds. This isolates an observed service-start path failure but does not
 establish its cause or qualify a cold-start fix. The successful warm start does
 not erase the original deployment failures.
+
+A later repeat again failed to start a fresh service before exec, and one direct
+run followed by an explicit service start did not restore it. A separate native
+process-spawn experiment ran the verified bridge successfully without keeping a
+long-running daemon RPC open. That launch path remains private experimental
+code; the public installer still requires a verified ready service. Neither the
+one successful warm service start nor the alternate spawn is a repeatable
+cold-start solution yet.
 
 The optional protocol dependency is pymobiledevice3 at commit
 `776d601cec83b894c3ad0eeee8ab4db375a46e4a`. The small adapter bypasses its Lockdown
@@ -170,7 +178,8 @@ readback remain required before any URL is typed.
 | Operation | Behavior and limits |
 | --- | --- |
 | `content()` | Native serialization of the current document; raises if the document changes during the read. It is not the original response HTML. |
-| `query_selector(selector, strategy='css')` | First native DOM node ID or `None`. `strategy='xpath'` uses WebKit's search protocol and releases the temporary search. Node IDs are temporary; do not retain them across document changes. |
+| `query_selector(selector, strategy='css')` | First native DOM node ID or `None`. `strategy='xpath'` wraps the expression to avoid the native search protocol's additional CSS/text matches and releases the temporary search. Node IDs can change on another document read, even without navigation; do not retain them for later actions. |
+| `focus(selector, strategy='css')` | Resolves exactly one node, rejects absent/disabled/hidden/ignored targets, calls native `DOM.focus` once and verifies focused state. XPath is also supported. This may scroll and dispatch ordinary focus events; it does not establish native keyboard ownership or clickability. |
 | `wait_for_selector(selector, strategy='css', state='attached', timeout=30)` | Polls a fresh document for attached/detached state, including a process replacement. Visibility is not inferred. |
 | `wait_for_url(pattern, timeout=30)` | Waits for a committed document URL matching a case-sensitive glob. Redirect expectations remain explicit. |
 | `wait_for_timeout(milliseconds)` | Cancellable delay, from 0 to 300,000 milliseconds. Other timeouts use seconds. |
@@ -180,6 +189,14 @@ readback remain required before any URL is typed.
 | `reload()` | One native WebKit reload request. Completion does not mean the page is ready. |
 | `goto(url)` | Verifies that the inspected tab has a unique URL and that the native active editing field contains that exact URL, then uses the supplied `Browser`'s address-bar path. Native input is not retried. Follow it with a URL/selector condition. The optional [native focus reader](native-focus.md) avoids a whole-tree query. Initial focus and foreground verification can still fail. |
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
+
+DOM serialization and selector operations serialize their document reads within
+one session: native `DOM.getDocument` can invalidate earlier node IDs even when
+the document has not navigated. Actions resolve a fresh node and check the target
+and document generation before and after use. This does not prevent the page
+itself from navigating or mutating. Focus is not retried after a lost reply or a
+failed post-action check. XPath syntax validation and explicit frame scope remain
+unfinished; an invalid XPath can currently look like an empty search result.
 
 For application JSON, register a suitably narrow predicate, trigger the action,
 then call `await waiter.value.json()`. Observation does not pause or modify XHR
@@ -295,3 +312,32 @@ final host capture. Shutdown completed in 16.49 seconds without forced
 termination; parent overlays, parent cache and six original baseline files were
 unchanged. Neither the experimental helper nor this disposable guest state was
 promoted.
+
+
+### Native DOM focus and concurrent reads
+
+A later iOS 26.6.2 fixture run reproduced two selector problems. Native
+`DOM.performSearch` returned seven matches for bare `button` because it also
+searched CSS/text; document-relative XPath `button` should match no child of the
+document node. A parenthesized XPath with a fresh always-true opaque predicate
+returned no result for that expression and one result for the intended absolute
+button expression. The wrapper preserves native XPath evaluation without page
+script injection. The native search implementation is documented in
+[WebKit's InspectorNodeFinder](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/inspector/InspectorNodeFinder.cpp).
+
+A second problem occurred when another `getDocument` invalidated a previously
+resolved node before `DOM.focus`. The SDK now holds a document lock from lookup
+through use. Three concurrent batches of HTML, CSS, XPath and URL reads passed
+in 1.53, 1.42 and 1.41 seconds. Public CSS focus took 0.81 seconds and XPath focus
+1.12 seconds, with native focused-state readback. Hidden, disabled and ambiguous
+controls were rejected. These are small-fixture samples, not latency guarantees.
+Creation took 19.24 seconds and owned-tab cleanup 10.40 seconds; the original tab
+was preserved. Guest and host captures both showed the rendered fixture after
+focus. This does not resolve the earlier post-navigation rendering failures.
+
+An experimental mobile-user native probe could map DOM focus to a visible web
+accessibility element and its screen point. However, the native accessibility
+hit test also accepted a deliberately covered fixture button. It therefore does
+not establish pointer actionability, and no selector tap was sent from this
+experiment. The probe is not part of the public SDK. Generic selector clicks,
+background-tab identity checks and coverage/occlusion checks remain open.
