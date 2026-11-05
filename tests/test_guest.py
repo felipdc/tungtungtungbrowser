@@ -226,6 +226,34 @@ class GuestContractTest(unittest.TestCase):
                     self.guest.tap(*point)
         self.assertEqual(self.requests, [])
 
+    def test_requested_hold_changes_down_delay_and_keeps_balanced_release(self):
+        for hold in (1, 800, 1000):
+            self.requests.clear()
+            self.guest.tap(120, 240, hold_ms=hold)
+            self.assertEqual([r['method'] for r in self.requests], ['input.touch_sequence'])
+            events = self.requests[0]['params']['events']
+            self.assertEqual(events, [
+                {'phase': 'down', 'x': 120, 'y': 240, 'delay_ms': hold},
+                {'phase': 'up', 'x': 120, 'y': 240, 'delay_ms': 0}])
+
+    def test_invalid_hold_sends_no_sequence(self):
+        for value in (True, 0, 1001, 800.0, None, '800', float('nan')):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.guest.tap(120, 240, hold_ms=value)
+        self.assertEqual(self.requests, [])
+
+    def test_cli_hold_submits_one_sequence_and_invalid_hold_sends_nothing(self):
+        with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), \
+                contextlib.redirect_stdout(io.StringIO()):
+            main(['tap', '120', '240', '--hold-ms', '800'])
+        self.assertEqual([r['method'] for r in self.requests], ['input.touch_sequence'])
+        self.assertEqual(self.requests[0]['params']['events'][0]['delay_ms'], 800)
+        self.requests.clear()
+        with patch('tungtungtungbrowser.cli.Guest', return_value=self.guest), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            main(['tap', '120', '240', '--hold-ms', '1001'])
+        self.assertEqual(self.requests, [])
+
     def test_bad_sequence_reply_never_repeats_or_falls_back_to_tap(self):
         valid = self.tap_result
         for result in [None, {}, [], dict(valid, events=1), dict(valid, events=True),

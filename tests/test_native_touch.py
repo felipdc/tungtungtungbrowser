@@ -75,6 +75,31 @@ class NativeTouchTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(GuestError): self.guest.tap(196, 105)
             self.assertEqual([c['method'] for c in self.calls], ['device.screen'])
 
+    def test_browser_hold_uses_existing_helper_and_checks_echoed_duration(self):
+        self.answer = process_result({**result(), 'requested_hold_ms': 800})
+        answer = Browser(guest=self.guest).tap(196, 105, hold_ms=800)
+        self.assertEqual(answer['native']['requested_hold_ms'], 800)
+        self.assertEqual([c['method'] for c in self.calls], ['device.screen', 'script.eval'])
+        self.assertIn(', "800"]', self.calls[-1]['params']['source'])
+        self.calls.clear()
+        self.answer = process_result(result())
+        with self.assertRaises(GuestError):
+            Browser(guest=self.guest).tap(196, 105, hold_ms=800)
+        self.assertEqual([c['method'] for c in self.calls], ['device.screen', 'script.eval'])
+
+    def test_invalid_hold_fails_before_geometry_or_input(self):
+        for value in (0, -1, 1001, True, 50.0, float('nan'), '800', None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                Browser(guest=self.guest).tap(196, 105, hold_ms=value)
+        self.assertEqual(self.calls, [])
+
+    def test_long_hold_transport_failure_is_not_repeated(self):
+        self.answer = GuestTransportError('read_body', TimeoutError('timeout'))
+        with self.assertRaises(GuestTransportError) as raised:
+            Browser(guest=self.guest).tap(196, 105, hold_ms=800)
+        self.assertIs(raised.exception, self.answer)
+        self.assertEqual([c['method'] for c in self.calls], ['device.screen', 'script.eval'])
+
     def test_bad_arguments_and_helper_identifiers_fail_before_input(self):
         for x, y in [(True, 1), (float('nan'), 1), (-1, 1), (1, float('inf')), ('1', 1)]:
             with self.assertRaises(ValueError): self.guest.tap(x, y)

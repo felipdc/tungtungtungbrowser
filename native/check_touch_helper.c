@@ -14,6 +14,7 @@ typedef struct Event { double x, y, major, minor; U64 time, sender; int touch; s
 static Event events[4], client;
 static int allocations, releases, sent, fail_at, interrupted, missing_symbol;
 static U64 previous_time;
+static unsigned int expected_sleep;
 static Ref allocate(void) {
     allocations++;
     return allocations == fail_at ? 0 : &events[allocations - 1];
@@ -67,15 +68,24 @@ void *fake_dlsym(void *library,const char *symbol) {
 #undef SYMBOL
     assert(0); return 0;
 }
-int fake_usleep(unsigned int microseconds) { assert(sent == 1 && microseconds == 50000); return interrupted ? -1 : 0; }
+int fake_usleep(unsigned int microseconds) { assert(sent == 1 && microseconds == expected_sleep); return interrupted ? -1 : 0; }
 U64 fake_time(void) { return previous_time + 1000; }
 static void reset(void) {
-    memset(events,0,sizeof(events)); allocations = releases = sent = fail_at = interrupted = missing_symbol = 0; previous_time = 0;
+    memset(events,0,sizeof(events)); allocations = releases = sent = fail_at = interrupted = missing_symbol = 0; previous_time = 0; expected_sleep = 50000;
 }
 int main(void) {
     char *tap[] = {"helper", "tap", "0.25", "0.5", "0.01", "50"};
     reset(); assert(helper_main(6,tap) == 0 && sent == 2 && releases == 5);
     reset(); interrupted = 1; assert(helper_main(6,tap) == 7 && sent == 2 && releases == 5);
+    tap[5] = "800";
+    reset(); expected_sleep = 800000; assert(helper_main(6,tap) == 0 && sent == 2 && releases == 5);
+    reset(); expected_sleep = 800000; interrupted = 1;
+    assert(helper_main(6,tap) == 7 && sent == 2 && releases == 5);
+    const char *bad_hold[] = {"0", "1001", "nan", "inf", "800suffix"};
+    for (unsigned i = 0; i < sizeof(bad_hold)/sizeof(bad_hold[0]); i++) {
+        reset(); tap[5] = (char *)bad_hold[i]; assert(helper_main(6,tap) == 2 && allocations == 0 && sent == 0);
+    }
+    tap[5] = "50";
     for (int i = 1; i <= 4; i++) {
         reset(); fail_at = i; assert(helper_main(6,tap) == 6 && sent == 0);
         assert(releases == allocations); /* every successful allocation plus client */

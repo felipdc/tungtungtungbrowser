@@ -7,7 +7,7 @@ import json
 import math
 import re
 
-from .guest import GuestError
+from .guest import GuestError, contact_hold_ms
 
 
 def helper_path(sha256):
@@ -51,8 +51,9 @@ def check_helper(guest, sha256):
     return result
 
 
-def calibrated_tap(guest, sha256, x, y):
+def calibrated_tap(guest, sha256, x, y, *, hold_ms=50):
     helper_path(sha256)
+    contact_hold_ms(hold_ms)
     if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
                and math.isfinite(v) and v >= 0 for v in (x, y)):
         raise ValueError('Tap coordinates must be finite, nonnegative screen points')
@@ -67,9 +68,9 @@ def calibrated_tap(guest, sha256, x, y):
     # A five-point contact in the tested portrait digitizer space. This is
     # independent of the framework field-mapping repair.
     nx, ny, radius = x / screen['width'], y / screen['height'], 5 / screen['height']
-    result = invoke(guest, sha256, ['tap', repr(nx), repr(ny), repr(radius), '50'])
+    result = invoke(guest, sha256, ['tap', repr(nx), repr(ny), repr(radius), str(hold_ms)])
     numbers = {'normalized_x': nx, 'normalized_y': ny, 'normalized_radius': radius,
-               'requested_hold_ms': 50}
+               'requested_hold_ms': hold_ms}
     if (result.get('status') != 'dispatched' or type(result.get('dispatch_count')) is not int
             or result['dispatch_count'] != 2 or result.get('release_dispatched') is not True
             or result.get('hold_completed') is not True or result.get('page_result_verified') is not False

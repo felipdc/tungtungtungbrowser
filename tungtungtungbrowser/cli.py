@@ -152,6 +152,8 @@ def main(argv=None):
     tap = sub.add_parser("tap")
     tap.add_argument("x", type=float)
     tap.add_argument("y", type=float)
+    tap.add_argument("--hold-ms", type=int, default=50,
+                     help="Requested native contact hold, 1–1000 ms (default: 50)")
     capturing = sub.add_parser("capture", help="Collect native evidence; does not assert rendered-page success")
     capturing.add_argument("url")
     capturing.add_argument("--output", type=Path, required=True)
@@ -197,7 +199,7 @@ def main(argv=None):
             case "type": emit(browser.type_text(args.text))
             case "key": emit(browser.press(args.name))
             case "swipe": emit(browser.swipe(args.x1, args.y1, args.x2, args.y2, seconds=args.seconds))
-            case "tap": emit(browser.tap(args.x, args.y))
+            case "tap": emit(browser.tap(args.x, args.y, hold_ms=args.hold_ms))
             case "capture": emit(capture(guest, args.url, args.output, args.settle_seconds,
                                          accessibility=args.accessibility, ocr=args.ocr,
                                          qmp_socket=args.qmp_socket, display_timeout=args.display_timeout))

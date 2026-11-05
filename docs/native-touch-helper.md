@@ -73,10 +73,24 @@ The corresponding CLI option is global:
 python3 -m tungtungtungbrowser --touch-helper-sha256 "$TTT_TOUCH_HELPER_SHA256" tap 196 105
 ```
 
+For a context-menu gesture, request a longer contact on a control whose
+current position you have inspected:
+
+```python
+result = browser.tap(x, y, hold_ms=800)
+```
+
+The CLI equivalent is `tap X Y --hold-ms 800`. `hold_ms` accepts an integer
+from 1 to 1000; the default remains 50. The installed helper already supports
+that bounded duration, so this option does not require replacing its binary.
+The default daemon-backed tap uses the same requested hold in its balanced
+touch sequence. Longer holds through either backend require native UI
+validation; accepting the argument does not establish gesture recognition.
+
 Coordinates are native screen points. The backend reads `device.screen`,
 requires the tested unlocked portrait geometry, validates the point, and
 converts coordinates and radius to normalized digitizer units. It sends one
-helper invocation with a 50 ms requested hold. Geometry observation and input
+helper invocation with the requested hold. Geometry observation and input
 are sequential, not an atomic transaction; keep one controller per guest and
 do not rotate the device during an action.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import threading
 import time
 
-from .guest import Guest, GuestError, web_url
+from .guest import Guest, GuestError, contact_hold_ms, web_url
 from .display import capture_display
 
 SAFARI = 'com.apple.mobilesafari'
@@ -216,9 +216,18 @@ class Browser:
                 result.save(path, overwrite=overwrite)
             return result
 
-    def tap(self, x, y):
+    def tap(self, x, y, *, hold_ms=50):
+        """Send one balanced native contact; a longer hold can open context menus.
+
+        The requested hold is 1–1000 ms, not a total operation deadline or a
+        guarantee that the application recognized the gesture.
+        """
+        contact_hold_ms(hold_ms)
         with self._lock:
-            return self.guest.tap(x, y)
+            # Preserve the existing call contract for custom tap-only guests.
+            if hold_ms == 50:
+                return self.guest.tap(x, y)
+            return self.guest.tap(x, y, hold_ms=hold_ms)
 
     def type_text(self, text):
         if not isinstance(text, str) or not 0 < len(text.encode('utf-8')) <= 65536:
