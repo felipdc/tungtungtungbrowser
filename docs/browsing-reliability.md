@@ -13,6 +13,48 @@ daemon. This preserves the existing observation without another request.
 An address is not proof that Safari's network process is ready or that a
 page can load; retain the subsequent page outcome separately.
 
+### Experimental wait for an assigned guest address
+
+`scripts/measure_ready.py --wait-for-guest-ip` delays native input until the
+health response contains a usable assigned IPv4 or IPv6 address. It accepts
+private/NAT addresses and rejects empty, malformed, unspecified, loopback,
+link-local, multicast and broadcast addresses. This is an optional startup
+condition; it does not test DNS, the proxy, Internet access or Safari itself.
+
+The pinned daemon selects its health address from the guest's network-interface
+inventory and can report `status: ok` with an empty `ip`. See its
+[address selection and health implementation](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI.swift).
+A native initial-URL trial recorded that empty address before input. Its first
+page eventually ran, but both workers exceeded their deadlines. That observation
+motivates testing the additional condition; it does not establish that the
+missing address caused the worker failures or the earlier disconnected page.
+
+For a separate experiment using a newly started VM and a new evidence path:
+
+```sh
+python3 /app/scripts/measure_ready.py /vm \
+  --qmp-socket /vm/control.sock \
+  --deadline-seconds 300 \
+  --wait-for-guest-ip \
+  --initial-url https://example.org/ \
+  --output /vm/readiness-guest-ip.json
+```
+
+The wait reuses the already recorded health response when it contains an
+address. Otherwise it polls only the read-only health endpoint, with a five-second
+request limit and up to five seconds between observations. All waiting uses the
+original launch deadline. `guest_ip_observations` retains each response or error;
+`guest_ip_ready_response` and `guest_ip_ready_seconds` identify the accepted
+sample. The initial `vphoned_health_response` is preserved. A changed daemon
+instance, when supplied by the initial response, stops startup before input.
+Expiry also stops startup without unlocking, launching or opening a URL.
+
+The option has host-side tests for ordering, absent/invalid addresses, transport
+failures, daemon restarts and late replies. Native qualification is still pending.
+The default startup behavior is unchanged, and successful address observation
+does not set either page-content verification flag. Compare complete cold-page
+outcomes before considering this condition for the default startup path.
+
 ## Retain each stage's outcome
 
 The local diagnostic page reports worker, canvas and WebGL results to its

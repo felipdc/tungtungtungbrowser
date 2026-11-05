@@ -62,8 +62,11 @@ class ReadinessTest(unittest.TestCase):
             'apps.foreground': {'bundle_id': 'com.apple.mobilesafari', 'verified': True},
         }[method]
 
-    def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None):
+    def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None,
+                        wait_for_guest_ip=False):
         argv = [str(self.vm), '--output', str(self.output)]
+        if wait_for_guest_ip:
+            argv += ['--wait-for-guest-ip']
         if initial_url is not None:
             argv += ['--initial-url', initial_url]
         if sync_clock:
@@ -74,6 +77,100 @@ class ReadinessTest(unittest.TestCase):
 
     def report(self):
         return json.loads(self.output.read_text())
+
+    def test_ip_gate_accepts_private_addresses_without_claiming_connectivity(self):
+        for value in ['10.0.2.15', '192.168.1.10', 'fd00::2', '2001:db8::2']:
+            with self.subTest(value=value):
+                self.assertTrue(measure_ready.usable_guest_ip(value))
+        for value in [None, 10, '', 'invalid', ' 10.0.2.15', '0.0.0.0', '::',
+                      '127.0.0.1', '::1', '169.254.1.2', 'fe80::1%en0',
+                      '224.0.0.1', 'ff02::1', '255.255.255.255',
+                      '::ffff:127.0.0.1', '::ffff:169.254.1.2']:
+            with self.subTest(value=value):
+                self.assertFalse(measure_ready.usable_guest_ip(value))
+        self.guest.health.return_value = {'status': 'ok', 'ip': '10.0.2.15'}
+        self.run_measurement(wait_for_guest_ip=True)
+        self.guest.health.assert_called_once_with()
+        report = self.report()
+        self.assertEqual(report['guest_ip_ready_response'], report['vphoned_health_response'])
+        self.assertEqual(len(report['guest_ip_observations']), 1)
+        self.assertEqual(report['guest_ip_observations'][0]['source'], 'initial_health')
+        self.assertFalse(report['navigation_verified'])
+
+    def test_ip_wait_keeps_samples_and_blocks_input_until_address_is_assigned(self):
+        responses = [{'status': 'ok', 'instance': 'same', 'ip': ip}
+                     for ip in ['', '169.254.1.2', '10.0.2.15']]
+        self.guest.health.side_effect = responses
+        def waiting(seconds):
+            self.assertEqual(self.calls, [])
+            self.assertEqual(self.report()['once_only_requests'], [])
+            self.assertEqual(self.report()['stage'], 'guest_ip_ready')
+        with patch.object(measure_ready.time, 'sleep', side_effect=waiting) as sleep:
+            self.run_measurement(wait_for_guest_ip=True, initial_url='https://example.org/')
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(self.guest.health.call_count, 3)
+        report = self.report()
+        self.assertEqual(report['vphoned_health_response'], responses[0])
+        self.assertEqual(report['guest_ip_ready_response'], responses[-1])
+        self.assertEqual([row['response'] for row in report['guest_ip_observations']], responses)
+        self.assertTrue(all('error' in row for row in report['guest_ip_observations'][:2]))
+        self.guest.open.assert_called_once_with('https://example.org/')
+        self.assertFalse(report['initial_url_content_verified'])
+
+    def test_read_only_ip_health_timeout_is_retained_before_later_success(self):
+        self.guest.health.side_effect = [
+            {'status': 'ok', 'instance': 'same', 'ip': ''},
+            GuestTransportError('receive_headers', TimeoutError('timed out')),
+            {'status': 'ok', 'instance': 'same', 'ip': '10.0.2.15'},
+        ]
+        with patch.object(measure_ready.time, 'sleep'):
+            self.run_measurement(wait_for_guest_ip=True)
+        rows = self.report()['guest_ip_observations']
+        self.assertEqual(len(rows), 3)
+        self.assertIn('timed out', rows[1]['error'])
+        self.assertNotIn('response', rows[1])
+        self.assertEqual([method for method, _ in self.calls].count('screen.unlock'), 1)
+
+    def test_daemon_restart_during_ip_wait_prevents_native_input(self):
+        self.guest.health.side_effect = [
+            {'status': 'ok', 'instance': 'original', 'ip': ''},
+            {'status': 'ok', 'instance': 'restarted', 'ip': '10.0.2.15'},
+        ]
+        with patch.object(measure_ready.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'instance changed'):
+                self.run_measurement(wait_for_guest_ip=True)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.report()['once_only_requests'], [])
+        self.assertNotIn('guest_ip_ready_response', self.report())
+        self.assertEqual(self.report()['guest_ip_observations'][-1]['response']['instance'], 'restarted')
+
+    def test_ip_wait_retains_original_deadline_and_rejects_late_health(self):
+        for late_response in [False, True]:
+            with self.subTest(late_response=late_response):
+                self.output = self.vm / ('late.json' if late_response else 'deadline.json')
+                self.launch['started_monotonic'] = 100
+                (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+                clock = [110.0]
+                observed = []
+                def health():
+                    observed.append(clock[0])
+                    if len(observed) > 1:
+                        clock[0] = 121
+                    return {'status': 'ok', 'ip': '' if len(observed) == 1 else '10.0.2.15'}
+                self.guest.health.side_effect = health
+                def advance(seconds):
+                    clock[0] += seconds
+                with patch.object(measure_ready.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(measure_ready.time, 'sleep', side_effect=advance):
+                    with self.assertRaises(TimeoutError):
+                        measure_ready.main([str(self.vm), '--output', str(self.output),
+                                            '--wait-for-guest-ip', '--deadline-seconds',
+                                            '20' if late_response else '12'])
+                self.assertEqual(len(observed), 2 if late_response else 1)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.report()['status'], 'failed')
+                self.assertNotIn('guest_ip_ready_response', self.report())
+                self.assertEqual(self.report()['launch']['started_monotonic'], 100)
 
     def test_initial_url_opens_once_and_keeps_content_unverified(self):
         url = 'https://example.org/first?run=1'
@@ -251,6 +348,8 @@ class ReadinessTest(unittest.TestCase):
     def test_success_keeps_original_clock_and_does_not_claim_navigation(self):
         self.run_measurement()
         result = self.report()
+        self.guest.health.assert_called_once_with()
+        self.assertNotIn('guest_ip_observations', result)
         self.assertEqual(result['status'], 'complete')
         self.assertTrue(result['safari_foreground_verified'])
         self.assertTrue(result['screenshot_captured'])

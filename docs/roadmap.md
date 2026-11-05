@@ -50,6 +50,10 @@ check native rendering at each stage before adopting an optimization.
       initial page showed a disconnected-network error. Retain the successful
       guest health response and investigate browser network readiness before
       adoption; a host proxy check does not qualify the first Safari page.
+      An optional [assigned-address wait](browsing-reliability.md#experimental-wait-for-an-assigned-guest-address)
+      now preserves read-only health samples and blocks input until an address
+      appears within the original deadline. Host tests passed; repeated native
+      cold-page qualification is pending, and an address alone is insufficient.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a

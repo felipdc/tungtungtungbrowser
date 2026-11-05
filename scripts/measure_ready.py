@@ -5,6 +5,7 @@ Run in the same PID namespace as scripts/run_vm.py. Web navigation is measured
 separately with capture; foreground Safari alone does not prove network access.
 """
 import argparse
+import ipaddress
 import json
 import math
 import os
@@ -16,6 +17,21 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, web_url
 from tungtungtungbrowser import Browser
+
+
+def usable_guest_ip(value):
+    """An assigned address is a prerequisite, not a connectivity check."""
+    if not isinstance(value, str) or '%' in value:
+        return False
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return not (address.is_unspecified or address.is_loopback
+                or address.is_link_local or address.is_multicast
+                or str(address) == '255.255.255.255')
 
 
 def write_report(path, result, *, exclusive=False):
@@ -47,6 +63,9 @@ def main(argv=None):
     parser.add_argument('--initial-url',
                         help='Experimental: open one HTTP(S) URL in Safari instead of apps.launch; '
                              'foreground and rendering still require separate observations')
+    parser.add_argument('--wait-for-guest-ip', action='store_true',
+                        help='Experimental: wait for an assigned guest IP before native input; '
+                             'does not verify routing or Safari page readiness')
     args = parser.parse_args(argv)
     if args.initial_url is not None:
         try:
@@ -147,6 +166,40 @@ def main(argv=None):
                            duration_seconds=finished - started)
             checkpoint()
 
+    def wait_for_guest_ip():
+        initial = result['vphoned_health_response']
+        observations = result['guest_ip_observations'] = []
+
+        def observe(guest):
+            first = not observations
+            row = {'source': 'initial_health' if first else 'health_poll',
+                   'started_seconds': time.monotonic() - start}
+            observations.append(row)
+            checkpoint()
+            try:
+                response = initial if first else guest.health()
+                row['response'] = response
+                instance = initial.get('instance')
+                if instance is not None and response.get('instance') != instance:
+                    raise RuntimeError('Guest daemon instance changed while waiting for an IP')
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Guest IP readiness deadline exceeded')
+                if not usable_guest_ip(response.get('ip')):
+                    raise GuestError('Guest health has no usable assigned IP address')
+                return response
+            except Exception as exc:
+                row['error'] = str(exc)
+                raise
+            finally:
+                row['finished_seconds'] = time.monotonic() - start
+                checkpoint()
+
+        # Only read-only health observations are retried. Keep the initial
+        # response, each failed sample and the original launch deadline.
+        result['guest_ip_ready_response'] = retry(
+            'guest_ip_ready', observe, timeout=5, retry_timeouts=True)
+        checkpoint()
+
     def unlock_once():
         # A reset or malformed reply can occur after the guest received input,
         # just as a timeout can. Do not repeat this state-changing operation on
@@ -228,6 +281,8 @@ def main(argv=None):
         # Keep the already-requested identity/address snapshot before input.
         # A guest IP is useful evidence, not proof of Safari network readiness.
         checkpoint()
+        if args.wait_for_guest_ip:
+            wait_for_guest_ip()
         if args.sync_clock:
             result['stage'] = 'clock_sync'
             checkpoint()
