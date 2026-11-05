@@ -88,6 +88,10 @@ check native rendering at each stage before adopting an optimization.
       passed local rendering, touch and one session transition each, but did
       not improve cold startup. Repeat successful workloads before adopting
       either TLB mode or claiming a resource reduction.
+      A later [warm mode 2 comparison](browsing-reliability.md#warm-comparison-with-tlb-mode-2)
+      passed three warm local pages but failed its cold workers and one external
+      page. Warm memory stayed at 6.36 GiB and callback latency remained variable;
+      keep the mode experimental and investigate readiness separately.
       A [guest CPU-count comparison](cpu-scheduling.md) reached foreground
       Safari sooner with three application CPUs, but both worker checks timed
       out. Its two-CPU control passed local rendering and touch, then hit another

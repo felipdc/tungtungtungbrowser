@@ -113,6 +113,13 @@ content. These were sequential navigations in one guest session, with a
 confirmed unchanged proxy exit. Mode 2 was stopped after its local transition;
 external browsing was not compared between modes.
 
+A later [warm mode 2 comparison](browsing-reliability.md#warm-comparison-with-tlb-mode-2)
+used the same experimental binary and warm workload as its mode 0 predecessor.
+Three warm local pages passed, but callback times remained variable and the
+warm peak remained 6.36 GiB. Its cold workers timed out and one ordinary
+external page was blank at both checkpoints. It did not demonstrate the
+reliability or resource improvement required for adoption.
+
 A subsequent 420-second browsing observation of the same mode 0 session
 averaged 1.40 CPU cores and sampled a 6.49 GiB peak. The container's lifetime
 peak reached its 6.5 GiB limit, with 110 memory-limit events during that window

@@ -339,3 +339,63 @@ started. This run therefore cannot establish what IP address the original
 health response contained. Preserve that snapshot in future comparisons and
 investigate guest/browser network readiness separately from successful host
 proxy routing. Keep the initial-URL option experimental.
+
+## Warm comparison with TLB mode 2
+
+A subsequent run changed `QEMU_TLB_UNSYNCED` from `0` to `2` in the same
+experimental emulator, with native FP enabled and the required host-FPU
+boundary correction. The default barrier limit was retained. The stopped
+guest parent, complete renderer-cache seed, allocator settings, CPU/RAM limits
+and display were unchanged. The host was rebooted. A fresh proxy session was
+selected before boot, so external-page differences cannot be attributed to
+the CPU setting alone. The exact binary also passed the original numerical
+fixture in both modes; that fixture is not a multicore synchronization test.
+
+Foreground Safari completed at 218.68 seconds. The original health response
+had an empty IP address at 154.24 seconds, before the one unlock and URL-open
+request. The diagnostic callback arrived at 323.25 seconds from launch, or
+159.25 seconds after the navigation began. Both workers exceeded their original
+15-second deadlines. Canvas and WebGL passed, but the subsequent cold capture
+still displayed "Collecting observations". The cold page remains a failure.
+The optional assigned-address wait above was not enabled in this run.
+
+All three later warm navigations passed workers, canvas and WebGL in the same
+Safari process. All six 30- and 60-second images matched their saved callback
+identifiers and canvas. The previous mode 0 run and this mode 2 run used the
+same warm workload:
+
+| Navigation | Mode 0 acknowledgement | Mode 2 acknowledgement | Mode 0 callback | Mode 2 callback |
+| --- | ---: | ---: | ---: | ---: |
+| First | 0.80 s | 0.86 s | 16.88 s | 15.58 s |
+| Second | 0.79 s | 0.70 s | 13.34 s | 11.95 s |
+| Third | 1.56 s | 0.75 s | 16.74 s | 22.59 s |
+
+The 300-second warm window averaged 2.03 CPU cores and peaked at 6.36 GiB,
+versus 2.00 cores and 6.36 GiB with mode 0. Neither warm window had a
+memory-limit event or OOM kill. These single samples show no convincing
+warm-page speed or resource improvement. Request acknowledgement is still much
+faster than completion of page work.
+
+External acceptance failed: the first ordinary HTTPS page displayed its
+requested content at 30 and 60 seconds, while the second was blank at both
+checkpoints. Native requests were acknowledged and Safari process continuity
+passed, which did not establish successful page rendering. The configured
+proxy route passed before and after the sequence with the same observed exit
+within this run. That does not isolate the cause of the blank page. The
+240-second external window averaged 1.83 cores and peaked at 6.28 GiB, but
+its incomplete workload cannot establish an improvement over successful browsing.
+
+The external review was not submitted within its 600-second orchestration
+deadline while separate source work continued. The controller stopped the
+sequence, and downstream acceptance was not attempted. Later review retained
+the blank-page failure rather than resuming the expired gate. Future live runs
+must finish their review gates before separate implementation work.
+
+Native shutdown completed in 8.5 seconds without forced termination. The
+returned new/changed crash reports belonged to other boots; none of those
+collected reports matched the current native boot. This limited inventory
+does not prove a crash-free guest. Parent disks, renderer cache, original
+baseline files and all 54 deployed source files were verified unchanged.
+The cold and external failures, variable warm latency and unchanged warm
+memory usage leave mode 2 experimental. Runtime pins and resource limits
+remain unchanged.
