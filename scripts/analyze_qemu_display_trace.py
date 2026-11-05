@@ -9,7 +9,7 @@ import re
 import statistics
 
 
-EVENT = re.compile(r'\b(apple_gfx_frame_\S+)\s+(.*)$')
+EVENT = re.compile(r'\b(apple_gfx_frame_\S+)(?:\s+(.*))?$')
 INTEGER = re.compile(r'\d+')
 POINTER = re.compile(r'0x[0-9a-fA-F]+')
 FIELDS = {
@@ -27,7 +27,7 @@ def parse(line, number):
     if match is None:
         return None
     kind = match[1].removeprefix('apple_gfx_frame_')
-    tokens = match[2].split()
+    tokens = (match[2] or '').split()
     if any(token.count('=') != 1 for token in tokens):
         raise ValueError(f'Line {number}: malformed display trace fields')
     fields = dict(token.split('=', 1) for token in tokens)
@@ -124,6 +124,10 @@ def analyze(lines):
         'event_count': len(events), 'ignored_lines': ignored,
         'events_by_kind': dict(Counter(r['event'] for r in events)),
         'states': dict(Counter(r['stage'] for r in events if r['event'] == 'state')),
+        'requests': [r for r in events if r['event'] == 'state'
+                     and r['stage'] in ('request', 'request-no-render')],
+        'completions_with_pending_present': [r for r in events if r['event'] == 'state'
+                                            and r['stage'] == 'completion' and r['dirty']],
         'first_ns': min(r['ns'] for r in events), 'last_ns': max(r['ns'] for r in events),
         'file_timestamp_inversions': sum(b['ns'] < a['ns'] for a, b in zip(events, events[1:])),
         'jobs_observed': len(jobs),

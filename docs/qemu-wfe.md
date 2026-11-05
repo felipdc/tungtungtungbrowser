@@ -178,3 +178,21 @@ shorter local callback did not repeat, so the candidate's longer callback
 cannot be attributed to the patch alone. With one enabled observation and two
 controls, these results are not a statistical performance study. Keep the
 backoff disabled and the patch outside the default runtime build.
+
+## CPU use with a settled warm page
+
+After the [native display trace](display-trace.md#native-observation), a separate
+90-second observation left Safari on its completed local page, with no input or
+screenshots requested and display tracing disabled. The newer native-FP runtime
+averaged 1.611 host CPU cores in the QEMU process. Host thread IDs and start
+times were matched through their PID namespaces to `query-cpus-fast`: guest CPU
+0 used 0.763 cores, CPU 1 used 0.763 and CPU 2 used 0.031. CPUs 0 and 1 therefore
+accounted for about 95% of the observed QEMU CPU time.
+
+This identifies the busy CPU threads, not the guest instructions or services
+responsible. Fourteen saved tabs remained, so an untouched page is not proof
+that the guest had no background work. The observation used the same four-core
+host quota, 2 GiB guest RAM and 6656 MiB container limit; it did not test a reduced
+quota or a different backoff. Profile guest execution and waits before choosing
+the next CPU change. The earlier 50-microsecond comparison above still provides
+no demonstrated CPU benefit and does not justify enabling this patch.

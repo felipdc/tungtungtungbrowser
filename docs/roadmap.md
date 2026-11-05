@@ -110,8 +110,11 @@ check native rendering at each stage before adopting an optimization.
       without treating callback completion or eventual agreement as a pass.
       An optional [display-stage trace](display-trace.md) now has a compiled
       candidate, twelve sanitizer-checked equivalence scenarios and verified QMP
-      event controls. Use it in a bounded native reproduction before changing
-      display behavior; local checks do not resolve the observed regression.
+      event controls. A bounded native recording completed three default URL
+      opens without a sampled counter regression; all 36 render jobs had zero
+      reported end statuses. The earlier mixed focus/navigation failure was
+      not reproduced and remains unresolved. Use the offline trace analyzer
+      and paired captures to qualify that path before changing display behavior.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

@@ -66,13 +66,17 @@ class DisplayTraceTest(unittest.TestCase):
         self.assertNotIn('commit', r['duration_seconds'])
 
     def test_request_without_render_does_not_claim_readiness(self):
-        r = analyze(['apple_gfx_frame_state ns=1 stage=request-no-render display=0xaaa job=7 dirty=1 rendering=0\n'])
-        self.assertEqual(r['states'], {'request-no-render': 1})
+        r = analyze(['apple_gfx_frame_state ns=1 stage=request-no-render display=0xaaa job=7 dirty=1 rendering=0\n',
+                     'apple_gfx_frame_state ns=2 stage=completion display=0xaaa job=7 dirty=1 rendering=0\n'])
+        self.assertEqual(r['states'], {'request-no-render': 1, 'completion': 1})
         self.assertEqual(r['jobs_observed'], 0)
+        self.assertEqual(r['requests'][0]['job'], 7)
+        self.assertEqual(r['completions_with_pending_present'][0]['ns'], 2)
         self.assertFalse(r['visual_readiness_established'])
 
     def test_malformed_recognized_events_fail_with_line_number(self):
-        for value in [job()[0].replace('width=12', 'width=no'),
+        for value in ['apple_gfx_frame_job\n',
+                      job()[0].replace('width=12', 'width=no'),
                       job()[0].rstrip('\n') + ' width=12\n',
                       job()[0].replace('frame_job', 'frame_unknown_name'),
                       job()[-1].replace('encoded=1', 'encoded=2'),

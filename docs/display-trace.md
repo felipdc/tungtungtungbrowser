@@ -47,7 +47,8 @@ ordering. Disabled tracing made no additional
 nanosecond-clock reads. This is a behavior check with synthetic callbacks, not a
 native visual or performance result. A full QEMU build succeeded, and a separate
 machine-without-a-guest check verified that all four events start disabled and
-can be enabled and disabled through QMP. Native qualification remains pending.
+can be enabled and disabled through QMP. A bounded native recording is described
+below; the trace remains an optional diagnostic, not a runtime fix.
 
 ## Record a bounded observation
 
@@ -141,6 +142,8 @@ The report groups work by display pointer and job number, retains original line
 numbers and timestamps, and summarizes queue, encode, commit, wait, readback and
 completion delays. It counts requests that queued no render separately. Use a
 single process's recording; identities cannot be combined across restarts.
+Request timestamps and completions with a pending present are retained for
+correlation with capture intervals.
 
 `fully_observed_jobs` means the expected trace boundaries were present in order.
 It does not mean the library calls succeeded or the pixels were correct.
@@ -156,3 +159,49 @@ recorded time. It rejects malformed recognized events rather than silently
 dropping them. Neither a clean trace nor its timing summary establishes visual
 readiness or a performance improvement; correlate it with the original paired
 captures and equivalent workloads.
+
+## Native observation
+
+A recording on 2026-11-05 UTC used the same standard four-core x86-64 host,
+two guest application CPUs, 2 GiB guest RAM, 1024 MiB translation cache and
+6656 MiB container limit as the preceding trial. Rendering used one Lavapipe
+thread at 1179 × 2556, with no hardware GPU. The patched native-FP runtime and
+TLB mode 0 remained unchanged. Tracing was disabled during cold startup and the
+warm baseline, then enabled for three normal URL opens in foreground Safari.
+
+All three sequence pages reached their final counters and retained the same
+Safari PID and process-start time. Sequential QMP/native/QMP capture groups
+showed the expected final counters at 45 and 90 seconds. No sampled counter
+regressed or became blank after new content was observed. Immediate captures
+still showed the previous page, demonstrating why an acknowledgment is not
+content readiness. Saved tabs grew from 11 to 14; this was not a tab-reuse trial.
+
+The 507 trace events contained 36 fully observed jobs. Every recorded end
+status was zero, and every copy had `encoded`, `same_size` and `same_target`
+set. No recorded completion had a pending present. All 21 QMP screenshot
+intervals contained exactly one traced request; 12 requests reused a cached
+surface without queuing a render.
+
+| Recorded interval | Median | Maximum |
+| --- | --- | --- |
+| Render job creation to surface copy | 97.7 ms | 472.6 ms |
+| Library encode | 0.319 ms | 183.8 ms |
+| Library wait | 93.7 ms | 470.2 ms |
+| Pixel readback | 0.892 ms | 5.27 ms |
+| Complete QMP screenshot call, 21 samples | 36.5 ms | 228.9 ms |
+| Complete native screenshot call, 9 samples | 3.50 s | 8.46 s |
+
+The three navigation acknowledgments took 1.33, 0.52 and 0.62 seconds.
+Separately, the untraced warm diagnostic acknowledged navigation in 0.68 seconds
+and delivered its page results in 17.97 seconds. Its 15-second capture still
+showed collection in progress; the 30-second capture showed the matching saved
+observation, and the 60-second capture was identical. These are distinct
+measures of control, page execution and sampled visual completion.
+
+This run did not reproduce the earlier blank-QMP/native-completed disagreement.
+That failure remains unresolved. The earlier sequence included address-field
+focus and tab reuse, whereas these were all default URL opens; tracing also
+changes timing. Neither the navigation path nor the instrumentation is
+established as the reason for the different outcome. Keep the prior failed
+captures and use this recording as a control for a traced reproduction, without
+changing rendering decisions or claiming a resource improvement.
