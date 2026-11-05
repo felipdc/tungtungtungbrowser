@@ -154,6 +154,18 @@ be warmed and verified in the foreground. This mode does not need a bootstrap
 server. Local protocol tests cover the ownership and cleanup behavior, but the
 native end-to-end workflow is not qualified.
 
+Configure the reader after installing the [native focus helper](native-focus.md):
+
+```python
+from tungtungtungbrowser import Browser, NativeFocusReader
+from tungtungtungbrowser.guest import Guest
+
+guest = Guest(cid=3, timeout=60)
+browser = Browser(guest=guest, address_field_reader=NativeFocusReader.from_deployment(
+    guest, os.environ['TTT_FOCUS_DEPLOYMENT']
+))  # TTT_FOCUS_DEPLOYMENT is the external install.json path.
+```
+
 ```python
 async with InspectorSession(browser=browser, new_tab=True, timeout=90) as page:
     async with page.expect_response(os.environ['TTT_DESTINATION_URL'], timeout=90) as response:
@@ -249,7 +261,7 @@ readback remain required before any URL is typed.
 | `expect_response(predicate, timeout=30)` | Equivalent response waiter; `waiter.value` is available after the context exits. |
 | `response.body()`, `.text()`, `.json()` | Wait for `loadingFinished`, then retrieve the native body. Failure, eviction, redirect replacement and destroyed page processes are errors. Default body limit is 16 MiB. Text defaults to UTF-8; pass `encoding` explicitly for other encodings. |
 | `reload()` | One native WebKit reload request. Completion does not mean the page is ready. |
-| `goto(url)` | Verifies that the inspected tab has a unique URL and that the native active editing field contains that exact URL, then uses the supplied `Browser`'s address-bar path. Native input is not retried. Follow it with a URL/selector condition. The optional [native focus reader](native-focus.md) avoids a whole-tree query. Initial focus and foreground verification can still fail. |
+| `goto(url)` | Verifies that the inspected tab has a unique URL and that the native active editing field contains that exact URL, then uses the supplied `Browser`'s address-bar path. Requires an address-field reader such as [NativeFocusReader](native-focus.md); no flat UI-tree fallback is used. Native input is not retried. Follow it with a URL/selector condition. Initial focus and foreground verification can still fail. |
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
 
 DOM serialization and selector operations serialize their document reads within

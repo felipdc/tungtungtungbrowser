@@ -105,7 +105,7 @@ class TabFixture(NativeProtocolFixture):
 
 def fixture(**options):
     guest = NativeFixture()
-    browser = Browser(guest=guest, input_settle=0)
+    browser = Browser(guest=guest, input_settle=0, address_field_reader=guest.focused_field)
     transport = SimpleNamespace(open=AsyncMock(return_value=SimpleNamespace()), close=AsyncMock())
     bootstrap = {} if options.get('new_tab') else {'new_tab_url': 'http://fixture.invalid/bootstrap.html'}
     session = InspectorSession(transport=transport, browser=browser, timeout=0.3, **bootstrap, **options)

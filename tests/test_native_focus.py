@@ -108,22 +108,20 @@ class NativeFocusTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 NativeFocusReader.from_deployment(guest, path)
 
-    def test_browser_reads_focus_after_keyboard_move_without_a_second_tree(self):
+    def test_browser_reads_focus_after_keyboard_move_without_daemon_tree(self):
         guest = NativeFixture()
         guest.editing = False
         reads = []
         def focused(pid):
             reads.append(pid)
-            if not guest.editing:
-                return None
             return {'source': 'ax_first_responder', 'pid': pid, 'identifier': 'URL',
-                    'traits': 1 << 21, 'value': guest.address_value,
+                    'traits': (1 << 21) if guest.editing else 0, 'value': guest.address_value,
                     'frame': {'x': 20, 'y': 488, 'width': 265, 'height': 48}}
         result = Browser(guest=guest, input_settle=0, address_field_reader=focused).goto(
             'https://fixture.invalid/', reuse_tab=True)
         self.assertEqual(result['method'], 'native_address_bar')
         self.assertEqual(reads, [301, 301, 301])
-        self.assertEqual([m for m, _ in guest.calls].count('ui.tree'), 1)
+        self.assertEqual([m for m, _ in guest.calls].count('ui.tree'), 0)
         self.assertEqual([m for m, _ in guest.calls].count('input.touch_sequence'), 1)
         self.assertEqual(guest.calls[-1], ('input.key', {'name': 'return'}))
 

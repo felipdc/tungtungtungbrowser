@@ -1,9 +1,12 @@
 # Native address-field readback
 
-The optional `NativeFocusReader` reads Safari's focused address field without
+`NativeFocusReader` reads Safari's focused address field without
 enumerating every visible accessibility element. It lets tab-reuse navigation
 verify the typed URL even when the software keyboard changes the field's frame.
 It sends no touch or key events and evaluates no JavaScript in Safari.
+Configure `Browser(address_field_reader=...)` for tab-reuse navigation and
+owned-tab cleanup. Those operations now require a reader; the provided native
+helper is the supported implementation.
 
 The current implementation uses the guest's native AXRuntime first-responder
 attribute, `3002`, verified against `AXElement.firstResponder` on iOS 26.6.2.
@@ -54,11 +57,11 @@ deployment can be checked again after a guest reboot.
 ## Navigation behavior and limits
 
 Command-L can reveal Safari's URL field without putting it into editing mode.
-When the first-responder query completes without a focused URL field, the
-initial lookup still uses the existing native accessibility tree to locate the
-address field and make one verified focus attempt. Subsequent editing and URL
+When the reader identifies the URL field but its editing trait is absent, the
+SDK can use that verified field's frame for one focus tap and then read it again.
+Missing or unverified focus stops the operation. Subsequent editing and URL
 readback checks use the first responder, independently of its screen position.
-A failed focus query does not trigger a fallback query or repeat native input.
+A failed focus query does not trigger another reader or repeat native input.
 Missing focus, wrong ownership or a different URL prevents Return from being
 sent. A navigation acknowledgement still requires a separate page condition.
 
@@ -72,9 +75,17 @@ host wall-clock duration under emulation.
 
 The query is read-only with respect to page content. It is not an implementation
 of selector clicks, scrolling, visibility checks or arbitrary DOM geometry.
-The initial tree lookup and native foreground verification remain possible
-failure points. This reduces reliance on whole-tree queries; it does not
+Native focused-field lookup and foreground verification remain possible
+failure points. This avoids the daemon's flat-tree fallback; it does not
 establish repeated cold-boot or external-site acceptance.
+
+The flat `ui.tree` daemon operation is no longer an implicit SDK fallback. A
+native diagnostic call left both system accessibility switches enabled after
+they had been observed off, and the pinned daemon source does not restore them
+when that operation returns. The test restored the prior state and verified it
+separately. This finding does not establish the cause of an external site's
+behavior. The observations below describe earlier implementations and retained
+trials; they do not override the current requirement for a scoped reader.
 
 ## Native observations
 

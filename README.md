@@ -199,9 +199,11 @@ automatically. Live Safari validation is still required. The controller uses
 native interfaces without injected page scripts or JavaScript property
 replacements.
 
-An optional [native focus reader](docs/native-focus.md) verifies the editing
-address field after keyboard layout changes, reducing whole-tree accessibility
-queries during tab reuse. It has a separate native build and installer.
+Tab reuse and owned-tab cleanup require a native address-field reader. The
+provided [native focus reader](docs/native-focus.md) verifies the editing field
+after keyboard layout changes and has a separate native build and installer.
+The SDK does not fall back to the daemon's flat UI-tree API, which can leave
+system accessibility and automation switches enabled.
 
 The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
 attached/detached selector waits, verified CSS/XPath DOM focus and native

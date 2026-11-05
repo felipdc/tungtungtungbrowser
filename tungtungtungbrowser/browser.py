@@ -224,6 +224,8 @@ class Browser:
                     'method': method, 'navigation_verified': False}
 
     def _focus_address_field(self, foreground):
+        if self.address_field_reader is None:
+            raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
         self.guest.call('input.key', name='cmd+l')
         time.sleep(self.input_settle)
         field = self._address_field(foreground, require_editing=False)
@@ -271,45 +273,23 @@ class Browser:
             return {'requested': True, 'method': 'native_close_tab', 'tab_closed_verified': False}
 
     def _address_field(self, foreground, *, require_editing=True):
-        if self.address_field_reader is not None:
-            field = self.address_field_reader(foreground['pid'])
-            if field is not None:
-                if (not isinstance(field, dict) or field.get('source') != 'ax_first_responder'
-                        or type(field.get('pid')) is not int or field['pid'] != foreground['pid']):
-                    raise GuestError('Cannot verify Safari focused-field ownership')
-                if field.get('identifier') == 'URL':
-                    if type(field.get('traits')) is not int or field['traits'] < 0:
-                        raise GuestError('Safari focused-field editing state is unavailable')
-                    if require_editing and not field['traits'] & _AX_IS_EDITING:
-                        raise GuestError('Safari address field is not editing; navigation not submitted')
-                    return field
-            if require_editing:
-                raise GuestError('Safari address field is not focused; navigation not submitted')
-            # Command-L can reveal an unfocused URL field. Only this initial
-            # lookup uses the native tree to find a frame for one focus attempt.
-        for attempt in range(2):
-            tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
-            if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):
-                raise GuestError('Cannot verify Safari address-field ownership')
-            fields = [element for element in tree.get('elements', [])
-                      if element.get('identifier') == 'URL'
-                      and element.get('visible') and element.get('enabled')]
-            if len(fields) == 1:
-                break
-            # A completed but truncated native query can omit field attributes.
-            # Make at most one more read; never infer identity from its value,
-            # retry a failed transport, or repeat the preceding native input.
-            if not fields and tree.get('truncated') is True and attempt == 0:
-                time.sleep(self.input_settle)
-                continue
-            raise GuestError('Safari address field is not active; navigation not submitted')
-        field = fields[0]
-        traits = field.get('traits')
-        if type(traits) is not int or traits < 0:
-            raise GuestError('Safari address-field editing state is unavailable; navigation not submitted')
-        if require_editing and not traits & _AX_IS_EDITING:
-            raise GuestError('Safari address field is not editing; navigation not submitted')
-        return field
+        if self.address_field_reader is None:
+            raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
+        field = self.address_field_reader(foreground['pid'])
+        if field is not None:
+            if (not isinstance(field, dict) or field.get('source') != 'ax_first_responder'
+                    or type(field.get('pid')) is not int or field['pid'] != foreground['pid']):
+                raise GuestError('Cannot verify Safari focused-field ownership')
+            if field.get('identifier') == 'URL':
+                if type(field.get('traits')) is not int or field['traits'] < 0:
+                    raise GuestError('Safari focused-field editing state is unavailable')
+                if require_editing and not field['traits'] & _AX_IS_EDITING:
+                    raise GuestError('Safari address field is not editing; navigation not submitted')
+                return field
+        # The daemon flat-tree path can leave system accessibility/automation
+        # switches enabled. Do not use it as an implicit fallback for missing
+        # focus, missing configuration, or an unsuccessful native helper read.
+        raise GuestError('Safari address field is not focused; navigation not submitted')
 
     def screenshot(self, path=None, *, overwrite=False):
         """Capture native JPEG, or host PNG when qmp_socket is configured."""

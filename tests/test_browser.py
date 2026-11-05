@@ -21,7 +21,6 @@ class NativeFixture:
         self.editing = True
         self.focus_on_tap = True
         self.address_frame = {'x': 46, 'y': 770, 'width': 213, 'height': 48}
-        self.address_trees = []
 
     def call(self, method, **params):
         self.calls.append((method, params))
@@ -40,17 +39,18 @@ class NativeFixture:
         if method == 'input.key':
             return {'key': params['name'], 'dispatched': True}
         if method == 'ui.tree':
-            if self.address_trees:
-                tree = self.address_trees.pop(0)
-                if isinstance(tree, Exception):
-                    raise tree
-                return tree
-            return {'source': 'ax', 'pid': 301, 'elements': [
-                {'identifier': 'URL', 'visible': True, 'enabled': True, 'value': self.address_value,
-                 'traits': 146031247360 if self.editing else 146029150208,
-                 'frame': self.address_frame}
-            ] if self.address_visible else []}
+            raise AssertionError('Implicit daemon UI-tree query is forbidden')
         return {'accepted': True}
+
+    def focused_field(self, pid):
+        self.calls.append(('native.focus', {'pid': pid}))
+        if self.fail == 'native.focus':
+            raise GuestError('Native focus query failed')
+        if not self.address_visible:
+            return None
+        return {'source': 'ax_first_responder', 'pid': pid, 'identifier': 'URL',
+                'value': self.address_value, 'traits': 146031247360 if self.editing else 146029150208,
+                'frame': self.address_frame}
 
     def tap(self, x, y):
         return Guest.tap(self, x, y)
@@ -59,10 +59,16 @@ class NativeFixture:
         return self.call('apps.open_url', url=url, bundle_id='com.apple.mobilesafari')
 
 
+def controlled_browser(*, guest, **options):
+    if isinstance(guest, NativeFixture):
+        options.setdefault('address_field_reader', guest.focused_field)
+    return Browser(guest=guest, **options)
+
+
 class BrowserContractTest(unittest.TestCase):
     def test_new_tab_requires_exact_foreground_process_and_one_acknowledged_key(self):
         guest = NativeFixture()
-        result = Browser(guest=guest).new_tab(expected_pid=301)
+        result = controlled_browser(guest=guest).new_tab(expected_pid=301)
         self.assertEqual(guest.calls, [('screen.unlock', {'timeout': 60}),
                                       ('apps.foreground', {}), ('input.key', {'name': 'cmd+t'})])
         self.assertTrue(result['requested'])
@@ -70,7 +76,7 @@ class BrowserContractTest(unittest.TestCase):
         for guest, pid in [(NativeFixture(foreground='com.example.notes'), 301),
                            (NativeFixture(verified=False), 301), (NativeFixture(), 302)]:
             with self.assertRaises(GuestError):
-                Browser(guest=guest).new_tab(expected_pid=pid)
+                controlled_browser(guest=guest).new_tab(expected_pid=pid)
             self.assertFalse(any(method.startswith('input.') for method, _ in guest.calls))
 
     def test_new_tab_lost_or_invalid_acknowledgement_is_not_replayed(self):
@@ -80,14 +86,14 @@ class BrowserContractTest(unittest.TestCase):
             guest.call.side_effect = [{'locked': False},
                 {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': 301}, reply]
             with self.assertRaises(GuestError):
-                Browser(guest=guest).new_tab(expected_pid=301)
+                controlled_browser(guest=guest).new_tab(expected_pid=301)
             self.assertEqual(guest.call.call_count, 3)
 
     def test_blank_expected_address_allows_only_empty_or_exact_blank_state(self):
         for value in ['', 'about:blank', ' ', 'about:blank#other', 'https://other.invalid/']:
             guest = NativeFixture()
             guest.address_value = value
-            browser = Browser(guest=guest, input_settle=0)
+            browser = controlled_browser(guest=guest, input_settle=0)
             if value in ('', 'about:blank'):
                 browser.goto('https://next.invalid/', reuse_tab=True,
                              expected_pid=301, expected_url='about:blank')
@@ -98,7 +104,7 @@ class BrowserContractTest(unittest.TestCase):
                                  expected_pid=301, expected_url='about:blank')
                 self.assertNotIn('input.paste', [method for method, _ in guest.calls])
         with self.assertRaises(ValueError):
-            Browser(guest=NativeFixture()).goto('about:blank')
+            controlled_browser(guest=NativeFixture()).goto('about:blank')
 
     def test_launch_preserves_native_foreground_result_without_navigation_or_polling(self):
         for native in [{'pid': 301, 'frontmost_verified': True},
@@ -106,7 +112,7 @@ class BrowserContractTest(unittest.TestCase):
             with self.subTest(native=native):
                 guest = Mock()
                 guest.call.side_effect = [{'locked': False}, native]
-                result = Browser(guest=guest).launch()
+                result = controlled_browser(guest=guest).launch()
                 self.assertEqual(guest.call.call_args_list, [
                     call('screen.unlock', timeout=60),
                     call('apps.launch', bundle_id='com.apple.mobilesafari')])
@@ -122,7 +128,7 @@ class BrowserContractTest(unittest.TestCase):
                 guest = Mock()
                 guest.call.side_effect = replies
                 with self.assertRaises(GuestError):
-                    Browser(guest=guest).launch()
+                    controlled_browser(guest=guest).launch()
                 self.assertEqual(guest.call.call_count, len(replies))
                 guest.open.assert_not_called()
 
@@ -134,7 +140,7 @@ class BrowserContractTest(unittest.TestCase):
                 guest = Mock()
                 guest.call.side_effect = [{'locked': False}, reply]
                 with self.assertRaisesRegex(GuestError, 'launch response'):
-                    Browser(guest=guest).launch()
+                    controlled_browser(guest=guest).launch()
                 self.assertEqual(guest.call.call_count, 2)
 
     def test_home_failure_or_malformed_acknowledgement_never_repeats_input(self):
@@ -146,12 +152,12 @@ class BrowserContractTest(unittest.TestCase):
                 else:
                     guest.call.return_value = result
                 with self.assertRaises(GuestError):
-                    Browser(guest=guest).home()
+                    controlled_browser(guest=guest).home()
                 guest.call.assert_called_once_with('input.button', name='home')
 
     def test_default_navigation_explicitly_targets_safari_without_input(self):
         guest = NativeFixture()
-        result = Browser(guest=guest).goto('https://example.com/')
+        result = controlled_browser(guest=guest).goto('https://example.com/')
         self.assertEqual(result['method'], 'native_open_url')
         self.assertFalse(result['navigation_verified'])
         self.assertEqual(guest.calls, [
@@ -160,7 +166,7 @@ class BrowserContractTest(unittest.TestCase):
 
     def test_reuse_navigation_uses_native_input_and_does_not_claim_page_success(self):
         guest = NativeFixture()
-        browser = Browser(guest=guest, input_settle=0)
+        browser = controlled_browser(guest=guest, input_settle=0)
         result = browser.goto('https://example.com/', reuse_tab=True)
         self.assertEqual(result['method'], 'native_address_bar')
         self.assertFalse(result['navigation_verified'])
@@ -172,19 +178,19 @@ class BrowserContractTest(unittest.TestCase):
                                            ('https://example.org/', 302)]:
             guest = NativeFixture()
             with self.assertRaises(GuestError):
-                Browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
+                controlled_browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
                     expected_url=expected_url, expected_pid=expected_pid)
             self.assertNotIn('input.paste', [m for m, _ in guest.calls])
             self.assertNotIn('apps.open_url', [m for m, _ in guest.calls])
         guest = NativeFixture()
-        Browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
+        controlled_browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
             expected_url='https://example.org/', expected_pid=301)
         self.assertEqual(guest.calls[-1], ('input.key', {'name': 'return'}))
 
     def test_guarded_navigation_never_opens_another_tab_on_foreground_mismatch(self):
         guest = NativeFixture(foreground='com.example.notes')
         with self.assertRaises(GuestError):
-            Browser(guest=guest).goto('https://next.invalid/', reuse_tab=True,
+            controlled_browser(guest=guest).goto('https://next.invalid/', reuse_tab=True,
                                     expected_url='https://example.org/')
         self.assertFalse(any(m.startswith('input.') or m == 'apps.open_url' for m, _ in guest.calls))
 
@@ -195,7 +201,7 @@ class BrowserContractTest(unittest.TestCase):
                       'fixture.invalid:8767/path?q=2#owned', 'https://fixture.invalid:8767/path?q=1#owned']:
             guest = NativeFixture()
             guest.address_value = value
-            browser = Browser(guest=guest, input_settle=0)
+            browser = controlled_browser(guest=guest, input_settle=0)
             if value in (expected, expected[7:]):
                 browser.close_tab(expected_url=expected, expected_pid=301)
                 self.assertEqual(guest.calls[-1], ('input.key', {'name': 'cmd+w'}))
@@ -207,14 +213,14 @@ class BrowserContractTest(unittest.TestCase):
         guest.address_value = expected[7:]
         guest.drop_text = True
         with self.assertRaises(GuestError):
-            Browser(guest=guest, input_settle=0).goto(expected, reuse_tab=True,
+            controlled_browser(guest=guest, input_settle=0).goto(expected, reuse_tab=True,
                 expected_url=expected, expected_pid=301)
         self.assertIn(('input.paste', {'text': expected}), guest.calls)
         self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
 
     def test_tab_close_verifies_url_sends_one_key_and_does_not_claim_disappearance(self):
         guest = NativeFixture()
-        result = Browser(guest=guest, input_settle=0).close_tab(
+        result = controlled_browser(guest=guest, input_settle=0).close_tab(
             expected_url='https://example.org/', expected_pid=301)
         self.assertFalse(result['tab_closed_verified'])
         self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+w'})), 1)
@@ -222,7 +228,7 @@ class BrowserContractTest(unittest.TestCase):
                                            ('https://example.org/', 302)]:
             guest = NativeFixture()
             with self.assertRaises(GuestError):
-                Browser(guest=guest, input_settle=0).close_tab(
+                controlled_browser(guest=guest, input_settle=0).close_tab(
                     expected_url=expected_url, expected_pid=expected_pid)
             self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
 
@@ -235,7 +241,7 @@ class BrowserContractTest(unittest.TestCase):
         for expected, value, accepted in cases:
             guest = NativeFixture()
             guest.address_value = value
-            browser = Browser(guest=guest, input_settle=0)
+            browser = controlled_browser(guest=guest, input_settle=0)
             if accepted:
                 browser.close_tab(expected_url=expected, expected_pid=301)
             else:
@@ -253,7 +259,7 @@ class BrowserContractTest(unittest.TestCase):
             return result
         guest.call = call_once
         with self.assertRaises(GuestError):
-            Browser(guest=guest, input_settle=0).close_tab(
+            controlled_browser(guest=guest, input_settle=0).close_tab(
                 expected_url='https://example.org/', expected_pid=301)
         self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+w'})), 1)
 
@@ -261,7 +267,7 @@ class BrowserContractTest(unittest.TestCase):
         for foreground, verified in [('com.example.notes', True), ('com.apple.mobilesafari', False)]:
             with self.subTest(foreground=foreground, verified=verified):
                 guest = NativeFixture(foreground, verified)
-                result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                result = controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 self.assertEqual(result['method'], 'native_open_url')
                 self.assertNotIn('input.paste', [method for method, _ in guest.calls])
                 self.assertEqual(guest.calls[-1][1]['bundle_id'], 'com.apple.mobilesafari')
@@ -270,7 +276,7 @@ class BrowserContractTest(unittest.TestCase):
         guest = NativeFixture()
         guest.address_visible = False
         with self.assertRaisesRegex(GuestError, 'address field'):
-            Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+            controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn('input.paste', [method for method, _ in guest.calls])
 
     def test_invalid_safari_pid_stops_before_address_bar_input(self):
@@ -281,7 +287,7 @@ class BrowserContractTest(unittest.TestCase):
                     {'locked': False},
                     {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': pid}]
                 with self.assertRaisesRegex(GuestError, 'process identity'):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                    controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 self.assertEqual(guest.call.call_args_list, [
                     call('screen.unlock', timeout=60), call('apps.foreground')])
                 guest.open.assert_not_called()
@@ -293,68 +299,46 @@ class BrowserContractTest(unittest.TestCase):
                 guest = Mock()
                 guest.call.side_effect = [{'locked': False}, reply]
                 with self.assertRaisesRegex(GuestError, 'foreground response'):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                    controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 self.assertEqual(guest.call.call_count, 2)
                 guest.open.assert_not_called()
 
-    def test_truncated_missing_identifier_gets_one_read_without_repeating_input(self):
-        guest = NativeFixture()
-        guest.address_trees = [{'source': 'ax', 'pid': 301, 'truncated': True,
-                               'elements': [{'identifier': '', 'visible': True,
-                                             'enabled': True, 'traits': 146031247360,
-                                             'value': 'https://example.org/'}]}]
-        result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
-        self.assertEqual(result['method'], 'native_address_bar')
-        names = [method for method, _ in guest.calls]
-        self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
-        self.assertEqual(names.count('ui.tree'), 3)  # Two before typing; one URL readback.
-        self.assertEqual(names.count('input.paste'), 1)
-        self.assertNotIn('input.touch_sequence', names)
-        self.assertEqual(names[:5], ['screen.unlock', 'apps.foreground', 'input.key',
-                                     'ui.tree', 'ui.tree'])
+    def test_missing_reader_blocks_navigation_and_close_before_address_bar_input(self):
+        for operation in ('goto', 'close'):
+            guest = NativeFixture()
+            browser = Browser(guest=guest, input_settle=0)
+            with self.assertRaisesRegex(GuestError, 'address_field_reader'):
+                if operation == 'goto':
+                    browser.goto('https://example.com/', reuse_tab=True)
+                else:
+                    browser.close_tab(expected_url='https://example.org/', expected_pid=301)
+            self.assertFalse(any(name.startswith('input.') or name == 'ui.tree' for name, _ in guest.calls))
 
-    def test_incomplete_field_recheck_is_bounded_and_does_not_mask_transport_or_owner_failure(self):
-        incomplete = {'source': 'ax', 'pid': 301, 'truncated': True, 'elements': []}
-        for second in [incomplete, GuestError('read timed out'),
-                       {'source': 'ax', 'pid': 999, 'truncated': True, 'elements': []}]:
-            with self.subTest(second=second):
-                guest = NativeFixture()
-                guest.address_trees = [incomplete, second]
-                with self.assertRaises(GuestError):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
-                names = [method for method, _ in guest.calls]
-                self.assertEqual(names.count('ui.tree'), 2)
-                self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+l'})), 1)
-                self.assertNotIn('input.touch_sequence', names)
-                self.assertNotIn('input.paste', names)
-                self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
-
-    def test_complete_missing_field_ambiguous_fields_and_wrong_owner_are_not_requeried(self):
-        field = {'identifier': 'URL', 'visible': True, 'enabled': True,
-                 'traits': 146031247360, 'value': 'https://example.org/'}
-        for tree in [{'source': 'ax', 'pid': 301, 'truncated': False, 'elements': []},
-                     {'source': 'ax', 'pid': 301, 'truncated': True, 'elements': [field, field]},
-                     {'source': 'ax', 'pid': 999, 'truncated': True, 'elements': []}]:
-            with self.subTest(tree=tree):
-                guest = NativeFixture()
-                guest.address_trees = [tree]
-                with self.assertRaises(GuestError):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
-                names = [method for method, _ in guest.calls]
-                self.assertEqual(names.count('ui.tree'), 1)
-                self.assertNotIn('input.paste', names)
+    def test_missing_or_foreign_focused_field_never_falls_back_to_daemon_tree(self):
+        for value in (None, {'source': 'ax_first_responder', 'pid': 301, 'identifier': 'other'},
+                      {'source': 'ax_first_responder', 'pid': 302, 'identifier': 'URL'},
+                      GuestError('Native read failed')):
+            guest = NativeFixture()
+            reader = Mock(side_effect=[value])
+            with self.assertRaises(GuestError):
+                Browser(guest=guest, input_settle=0, address_field_reader=reader).goto(
+                    'https://example.com/', reuse_tab=True)
+            self.assertEqual(reader.call_count, 1)
+            self.assertNotIn('ui.tree', [name for name, _ in guest.calls])
+            self.assertNotIn('input.paste', [name for name, _ in guest.calls])
+            self.assertNotIn('input.touch_sequence', [name for name, _ in guest.calls])
 
     def test_dropped_input_is_not_submitted_as_a_wrong_url(self):
         guest = NativeFixture()
         guest.drop_text = True
         with self.assertRaisesRegex(GuestError, 'requested URL'):
-            Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+            controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
 
     def test_visible_but_unfocused_address_field_is_focused_before_typing(self):
         guest = NativeFixture()
         guest.editing = False
-        result = Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+        result = controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertEqual(result['method'], 'native_address_bar')
         self.assertEqual([params for method, params in guest.calls if method == 'input.touch_sequence'],
                          [{'normalized': False, 'events': [
@@ -371,7 +355,7 @@ class BrowserContractTest(unittest.TestCase):
                 guest.editing = guest.focus_on_tap = False
                 guest.fail = failure
                 with self.assertRaises(GuestError):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                    controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 names = [method for method, _ in guest.calls]
                 self.assertEqual(names.count('input.touch_sequence'), 1)
                 self.assertNotIn('input.paste', names)
@@ -387,27 +371,27 @@ class BrowserContractTest(unittest.TestCase):
                 guest.editing = False
                 guest.address_frame = frame
                 with self.assertRaisesRegex(GuestError, 'focus geometry'):
-                    Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+                    controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
                 self.assertNotIn('input.touch_sequence', [method for method, _ in guest.calls])
                 self.assertNotIn('input.paste', [method for method, _ in guest.calls])
 
     def test_invalid_url_has_no_device_side_effect(self):
         guest = NativeFixture()
         with self.assertRaises(ValueError):
-            Browser(guest=guest).goto('javascript:alert(1)')
+            controlled_browser(guest=guest).goto('javascript:alert(1)')
         self.assertEqual(guest.calls, [])
 
     def test_locked_screen_prevents_navigation(self):
         guest = NativeFixture(locked=True)
         with self.assertRaisesRegex(GuestError, 'locked'):
-            Browser(guest=guest).goto('https://example.com/')
+            controlled_browser(guest=guest).goto('https://example.com/')
         self.assertEqual([method for method, _ in guest.calls], ['screen.unlock'])
 
     def test_failed_text_entry_does_not_submit(self):
         guest = NativeFixture()
         guest.fail = 'input.paste'
         with self.assertRaises(GuestError):
-            Browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
+            controlled_browser(guest=guest, input_settle=0).goto('https://example.com/', reuse_tab=True)
         self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
 
     def test_screenshot_rejects_invalid_geometry_and_preserves_existing_file(self):

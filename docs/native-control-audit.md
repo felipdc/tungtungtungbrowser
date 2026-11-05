@@ -29,6 +29,12 @@ unverified until screenshots and page content have been inspected.
 
 ## Reusing a tab
 
+The current SDK requires `Browser(address_field_reader=...)` for reuse and
+owned-tab close. Its implicit flat UI-tree fallback was removed after a native
+diagnostic query left accessibility and automation switches enabled. See the
+[current field-reader contract](native-focus.md). Tree-based experiments below
+are historical evidence, not the current navigation implementation.
+
 The higher-level `Browser.goto` defaults to explicit native URL opening.
 Its experimental `reuse_tab=True` option uses the pinned native `input.key` and
 `input.paste` methods when Safari is verified in the foreground. It confirms
@@ -51,8 +57,8 @@ Apple public API guarantee.
 
 The controller now requires that editing trait. If it is absent, it validates
 the native field frame, makes one native tap at its center, and checks the
-field again before sending text. The tree must identify the same Safari
-process, with exactly one visible, enabled URL field. Invalid geometry,
+field again before sending text. The reader must identify the same Safari
+process and its focused URL field. Invalid geometry,
 unconfirmed focus, failed input or mismatched URL readback stops the operation;
 none repeats native input.
 
@@ -64,7 +70,7 @@ trait for the same Safari process. The omitted identifier was not accepted as
 proof of ownership, and the original failed navigation remains a failed result.
 
 For a completed response marked `truncated: true` with no usable URL field,
-the controller now permits one additional read after `input_settle`. Both
+an earlier controller permitted one additional read after `input_settle`. Both
 responses must identify the expected native Safari process. It does not repeat
 Command-L, a tap, text entry or Return as part of that read. Ambiguous fields,
 owner mismatches, untruncated missing fields and transport errors stop without
