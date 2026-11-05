@@ -334,13 +334,47 @@ to Web Inspector. Previously it waited for the XPC acknowledgement before
 connecting. Native logs showed the service exiting after its two-second
 no-client window during that handoff. Queuing the client first addresses that
 ordering problem without sending a page command. Failed handoffs record a fixed
-XPC error category or acknowledgement timeout in the bridge log; they do not
-restart the service or change inspection preferences.
+XPC error category or acknowledgement timeout in the bridge log and response;
+the bridge does not replay the handoff or change inspection preferences.
 
 The queued-client build subsequently opened multiple native sessions on the
 same guest boot, but a later handoff still failed with `connection_interrupted`.
 Keep that later failure alongside the successful connections: this change does
 not yet qualify repeatable cold or warm Inspector availability.
+
+The bridge also constructs and queues its complete XPC check-in message before
+activating the connection. This removes message construction and descriptor
+duplication from the interval after activation can start the native service.
+It uses `xpc_connection_activate`; the native ACK is still required. Apple
+documents that an inactive connection does not
+send or receive messages until activation, and that enqueueing a message alone
+does not establish delivery. See [connection activation](https://developer.apple.com/documentation/xpc/xpc_connection_activate(_:))
+and [message delivery](https://developer.apple.com/documentation/xpc/xpc_connection_send_message(_:_:)).
+The first native trial of this ordering still failed before client check-in,
+while the service was initializing application metadata. It does not extend or
+disable the service's deadline, and is not sufficient to qualify reliability.
+
+`InspectorTransport` allows at most three connection attempts within its single
+`timeout`, separated by 250 ms, **only** when the bridge explicitly reports
+`open_failed` with `handoff_error: connection_interrupted`. That response follows
+closure of the native stream and cancellation of its XPC connection, before any
+Inspector plist frame or browser action is relayed. Each subsequent reply must
+match the first bridge PID and guest boot UUID. Timeouts, EOF, malformed replies,
+identity changes, other errors and older bridges without an error category fail
+immediately. Once a handoff succeeds, disconnects and browser commands are never
+automatically replayed.
+
+Use `InspectorTransport(max_open_attempts=1)` to disable this setup recovery.
+`transport.handoff_attempts` retains each attempt's status, error category and
+duration, including failed attempts when a later connection succeeds. This
+bounded recovery has protocol-fixture coverage. In one native guest boot, three
+separate existing-page sessions completed in sequence: attachment took 23.82,
+6.25 and 3.41 seconds, with rendered HTML reads of 1.51, 1.26 and 1.32 seconds.
+The first session retained two explicit interrupted-handoff rejections before
+its third attempt succeeded; the next two opened on their first attempt.
+These samples establish recovery in that run, not dependable service startup
+or full browser-workflow acceptance. The earlier ordering-only attempt failed
+on the same boot. No browser input or reload was sent by these read-only trials.
 
 When WebKit reports a newly paused target, the SDK now waits for the native
 `Target.resume` acknowledgement. A rejection or missing reply fails the session

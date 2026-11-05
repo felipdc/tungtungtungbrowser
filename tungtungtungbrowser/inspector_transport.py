@@ -10,6 +10,13 @@ class InspectorError(RuntimeError):
     """Native inspection failed; actions are never automatically replayed."""
 
 
+class _HandoffRejected(InspectorError):
+    def __init__(self, reply):
+        self.reason = reply.get('handoff_error')
+        super().__init__('Native Inspector bridge status: open_failed'
+                         + (f' ({self.reason})' if isinstance(self.reason, str) else ''))
+
+
 async def vsock_connection(cid, port):
     if type(cid) is not int or not 3 <= cid < 2**32 - 1:
         raise ValueError('Invalid guest CID')
@@ -33,10 +40,15 @@ class InspectorTransport:
     and native Web Inspector enabled. After its single JSON greeting, protocol 2
     carries native Inspector frames directly; EOF closes the guest service socket.
     """
-    def __init__(self, *, cid=3, timeout=30, bridge_socket=None):
+    def __init__(self, *, cid=3, timeout=30, bridge_socket=None, max_open_attempts=3):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 300:
             raise ValueError('timeout must be between 0 and 300 seconds')
+        if type(max_open_attempts) is not int or not 1 <= max_open_attempts <= 3:
+            raise ValueError('max_open_attempts must be an integer between 1 and 3')
         self.timeout = timeout
+        self.max_open_attempts = max_open_attempts
+        self.handoff_attempts = []
+        self._opening_identity = None
         self._bridge_socket = bridge_socket or (lambda: vsock_connection(cid, 1343))
         self.reader = self.writer = self.service = None
         self.identity = None
@@ -54,8 +66,18 @@ class InspectorTransport:
                     raise ValueError('Expected bridge protocol 2')
                 if type(value.get('pid')) is not int or value['pid'] <= 1:
                     raise ValueError('Invalid bridge process')
-                if str(uuid.UUID(value['boot_uuid'])).lower() != value['boot_uuid'].lower():
+                if (not isinstance(value['boot_uuid'], str)
+                        or str(uuid.UUID(value['boot_uuid'])).lower() != value['boot_uuid'].lower()):
                     raise ValueError('Invalid bridge boot identity')
+                if command == 'open':
+                    identity = (value['pid'], value['boot_uuid'].lower())
+                    if self._opening_identity is not None and identity != self._opening_identity:
+                        raise ValueError('Native bridge identity changed during open')
+                    self._opening_identity = identity
+                    if value.get('status') == 'open_failed':
+                        if type(value.get('port')) is not int or value['port'] != 0:
+                            raise ValueError('Invalid failed handoff port')
+                        raise _HandoffRejected(value)
                 if value.get('status') != expected:
                     raise InspectorError('Native Inspector bridge status: ' + str(value.get('status'))[:100])
                 if type(value.get('port')) is not int or value['port'] != 1343:
@@ -72,13 +94,36 @@ class InspectorTransport:
         from pymobiledevice3.service_connection import ServiceConnection
         try:
             async with asyncio.timeout(self.timeout):
-                sock = await self._bridge_socket()
-                try:
-                    self.reader, self.writer = await asyncio.open_connection(sock=sock, limit=1024)
-                except BaseException:
-                    sock.close()
-                    raise
-                self.identity = await self._control('open', 'opened')
+                for attempt in range(self.max_open_attempts):
+                    record = {'attempt': attempt + 1}
+                    self.handoff_attempts.append(record)
+                    started = asyncio.get_running_loop().time()
+                    try:
+                        sock = await self._bridge_socket()
+                        try:
+                            self.reader, self.writer = await asyncio.open_connection(sock=sock, limit=1024)
+                        except BaseException:
+                            sock.close()
+                            raise
+                        self.identity = await self._control('open', 'opened')
+                    except _HandoffRejected as error:
+                        record.update(status='rejected', reason=error.reason)
+                        # The bridge explicitly closed its native stream and
+                        # cancelled the failed XPC handoff before this reply.
+                        # No native plist frame or browser action has been sent.
+                        # Unknown/legacy failures and timeouts are not retried.
+                        if error.reason != 'connection_interrupted' or attempt + 1 == self.max_open_attempts:
+                            raise
+                        await self._close_socket()
+                        await asyncio.sleep(0.25)
+                    except BaseException as error:
+                        record.update(status='failed', error_type=type(error).__name__)
+                        raise
+                    else:
+                        record['status'] = 'opened'
+                        break
+                    finally:
+                        record['seconds'] = asyncio.get_running_loop().time() - started
                 # readexactly, used by ServiceConnection, is independent of the
                 # line-reader limit. It can consume a large, bounded plist frame.
                 self.service = ServiceConnection(self.reader, self.writer)
@@ -98,8 +143,12 @@ class InspectorTransport:
             except Exception as error:
                 self.failure = error
             self.service = None
+        await self._close_socket()
+
+    async def _close_socket(self):
         if self.writer is not None:
             self.writer.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(self.writer.wait_closed(), 3)
             self.writer = None
+        self.reader = None

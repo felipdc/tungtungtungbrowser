@@ -24,7 +24,7 @@ _Static_assert(sizeof(struct VsockAddress) == 12 && sizeof(struct InetAddress) =
 
 static void *(*xpc_connection)(const char *, void *, Size);
 static void (*xpc_handler)(void *, void (^)(void *));
-static void (*xpc_resume)(void *), (*xpc_cancel)(void *), (*xpc_release)(void *);
+static void (*xpc_activate)(void *), (*xpc_cancel)(void *), (*xpc_release)(void *);
 static void *(*xpc_dict)(const char **, void *const *, Size);
 static void (*xpc_string)(void *, const char *, const char *);
 static void (*xpc_date)(void *, const char *, long), (*xpc_fd)(void *, const char *, int);
@@ -55,7 +55,7 @@ static int initialize(void) {
 #define LOAD(variable, symbol) variable = dlsym(library, symbol); if (!variable) return 0
     LOAD(xpc_connection, "xpc_connection_create_mach_service");
     LOAD(xpc_handler, "xpc_connection_set_event_handler");
-    LOAD(xpc_resume, "xpc_connection_resume"); LOAD(xpc_cancel, "xpc_connection_cancel");
+    LOAD(xpc_activate, "xpc_connection_activate"); LOAD(xpc_cancel, "xpc_connection_cancel");
     LOAD(xpc_dict, "xpc_dictionary_create"); LOAD(xpc_string, "xpc_dictionary_set_string");
     LOAD(xpc_date, "xpc_dictionary_set_date"); LOAD(xpc_fd, "xpc_dictionary_set_fd");
     LOAD(xpc_data, "xpc_dictionary_set_data"); LOAD(xpc_send, "xpc_connection_send_message");
@@ -68,11 +68,11 @@ static int initialize(void) {
     return 1;
 }
 
-static int response(int fd, const char *status, unsigned port) {
+static int response(int fd, const char *status, unsigned port, const char *handoff_failure) {
     char data[512];
     int length = snprintf(data, sizeof(data),
-        "{\"protocol\":2,\"status\":\"%s\",\"pid\":%d,\"boot_uuid\":\"%s\",\"port\":%u}\n",
-        status, getpid(), boot, port);
+        "{\"protocol\":2,\"status\":\"%s\",\"pid\":%d,\"boot_uuid\":\"%s\",\"port\":%u,\"handoff_error\":\"%s\"}\n",
+        status, getpid(), boot, port, handoff_failure ? handoff_failure : "");
     if (length < 0 || (Size)length >= sizeof(data)) return 0;
     Size done = 0;
     while (done < (Size)length) {
@@ -95,8 +95,9 @@ static int command(int fd, char text[96]) {
     return 0;
 }
 
-static void *open_inspector(int *native) {
+static void *open_inspector(int *native, const char **failure) {
     *native = -1;
+    *failure = "initialization_failed";
     int listener = socket(2, 1, 0);
     if (listener < 0) return 0;
     struct InetAddress address = {16, 2, 0, 0x0100007f, {0}};
@@ -117,25 +118,11 @@ static void *open_inspector(int *native) {
         if (stream >= 0) close(stream);
         close(listener); return 0;
     }
-    void *connection = xpc_connection("com.apple.webinspector", 0, 0);
-    if (!connection) { close(stream); close(listener); return 0; }
-    unsigned long own_generation = __atomic_add_fetch(&generation, 1, __ATOMIC_ACQ_REL);
-    __atomic_store_n(&acknowledgment, 0, __ATOMIC_RELEASE);
-    __atomic_store_n(&handoff_error, 0, __ATOMIC_RELEASE);
-    xpc_handler(connection, ^(void *event) {
-        if (__atomic_load_n(&generation, __ATOMIC_ACQUIRE) != own_generation) return;
-        if (xpc_type(event) == dictionary_type) {
-            if (xpc_bool(event, "ACK")) __atomic_store_n(&acknowledgment, 1, __ATOMIC_RELEASE);
-        } else {
-            int error = event == connection_invalid ? 1 : event == connection_interrupted ? 2
-                : event == termination_imminent ? 3 : 4;
-            __atomic_store_n(&handoff_error, error, __ATOMIC_RELEASE);
-            __atomic_store_n(&acknowledgment, -1, __ATOMIC_RELEASE);
-        }
-    });
-    xpc_resume(connection);
+    /* Build the entire check-in before activating a service connection. The
+     * service can start its idle deadline as soon as that connection activates.
+     */
     void *message = xpc_dict(0, 0, 0);
-    if (!message) { close(stream); close(listener); xpc_cancel(connection); xpc_release(connection); return 0; }
+    if (!message) { close(stream); close(listener); return 0; }
     /* Empty binary property list dictionary, authored here. The check-in data
      * is serialized plist data; the socket is a listener that the service accepts.
      * No pairing certificates, identity overrides, or TLS interception are supplied.
@@ -150,20 +137,43 @@ static void *open_inspector(int *native) {
     xpc_fd(message, "_LDSERVICESOCK", listener);
     int log = open("/dev/null", 1);
     if (log >= 0) xpc_fd(message, "_LDSERVICELOGSOCK", log);
-    xpc_send(connection, message);
-    xpc_release(message);
     if (log >= 0) close(log);
+    void *connection = xpc_connection("com.apple.webinspector", 0, 0);
+    if (!connection) { xpc_release(message); close(stream); close(listener); return 0; }
+    unsigned long own_generation = __atomic_add_fetch(&generation, 1, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&acknowledgment, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&handoff_error, 0, __ATOMIC_RELEASE);
+    xpc_handler(connection, ^(void *event) {
+        if (__atomic_load_n(&generation, __ATOMIC_ACQUIRE) != own_generation) return;
+        if (xpc_type(event) == dictionary_type) {
+            if (xpc_bool(event, "ACK")) __atomic_store_n(&acknowledgment, 1, __ATOMIC_RELEASE);
+        } else {
+            int error = event == connection_invalid ? 1 : event == connection_interrupted ? 2
+                : event == termination_imminent ? 3 : 4;
+            __atomic_store_n(&handoff_error, error, __ATOMIC_RELEASE);
+            __atomic_store_n(&acknowledgment, -1, __ATOMIC_RELEASE);
+        }
+    });
+    /* Queue before activation, so construction and descriptor duplication do
+     * not consume the service's short initial no-client window. Sending alone
+     * is not success: the native ACK remains required below. There is no retry.
+     */
+    xpc_send(connection, message);
+    xpc_activate(connection);
+    xpc_release(message);
     for (int i = 0; i < 2000 && !__atomic_load_n(&acknowledgment, __ATOMIC_ACQUIRE); i++) usleep(10000);
     close(listener);
     if (__atomic_load_n(&acknowledgment, __ATOMIC_ACQUIRE) != 1) {
         int error = __atomic_load_n(&handoff_error, __ATOMIC_ACQUIRE);
         const char *reason = error == 1 ? "connection_invalid" : error == 2 ? "connection_interrupted"
             : error == 3 ? "termination_imminent" : error == 4 ? "unexpected_xpc_event" : "acknowledgment_timeout";
+        *failure = reason;
         printf("{\"protocol\":2,\"event\":\"inspector_handoff_failed\",\"reason\":\"%s\"}\n", reason);
         fflush(0);
         close(stream);
         xpc_cancel(connection); xpc_release(connection); return 0;
     }
+    *failure = 0;
     *native = stream;
     return connection;
 }
@@ -270,26 +280,27 @@ int main(int argc, char **argv) {
         char text[96], owned_stop[96];
         snprintf(owned_stop, sizeof(owned_stop), "stop %d %s", getpid(), boot);
         if (!command(client, text)) { close(client); continue; }
-        if (equal(text, "health")) response(client, "ready", 1343);
+        if (equal(text, "health")) response(client, "ready", 1343, 0);
         else if (equal(text, "stop") || equal(text, owned_stop)) {
-            response(client, "stopping", 1343); stopping = 1;
+            response(client, "stopping", 1343, 0); stopping = 1;
         }
         else if (equal(text, "open")) {
-            int native = -1; void *connection = open_inspector(&native);
-            if (!connection) response(client, "open_failed", 0);
+            int native = -1; const char *failure = 0;
+            void *connection = open_inspector(&native, &failure);
+            if (!connection) response(client, "open_failed", 0, failure);
             else {
                 timeout.seconds = 30;
                 int ready = native >= 0 && !setsockopt(client, 0xffff, 0x1005, &timeout, sizeof(timeout));
                 if (ready) {
-                    if (response(client, "opened", 1343)) relay(client, native);
+                    if (response(client, "opened", 1343, 0)) relay(client, native);
                 } else {
-                    response(client, "connect_failed", 0);
+                    response(client, "connect_failed", 0, 0);
                 }
                 if (native >= 0) close(native);
                 __atomic_add_fetch(&generation, 1, __ATOMIC_ACQ_REL);
                 xpc_cancel(connection); xpc_release(connection);
             }
-        } else response(client, "invalid_request", 0);
+        } else response(client, "invalid_request", 0, 0);
         close(client);
     }
     close(listener);
