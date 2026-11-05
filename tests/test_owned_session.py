@@ -26,6 +26,8 @@ class TabFixture(NativeProtocolFixture):
         self.subscribers = set()
         self.listing_count = 0
         self.events = []
+        self.connection_id = 'our-connection'
+        self.detach_connection = ''
         self.open_mode = 'new'
         self.close_mode = 'close'
         self.connect = AsyncMock()
@@ -82,7 +84,7 @@ class TabFixture(NativeProtocolFixture):
     async def teardown_inspector_socket(self, session_id, app_id, page_id):
         self.events.append('detach')
         if str(page_id) in self.pages:
-            self.pages[str(page_id)].web_connection_id = ''
+            self.pages[str(page_id)].web_connection_id = self.detach_connection
 
     async def send_socket_data(self, *args):
         self.results['DOM.getDocument'] = {'root': {
@@ -108,7 +110,9 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(session.tab_cleanup['owned'])
                 self.assertIn('#ttt-session-', native.pages['2'].web_url)
                 self.assertEqual(native.events, ['open', 'attach'])
+                before = len(guest.calls)
                 await session.goto('https://second.invalid/product')
+                self.assertEqual([method for method, _ in guest.calls[before:]].count('apps.foreground'), 1)
                 self.assertEqual(native.pages['2'].web_url, 'https://second.invalid/product')
                 self.assertEqual(native.pages['1'].web_url, 'https://example.org/')
         self.assertEqual(session.tab_cleanup['status'], 'closed')
@@ -164,6 +168,29 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(set(native.pages), {'1'})
                 session.transport.close.assert_awaited_once()
 
+    async def test_non_http_sibling_does_not_block_owned_cleanup(self):
+        session, native, guest = fixture()
+        native.pages['1'].web_url = 'about:blank'
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                pass
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+        self.assertEqual(native.pages['1'].web_url, 'about:blank')
+
+    async def test_scheme_only_tab_difference_blocks_navigation_and_cleanup(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            await session.__aenter__()
+            native.pages['1'].web_url = session.url.replace('http://', 'https://', 1)
+            before = list(guest.calls)
+            with self.assertRaisesRegex(InspectorError, 'ambiguous'):
+                await session.goto('https://next.invalid/')
+            self.assertEqual(before, guest.calls)
+            with self.assertRaises(InspectorError):
+                await session.close()
+        self.assertNotIn('close', native.events)
+        self.assertEqual(before, guest.calls)
+
     async def test_close_timeout_or_lost_reply_is_retained_without_replaying_input(self):
         for mode in ('uncertain', 'no_close'):
             with self.subTest(mode=mode):
@@ -180,6 +207,19 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(native.subscribers)
                 session.transport.close.assert_awaited_once()
 
+    async def test_root_slash_only_tab_difference_is_ambiguous(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            await session.__aenter__()
+            native.pages['1'].web_url = 'https://fixture.invalid'
+            native.pages['2'].web_url = guest.address_value = 'https://fixture.invalid/'
+            before = list(guest.calls)
+            with self.assertRaisesRegex(InspectorError, 'ambiguous'):
+                await session.goto('https://next.invalid/')
+            with self.assertRaises(InspectorError):
+                await session.close()
+        self.assertEqual(before, guest.calls)
+
     async def test_lost_open_reply_reconciles_and_closes_only_proven_new_tab(self):
         session, native, guest = fixture()
         native.open_mode = 'new_lost_reply'
@@ -191,6 +231,24 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(native.events, ['open', 'close'])
         self.assertEqual(set(native.pages), {'1'})
         session.transport.close.assert_awaited_once()
+
+    async def test_late_own_detach_listing_allows_close_but_another_client_blocks_it(self):
+        for connection in ('our-connection', 'another-client'):
+            with self.subTest(connection=connection):
+                session, native, guest = fixture()
+                native.detach_connection = connection
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    await session.__aenter__()
+                    if connection == 'our-connection':
+                        await session.close()
+                        self.assertEqual(session.tab_cleanup['status'], 'closed')
+                        self.assertTrue(session.tab_cleanup['own_inspection_still_listed'])
+                        self.assertEqual(native.events.count('close'), 1)
+                    else:
+                        with self.assertRaises(InspectorError):
+                            await session.close()
+                        self.assertNotIn('close', native.events)
+                session.transport.close.assert_awaited_once()
 
     async def test_concurrent_close_and_cancellation_join_one_native_action(self):
         session, native, guest = fixture()

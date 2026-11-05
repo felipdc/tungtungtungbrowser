@@ -148,6 +148,30 @@ class BrowserContractTest(unittest.TestCase):
                                     expected_url='https://example.org/')
         self.assertFalse(any(m.startswith('input.') or m == 'apps.open_url' for m, _ in guest.calls))
 
+    def test_active_address_may_omit_only_scheme_but_typed_url_still_requires_exact_readback(self):
+        expected = 'http://fixture.invalid:8767/path?q=1#owned'
+        for value in [expected, 'fixture.invalid:8767/path?q=1#owned',
+                      'fixture.invalid', 'fixture.invalid:8767/path?q=1',
+                      'fixture.invalid:8767/path?q=2#owned', 'https://fixture.invalid:8767/path?q=1#owned']:
+            guest = NativeFixture()
+            guest.address_value = value
+            browser = Browser(guest=guest, input_settle=0)
+            if value in (expected, expected[7:]):
+                browser.close_tab(expected_url=expected, expected_pid=301)
+                self.assertEqual(guest.calls[-1], ('input.key', {'name': 'cmd+w'}))
+            else:
+                with self.assertRaises(GuestError):
+                    browser.close_tab(expected_url=expected, expected_pid=301)
+                self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+        guest = NativeFixture()
+        guest.address_value = expected[7:]
+        guest.drop_text = True
+        with self.assertRaises(GuestError):
+            Browser(guest=guest, input_settle=0).goto(expected, reuse_tab=True,
+                expected_url=expected, expected_pid=301)
+        self.assertIn(('input.paste', {'text': expected}), guest.calls)
+        self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
+
     def test_tab_close_verifies_url_sends_one_key_and_does_not_claim_disappearance(self):
         guest = NativeFixture()
         result = Browser(guest=guest, input_settle=0).close_tab(
@@ -161,6 +185,23 @@ class BrowserContractTest(unittest.TestCase):
                 Browser(guest=guest, input_settle=0).close_tab(
                     expected_url=expected_url, expected_pid=expected_pid)
             self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    def test_root_address_can_omit_slash_without_shortening_paths_or_changing_scheme(self):
+        cases = [('https://fixture.invalid/', 'https://fixture.invalid', True),
+                 ('https://fixture.invalid/', 'fixture.invalid', True),
+                 ('https://fixture.invalid/', 'http://fixture.invalid', False),
+                 ('https://fixture.invalid/path/', 'https://fixture.invalid/path', False),
+                 ('https://fixture.invalid/?q=1', 'https://fixture.invalid?q=1', False)]
+        for expected, value, accepted in cases:
+            guest = NativeFixture()
+            guest.address_value = value
+            browser = Browser(guest=guest, input_settle=0)
+            if accepted:
+                browser.close_tab(expected_url=expected, expected_pid=301)
+            else:
+                with self.assertRaises(GuestError):
+                    browser.close_tab(expected_url=expected, expected_pid=301)
+            self.assertEqual(('input.key', {'name': 'cmd+w'}) in guest.calls, accepted)
 
     def test_tab_close_uncertain_key_result_is_not_repeated(self):
         guest = NativeFixture()

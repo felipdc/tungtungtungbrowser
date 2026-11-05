@@ -28,6 +28,14 @@ where they preserve native Safari behavior. Optimizations now need a failure or
 measured bottleneck in this API workflow; the observations below remain evidence,
 not prerequisites that must all be solved before API work starts.
 
+The latest [owned-tab trial](inspector-api.md#owned-tab-trial-and-warm-rendering-failure)
+completed native navigation, DOM/network reads and automatic cleanup, but its
+post-navigation captures showed black content areas. Treat native focus failures
+and rendered-page readiness as the immediate warm-workflow reliability issues.
+Do not count successful DOM conditions or screenshot file creation as a visual
+pass. Retain the roughly 300-second cold-start budget while working on these
+failures; reducing the startup number is not the current optimization target.
+
 ## Runtime baseline and recorded experiments
 
 The recorded runtime targets are reliable cold startup, responsive use of warmed

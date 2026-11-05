@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import threading
 import time
+from urllib.parse import urlsplit
 
 from .guest import Guest, GuestError, contact_hold_ms, web_url
 from .display import capture_display
@@ -13,6 +14,25 @@ from .display import capture_display
 SAFARI = 'com.apple.mobilesafari'
 # Native accessibility kAXIsEditingTrait. See docs/native-control-audit.md.
 _AX_IS_EDITING = 1 << 21
+
+
+def _native_address_key(url):
+    """Comparison key for a full native address, including Safari's root form."""
+    if isinstance(url, str) and url.lower().startswith(('http://', 'https://')):
+        address = url.split('://', 1)[1]
+        parsed = urlsplit(url)
+        if parsed.path == '/' and not parsed.query and not parsed.fragment:
+            address = address[:-1]
+        return address
+    return url
+
+
+def _matches_active_url(value, url):
+    forms = {url, url.split('://', 1)[1]}
+    parsed = urlsplit(url)
+    if parsed.path == '/' and not parsed.query and not parsed.fragment:
+        forms.update({url[:-1], url.split('://', 1)[1][:-1]})
+    return isinstance(value, str) and value in forms
 
 
 @dataclass(frozen=True)
@@ -159,7 +179,7 @@ class Browser:
                 if expected_pid is not None and pid != expected_pid:
                     raise GuestError('Safari process changed; navigation not submitted')
                 field = self._focus_address_field(foreground)
-                if expected_url is not None and field.get('value') != expected_url:
+                if expected_url is not None and not _matches_active_url(field.get('value'), expected_url):
                     raise GuestError('Active Safari tab does not contain the expected URL; navigation not submitted')
                 self.guest.call('input.key', name='cmd+a')
                 time.sleep(self.input_settle)
@@ -202,10 +222,11 @@ class Browser:
         return field
 
     def close_tab(self, *, expected_url, expected_pid):
-        """Send Command-W once after verifying the active tab's full editing URL.
+        """Send Command-W once after verifying the active tab's editing address.
 
-        The caller must separately establish unique tab ownership and verify its
-        disappearance. A failure never closes another tab or repeats the input.
+        Safari may omit the HTTP(S) scheme or a bare root's trailing slash.
+        The caller must establish ownership and uniqueness across those forms,
+        then verify disappearance. Input is never repeated after a failure.
         """
         web_url(expected_url)
         if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
@@ -216,7 +237,7 @@ class Browser:
                     or foreground.get('bundle_id') != SAFARI
                     or type(foreground.get('pid')) is not int or foreground['pid'] != expected_pid):
                 raise GuestError('Expected Safari tab is not in the foreground; tab not closed')
-            if self._focus_address_field(foreground).get('value') != expected_url:
+            if not _matches_active_url(self._focus_address_field(foreground).get('value'), expected_url):
                 raise GuestError('Active Safari tab does not contain the expected URL; tab not closed')
             result = self.guest.call('input.key', name='cmd+w')
             if not isinstance(result, dict) or result.get('key') != 'cmd+w' or result.get('dispatched') is not True:

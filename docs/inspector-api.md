@@ -138,11 +138,18 @@ assert not page.cleanup_errors
 Navigation checks a fresh tab listing and the inspected document URL, then the
 native editing address field before replacing its text. Duplicate URLs, a changed
 Safari PID, a different active tab or an unverified address field cause failure.
-The exact full URL must match; the SDK does not guess an identity from a title,
-shortened address display or matching hostname. Keep one controller per guest
-and avoid manual tab switches while an operation is in flight.
+Safari can omit the HTTP(S) scheme or a bare root URL's trailing slash from its
+editing field. Only those omissions are accepted: the entire host, port, path,
+query and fragment must otherwise match exactly. A slash is never removed from
+a non-root path or a URL with a query or fragment. Tabs that differ only by scheme
+or a root slash are ambiguous and block native actions.
+The SDK does not infer identity from a title or shortened host/path. After paste,
+the new URL still requires exact readback, including its scheme, before Return.
+Keep one controller per guest and avoid manual tab switches during an operation.
 
-On exit, inspection is detached first. The SDK checks the owned tab's unique URL
+On exit, inspection release is requested first. A later listing may still name
+the session's own Inspector connection; another client's connection blocks
+cleanup. The SDK checks the owned tab's unique URL
 and the native active address field, sends Command-W once, and waits for that tab
 ID to disappear while preserving the other listed tabs. `tab_cleanup` records the
 outcome. Failed or uncertain cleanup raises `InspectorError` after releasing the
@@ -154,6 +161,9 @@ without proven tab ownership is reported as `unknown` and no tab is closed.
 This owns one tab and its inspection resources, not a separate browser profile.
 Cookies and other site data are shared with the running Safari instance. These
 lifecycle contracts have local protocol tests; native qualification is ongoing.
+Navigation uses the `Browser` foreground/PID check after unlock and does not make
+a second, earlier query for the same state. Native readiness and address-field
+readback remain required before any URL is typed.
 
 ## Available operations
 
@@ -238,3 +248,41 @@ stall window, process changes, response-body completion, redirect invalidation,
 retention limits, cancellation, timeouts and socket release. Native fixture
 coverage for streaming, cache/service workers, selector clicks and extended
 sessions remains required before promoting the API.
+
+### Owned-tab trial and warm rendering failure
+
+A later native trial created and rendered an owned fixture tab, but its first
+navigation failed while reading native focus. Cleanup also exposed two SDK
+issues: a listing could still name the session's own Inspector connection after
+detach, and Safari could omit `http://` from an editing address. A subsequent
+root-URL check also showed an omitted trailing slash. The controller now handles
+those specific address forms while rejecting ambiguous sibling tabs, a different
+scheme explicitly present in the field, shortened paths and changed queries.
+Native recovery verified that only the owned tab disappeared.
+
+After these fixes, a separate warm run used the existing public focus helper with
+`Browser(input_settle=4)` and completed creation, two navigation acknowledgements,
+committed-URL and CSS conditions, document-response and rendered-HTML reads, a
+bounded delay, and automatic owned-tab cleanup. The original tab remained.
+
+| Operation | Local fixture | External document |
+| --- | ---: | ---: |
+| Native navigation acknowledgement | 25.17 s | 28.00 s |
+| Subsequent committed-URL wait | 2.83 s | 6.71 s |
+| Subsequent CSS condition | 0.35 s | 0.36 s |
+| Rendered HTML read | 0.34 s | 0.38 s |
+
+Creation/attachment took 13.76 seconds and owned-tab cleanup 15.39 seconds.
+**Both post-navigation screenshots had black content areas**, despite successful
+DOM conditions. This is a failed visual-readiness outcome, not a complete browser
+workflow pass. Screenshot file creation and DOM success cannot establish a usable
+rendered page. Selector actions and application-JSON capture were not part of this
+run. The 4-second settling delay remains an explicit trial setting; defaults have
+not changed, and these timings are samples rather than performance guarantees.
+
+An experimental focus reader running as the mobile user also completed some
+reads, but a fresh navigation query failed with AX error `-25216`; it has not been
+adopted. The original cold sequence timed out during Safari launch at 300.27
+seconds. Later warm results do not turn that startup into a success. Background
+archive work overlapped the cold sequence, so it is not a controlled startup
+performance comparison.

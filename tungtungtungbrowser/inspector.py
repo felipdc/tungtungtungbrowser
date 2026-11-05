@@ -10,6 +10,7 @@ import time
 import uuid
 
 from .guest import web_url
+from .browser import _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
 
 
@@ -328,7 +329,8 @@ class InspectorSession:
         if page is None:
             raise InspectorError('The inspected tab is no longer listed')
         url = web_url(page.web_url)
-        if sum(candidate.web_url == url for candidate in pages.values()) != 1:
+        if sum(_native_address_key(candidate.web_url) == _native_address_key(url)
+               for candidate in pages.values()) != 1:
             raise InspectorError('Multiple Safari tabs have this URL; native tab identity is ambiguous')
         return url
 
@@ -635,10 +637,9 @@ class InspectorSession:
         def navigate():
             with self.browser._lock:
                 self._same_document(target, generation)
-                foreground = self.browser.guest.call('apps.foreground')
-                if (foreground.get('verified') is not True or foreground.get('pid') != self._app.pid
-                        or foreground.get('bundle_id') != 'com.apple.mobilesafari'):
-                    raise InspectorError('The inspected Safari application is not the verified foreground app')
+                # Browser.goto verifies foreground and PID after unlock. A second
+                # earlier RunningBoard query adds latency without strengthening
+                # that same guard immediately before address-field input.
                 result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
                                            expected_pid=self._app.pid)
                 if result.get('method') != 'native_address_bar':
@@ -702,10 +703,16 @@ class InspectorSession:
         if self._page.id_ not in pages:
             self.tab_cleanup['status'] = 'already_absent'
             return
-        if pages[self._page.id_].web_connection_id:
-            raise InspectorError('Owned tab is still held by an Inspector connection; tab not closed')
+        connection = pages[self._page.id_].web_connection_id
+        if connection and connection not in (self._inspector.connection_id, self._session_id):
+            raise InspectorError('Owned tab is held by another Inspector connection; tab not closed')
+        # The did-close message and the listing update are asynchronous. A
+        # listing can still name our own connection after teardown was sent.
+        # We own both that inspection and this tab; closing the tab is valid.
+        self.tab_cleanup['own_inspection_still_listed'] = bool(connection)
         expected_url = web_url(pages[self._page.id_].web_url)
-        if sum(page.web_url == expected_url for page in pages.values()) != 1:
+        if sum(_native_address_key(page.web_url) == _native_address_key(expected_url)
+               for page in pages.values()) != 1:
             raise InspectorError('Multiple Safari tabs have this URL; owned tab cannot be safely closed')
         other_ids = set(pages) - {self._page.id_}
         self.tab_cleanup['status'] = 'close_started'
