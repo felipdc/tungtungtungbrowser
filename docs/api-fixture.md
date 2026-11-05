@@ -68,3 +68,21 @@ image rendered it. Rendered controls and successful input do not erase that
 initial observation. The fixture screenshots also retained artifacts around
 Safari's address bar. No general rendering-fidelity claim follows from these
 results.
+
+At the end of that boot, container peak memory was 6.38 GiB, with no memory-limit
+events or OOM kills. This smaller fixture workload is not a controlled resource
+comparison. Shutdown completed in 16.04 seconds without forced termination, and
+the parent disks, parent cache and six original baseline files were unchanged.
+One native close shortcut was sent for the diagnostic's added tab. A separate
+fresh Inspector listing confirmed that tab was absent and the original tab was
+preserved; the initial cleanup recorder had incorrectly tested an integer ID
+against listing keys stored as strings. No second close input was sent.
+
+A final read-only native settings sample reported both accessibility and
+automation enabled. Earlier samples, including the later warm address-field
+helper's before/after values, reported both disabled. A subsequent flat native
+tree query returned a truncated 30-element snapshot before the final settings
+read. That sequence does not establish which operation changed the switches.
+The disposable guest state remains unqualified for reuse until that change is
+investigated and its intended settings are restored. The preserved parents were
+not promoted or changed.
