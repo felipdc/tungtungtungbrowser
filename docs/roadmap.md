@@ -102,6 +102,13 @@ check native rendering at each stage before adopting an optimization.
       an incomplete diagnostic deployment then stopped the warm comparison.
       Verify required helper files before boot and compare equivalent successful
       warm workloads before claiming a performance or memory gain.
+      The [corrected follow-up](browsing-reliability.md#repeat-after-native-tab-cleanup)
+      passed its cold diagnostic and all three warm callbacks, but the third
+      30-second image was still incomplete. Its warm peak was 6.41 GiB versus
+      6.37 GiB in the earlier workload, and later browsing reached the container
+      limit. Saved-tab cleanup alone has not demonstrated the required resource
+      reduction. Investigate host allocation growth separately from tab state
+      and keep late or failed outcomes in comparisons.
       Automatic address-field focus recovery has passed a native local-page
       check; slow foreground and accessibility queries remain a latency issue.
       A [focused address-field experiment](native-control-audit.md#focused-address-field-query-experiment)

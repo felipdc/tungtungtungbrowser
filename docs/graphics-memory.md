@@ -281,3 +281,32 @@ This was a diagnostic rebuild with additional logging and some different
 autodetected dependencies. Its failed cold workload and different build prevent
 using lower individual readings as evidence of an optimization. No allocator
 policy, supported memory limit or default dependency pin changed.
+
+## Allocation growth after saved-tab cleanup
+
+The [later browsing repeat](browsing-reliability.md#repeat-after-native-tab-cleanup)
+kept the same complete-placement diagnostic and native display geometry. Its
+saved state began with four tab records; three warm opens grew that count to
+seven. Offline replay of three captured prefixes gave these observations:
+
+| Capture | Pooled capacity | Logged live placements | Unaccounted capacity | Blocks without logged placements |
+| --- | ---: | ---: | ---: | ---: |
+| After warm local browsing | 1,536 MiB | 1,057.6 MiB | 478.4 MiB | 2 |
+| After ordinary external browsing | 1,472 MiB | 928.0 MiB | 544.0 MiB | 2 |
+| After subsequent browsing | 1,408 MiB | 993.4 MiB | 414.6 MiB | 1 |
+
+Across those snapshots, anonymous-mapping PSS grew from approximately 2,027 to
+2,217 to 2,287 MiB. Allocation-file PSS was approximately 1,331, 1,285 and
+1,315 MiB; guest-backing PSS stayed near 2,019 MiB. Anonymous growth while
+logged pool capacity fell identifies a separate area for investigation. It
+does not identify an allocation owner, prove a leak, or establish that those
+pages are free. In particular, a 64-MiB anonymous mapping is not proof of a
+specific allocator arena.
+
+The live prefix and memory reads remain non-atomic, and their PSS observations
+are not whole-container peaks. The final browsing window reached the 6.5 GiB
+container limit. Releasing the one or two blocks without logged placements
+would not, by itself, demonstrate the required whole-browser reduction.
+Measure host allocator retention and translation-cache use separately before
+changing either policy; preserve native fidelity and warm operation latency
+as acceptance requirements.

@@ -105,3 +105,56 @@ Neither window recorded a memory-limit event or OOM kill. Changing diagnostic
 coverage and rebooting the host prevent attributing differences to one cause.
 This successful warm sequence still does not qualify the failed cold page,
 reduce the supported memory limit, or justify adopting the runtime candidate.
+
+## Repeat after native tab cleanup
+
+A later cold launch used the [saved state produced by native tab
+cleanup](native-touch-helper.md#validation), the same complete renderer-cache
+seed and the same runtime/resource settings as the QMP follow-up above. The
+host was rebooted. Four saved tab records remained before navigation, including
+one in the active group, and the native display showed the Start Page. Required
+signed observation helpers were verified before boot; this corrected the
+deployment omission that had stopped the intervening warm comparison.
+
+Foreground Safari took 236.8 seconds. The first local page passed both worker
+deadlines, canvas and WebGL checks; its complete callback arrived at 367.8
+seconds from launch, or 101.9 seconds after navigation. Foreground readiness
+within the approximate startup budget still differs from a usable first page.
+One successful cold page does not establish repeated startup reliability.
+
+The same Safari process completed three warm local navigations:
+
+| Navigation | Request acknowledgement | Complete callback | 30-second image | 60-second image |
+| --- | ---: | ---: | --- | --- |
+| First | 0.62 s | 17.92 s | Matching completed page | Matching completed page |
+| Second | 1.30 s | 15.77 s | Matching completed page | Matching completed page |
+| Third | 8.65 s | 30.45 s | Still collecting observations | Matching completed page |
+
+All three callbacks passed workers, canvas and WebGL. The third incomplete
+30-second sample remains incomplete; the later image does not replace it.
+There was no sampled regression to an earlier page identifier. Saved tab
+records grew from four to seven, again using non-atomic database/WAL copies.
+The before-copy's active pointer did not identify the already visible cold
+page, so database state was not used to establish display acceptance.
+
+Both ordinary external pages again displayed the requested content at 30 and
+60 seconds. The 300-second warm window averaged 1.91 CPU cores and peaked at
+6.41 GiB, versus 2.03 cores and 6.37 GiB in the earlier workload. These single
+observations do not demonstrate a memory reduction or faster warm browsing
+from tab cleanup. The 240-second ordinary external-page window averaged
+2.08 cores and peaked at 6.35 GiB. Neither of those windows recorded a
+memory-limit event or OOM kill.
+
+A separate subsequent browsing window reached the 6.5 GiB limit and recorded
+4,689 memory-limit events, with no OOM kill. Container memory-pressure `some`
+stall time was approximately 0.054% of that window; reaching the limit does not
+by itself explain a page outcome. A collected `atc` segmentation-fault report
+matched the current native boot UUID. Safari process continuity and successful
+pages therefore do not establish an error-free device. Another newly collected
+panic report identified a different boot and was kept separately.
+
+The guest stopped through native shutdown without forced termination. Disk
+parents, the original renderer cache and deployed source hashes were verified
+unchanged. The corrected helper deployment enabled the intended observations,
+but warm latency variation and memory pressure remain unresolved. Keep the
+runtime candidate experimental and retain the current resource limits.
