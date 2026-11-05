@@ -142,4 +142,6 @@ The optional [host display trace](display-trace.md) separates queued rendering,
 encoding, waiting, readback and surface-copy observations. Its local equivalence
 checks and QMP event controls passed. A native control with three default URL
 opens did not reproduce this disagreement; the mixed focus/reuse sequence still
-needs qualification.
+needs qualification. A [separately continued mixed trial](display-trace.md#mixed-focus-and-reuse-observation)
+also reached its final counters, while retaining failed control reads, initial
+stale content and incomplete browser chrome.

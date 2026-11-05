@@ -361,6 +361,57 @@ is a current-boot failure even though Safari remained alive and later queries
 succeeded; no causal link to the later field timeouts has been established.
 Repeated startup and warm browsing reliability remain unqualified.
 
+### Bounded read settling and existing URL display forms
+
+A traced follow-up on 2026-11-05 reached foreground Safari in 258.8 seconds.
+Its first local diagnostic passed workers, canvas and WebGL checks, returning
+at 320.1 seconds from launch. A distinct warm navigation acknowledged in
+0.62 seconds and completed its diagnostic callback in 19.62 seconds. The
+15-second capture was still collecting, with an empty canvas; the 30-second
+capture showed the matching saved result, and the 60-second image was identical.
+
+After one Command-L, the full-tree query took 26.20 seconds. A following focused
+query took 4.16 seconds, including a 2.51-second native scan, and matched its URL,
+traits, frame and owner. A fresh read before the single focus tap took 1.81
+seconds, including a 0.67-second scan. These sequential samples do not establish
+a repeatable speedup. Foreground checks still took several seconds.
+
+The post-tap read completed with the editing trait set, but the existing HTTP
+URL still omitted its scheme. The private recorder incorrectly required the
+complete URL at this pre-input stage and stopped before text or Return. A
+separate read-only continuation stopped on another recorder defect: SQLite
+tuple rows were compared directly with JSON list rows despite identical saved
+tab IDs. Both failures were retained. Neither sent new text or repeated the
+focus input. These were recorder failures, not native query errors.
+
+The corrected distinction permits the known existing URL's observed display
+form before input, but requires the entire requested URL after typing. It also
+normalizes database row representation without changing the compared IDs.
+After fresh foreground, process and editing checks, a separate continuation
+selected and entered the new URL once. Its first readback returned a completed
+native root-query error `-25216`: 5.12 seconds for the RPC and 2.11 seconds in
+the root request, with no elements visited. The recorder waited ten seconds
+and made one separate read. That read took 1.82 seconds, including a 0.76-second
+scan, and verified the exact typed URL, editing trait and ownership before
+one Return. Selection, paste, verification, settling and Return together took
+18.06 seconds; that excludes prior focus and foreground work and is not a
+complete tab-reuse latency.
+
+The continuation retained twelve saved tabs and the same active-tab record,
+with Safari's PID and start time unchanged. The new sequence page and the next
+default navigation both reached matching final counters and run identifiers
+in the 45- and 90-second capture groups. The
+[paired display observations](display-trace.md#mixed-focus-and-reuse-observation)
+retain initial stale content and incomplete focus rendering. The original
+readback remains failed even though the settled read and navigation succeeded.
+
+This is one native exercise of bounded read settling, not sustained recovery
+qualification. Only a definite completed root error permitted that extra read;
+transport failures and unverified process/field state still stop without more
+input. The focused helper and settling remain outside the public controller.
+Repeat the corrected sequence without recorder interruptions before adopting
+either or claiming an end-to-end latency improvement.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.

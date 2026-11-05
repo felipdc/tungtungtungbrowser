@@ -243,3 +243,54 @@ changes timing. Neither the navigation path nor the instrumentation is
 established as the reason for the different outcome. Keep the prior failed
 captures and use this recording as a control for a traced reproduction, without
 changing rendering decisions or claiming a resource improvement.
+
+## Mixed focus and reuse observation
+
+A second recording used the same CPU-only configuration and binary. It retained
+an initial default navigation, two stopped recorder attempts, and a separately
+guarded address-bar continuation followed by another default navigation. The
+[control audit](native-control-audit.md#bounded-read-settling-and-existing-url-display-forms)
+describes the recorder corrections and the native root timeout followed by one
+successful read. Tracing was disabled between the original sequence and the
+continuation, and disabled again before shutdown. No focus or text input was
+repeated to recover a missing reply.
+
+All three pages reached their final counters. The reused page's 15-second
+QMP/native/QMP group showed the old page at 20, then the new page at 65 and 66.
+Both later groups showed 68. The subsequent default navigation showed 129 in
+all three 15-second captures and 132 in the 45- and 90-second groups. No sampled
+counter regressed or became blank after new content appeared. The earlier
+45-second blank-content failure was not reproduced. The separated continuation
+and its longer settled interval prevent treating this as an uninterrupted
+reproduction or a fix.
+
+Visual correctness remains incomplete. The paired focus captures did not show
+the address controls even though accessibility reported the field; the editing
+state was later confirmed before text entry. The reused page's first 15-second
+QMP capture also showed rectangular toolbar artifacts beneath the old content.
+The following native capture showed new content with the ordinary toolbar.
+Retain these differences; correct diagnostic regions and eventual agreement
+do not qualify all browser chrome or physical-device fidelity.
+
+The trace contained 1,002 events and 60 fully observed render jobs, all with
+zero end statuses and all copy flags set. Each of the 25 QMP screenshot calls
+contained one traced request, with none unassigned. Thirteen requests queued
+no render. Seven completions had a pending present, all within the first three
+seconds after Return; this identifies scheduling overlap but does not explain
+the earlier blank-content failure. Median job-to-copy time was 98.9 ms, with
+a 361.2 ms maximum. Complete QMP calls had a 43.4 ms median and 252.3 ms maximum;
+eleven native screenshot calls had a 2.71 s median and 6.20 s maximum.
+
+The 420-second cold and 300-second warm resource windows averaged 2.31 and
+1.96 host CPU cores, with sampled peaks of 6.39 GiB each. The 600-second
+focus/resource window averaged 1.85 cores and peaked at 6.40 GiB, with zero
+memory-limit or OOM events during that window. It includes the stopped attempts
+and idle time and ends before the continuation's last captures; it is not an
+equivalent-workload comparison or a complete resource measurement of the
+continuation. No smaller memory limit is qualified.
+
+The returned crash inventory had one added report and one changed entry; both
+available bodies identified older native boots. No current-boot crash was
+found in that inventory. The guest stopped cleanly in 7.7 seconds, preserving
+its parent disks and renderer cache. Local diagnostics do not establish
+external-page acceptance, and runtime defaults remain unchanged.

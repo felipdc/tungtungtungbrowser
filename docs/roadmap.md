@@ -94,7 +94,11 @@ check native rendering at each stage before adopting an optimization.
       focus/navigation transitions while preserving foreground and process
       ownership checks before adopting a narrower query path. Measure the whole
       control operation; a subsecond native scan still incurred multi-second
-      RPC and foreground overhead.
+      RPC and foreground overhead. One later native root error recovered through
+      a [bounded read-only follow-up](native-control-audit.md#bounded-read-settling-and-existing-url-display-forms)
+      without repeating input, but recorder interruptions and initial stale
+      display content remain in that trial. Repeat the corrected sequence and
+      retain exact complete-URL verification after text entry before adoption.
 - [ ] Trace warm display updates independently of navigation callbacks. A
       [foreground trial](browser-control.md#warm-navigation-observations)
       retained Safari and passed consecutive local diagnostics, but later
@@ -115,6 +119,10 @@ check native rendering at each stage before adopting an optimization.
       reported end statuses. The earlier mixed focus/navigation failure was
       not reproduced and remains unresolved. Use the offline trace analyzer
       and paired captures to qualify that path before changing display behavior.
+      A subsequent separated focus/reuse continuation retained correct final
+      counters but showed incomplete focus controls and an initially stale QMP
+      page with toolbar artifacts. Clean render-stage statuses did not establish
+      complete visual correctness.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.
