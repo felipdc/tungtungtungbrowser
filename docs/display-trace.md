@@ -294,3 +294,64 @@ available bodies identified older native boots. No current-boot crash was
 found in that inventory. The guest stopped cleanly in 7.7 seconds, preserving
 its parent disks and renderer cache. Local diagnostics do not establish
 external-page acceptance, and runtime defaults remain unchanged.
+
+## Corrected sequence and external browsing
+
+An uninterrupted repeat on 2026-11-05 used the same binary, stopped parent, copied cache and
+CPU-only settings. The corrected recorder completed its focus/reuse sequence
+with one bounded read-only follow-up after a native accessibility error. The
+[control audit](native-control-audit.md#uninterrupted-repeat-after-the-recorder-corrections)
+retains that failure and the full operation timings.
+
+All three local pages reached their final counters and matching run identifiers.
+The last default navigation nevertheless exposed another capture disagreement:
+
+| Scheduled group | QMP before | Native | QMP after |
+| --- | --- | --- | --- |
+| 15 s | Initial `Waiting` content | Counter 129 | Initial `Waiting` content |
+| 45 s | Counter 132, heading/instructions absent | Counter 132 with heading/instructions | Same incomplete QMP content |
+| 90 s | Counter 132 with heading/instructions | Counter 132 with heading/instructions | Same completed page |
+
+Rectangular toolbar artifacts persisted. The paired focus images again omitted
+the address controls despite a matching accessibility field. Final counter
+agreement therefore does not qualify the whole display.
+
+The local trace contained 925 events and 48 fully observed render jobs. All
+recorded end statuses were zero and all copy flags were set. Each of the 23
+QMP captures contained exactly one traced request; eleven requests queued no
+render. In particular, the second QMP capture in both the 15- and 45-second
+groups above returned without a new render, with no dirty flag or active job.
+The intervening native capture had shown additional content. This identifies
+cached-surface behavior to test; it does not prove whether a fresh encode would
+repair it or where the underlying fault lies.
+
+Eight completions had a pending present, all within 2.6 seconds after Return
+on the preceding reused page. They did not coincide with the later disagreement.
+Median job-to-copy time was 100.2 ms, with a 290.0 ms maximum. Complete QMP calls
+had a 128.1 ms median; native calls had a 3.25 s median. Tracing ended before
+the external-page observations, so those captures have no corresponding
+render-stage evidence.
+
+Two external HTTPS pages were then opened in the same Safari process through
+the configured proxy. Native captures showed their expected content at 30 and
+60 seconds. One page also remained correct in its paired QMP captures. On the
+other, the final QMP capture lost text and other content that the immediately
+preceding QMP and native captures had shown. The external visual-consistency
+gate failed and the remaining acceptance request was not sent. This is evidence
+of external content loading alongside an unresolved display failure, not a
+successful sustained-browsing qualification.
+
+| Resource window | Duration | Average CPU cores | Sampled memory peak |
+| --- | ---: | ---: | ---: |
+| Cold startup and first page | 420 s | 2.34 | 6.43 GiB |
+| Warm default navigation | 180 s | 2.07 | 6.43 GiB |
+| Focus/reuse and local captures | 450 s | 2.00 | 6.36 GiB |
+| External observations | 180 s | 2.20 | 6.31 GiB |
+
+All four windows had zero memory-limit and OOM events. Their different workloads,
+idle portions and tracing settings prevent an optimization comparison; shorter
+windows also differ from the earlier trials. No smaller memory cap is qualified.
+The returned crash inventory and available changed bodies contained no new
+current-boot report. Native shutdown completed without forced termination in
+16.1 seconds, and the parent disks and cache were unchanged. Runtime defaults
+remain unchanged.

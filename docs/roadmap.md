@@ -97,8 +97,11 @@ check native rendering at each stage before adopting an optimization.
       RPC and foreground overhead. One later native root error recovered through
       a [bounded read-only follow-up](native-control-audit.md#bounded-read-settling-and-existing-url-display-forms)
       without repeating input, but recorder interruptions and initial stale
-      display content remain in that trial. Repeat the corrected sequence and
-      retain exact complete-URL verification after text entry before adoption.
+      display content remain in that trial. An
+      [uninterrupted corrected repeat](native-control-audit.md#uninterrupted-repeat-after-the-recorder-corrections)
+      reproduced the immediate post-typing timeout and passed its separate
+      read after ten seconds. Qualify that state and retain exact complete-URL
+      verification before adoption; the reference tree alone took 36.9 seconds.
 - [ ] Trace warm display updates independently of navigation callbacks. A
       [foreground trial](browser-control.md#warm-navigation-observations)
       retained Safari and passed consecutive local diagnostics, but later
@@ -123,6 +126,12 @@ check native rendering at each stage before adopting an optimization.
       counters but showed incomplete focus controls and an initially stale QMP
       page with toolbar artifacts. Clean render-stage statuses did not establish
       complete visual correctness.
+      A [corrected repeat](display-trace.md#corrected-sequence-and-external-browsing)
+      reproduced cached QMP content around a newer native image and later lost
+      already-visible content on an external page. Test whether requesting a
+      fresh render changes those observations, retaining both capture paths and
+      the possibility of a deeper guest-rendering fault. Measure its cost
+      separately and keep runtime defaults unchanged until native qualification.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

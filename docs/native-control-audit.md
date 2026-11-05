@@ -417,6 +417,46 @@ input. The focused helper and settling remain outside the public controller.
 Repeat the corrected sequence without recorder interruptions before adopting
 either or claiming an end-to-end latency improvement.
 
+### Uninterrupted repeat after the recorder corrections
+
+On 2026-11-05, the corrected sequence ran through the same focus, text-entry and navigation
+steps without a separate manual continuation. It retained twelve saved tabs,
+the same active-tab record and the same Safari PID/start time. There was one
+Command-L, one focus tap, one selection, one paste and one Return.
+
+The full-tree query after Command-L took 36.90 seconds. The focused observer
+matched that field, then verified it before and after the tap:
+
+| Focused read | Complete RPC | Native scan | Outcome |
+| --- | ---: | ---: | --- |
+| After Command-L | 3.64 s | 1.98 s | Matched the controller field |
+| Fresh check before the tap | 0.86 s | 0.37 s | Same field and owner |
+| After the tap | 2.64 s | 0.78 s | Editing verified |
+| Immediately after text entry | 7.22 s | 2.57 s | Root query returned `-25216`; no elements visited |
+| Separate read after ten seconds | 3.26 s | 0.63 s | Exact complete URL and editing verified |
+
+This reproduces the post-typing failure and exercises its bounded read-only
+follow-up without the earlier recorder interruptions. The original failed read
+remains failed. No uncertain input was repeated. The instrumented interval from
+Command-L to Return acknowledgment took 80.54 seconds; selection through Return
+took 21.68 seconds. The longer interval includes the reference tree, diagnostic
+captures, tab inventory, foreground checks and settling. It is not the latency
+of a published replacement backend or a controlled speed comparison.
+
+In the same boot, foreground Safari readiness took 256.09 seconds. The cold
+page passed its worker, canvas and WebGL checks, but its callback arrived at
+349.10 seconds from launch and its capture still showed collection in progress.
+A separate warm default open was acknowledged in 0.72 seconds and returned its
+results in 20.64 seconds. Its 15-second capture was blank/loading; the 30- and
+60-second captures showed the matching completed result. Boot readiness,
+navigation acknowledgment and usable rendered content remain distinct measures.
+
+The subsequent [display observations](display-trace.md#corrected-sequence-and-external-browsing)
+still failed visual consistency. The focused observer remains experimental;
+qualify the immediate post-typing state and sustained rendered navigation before
+adopting it. These measurements identify warm-control costs without establishing
+a resource reduction or physical-device equivalence.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.
