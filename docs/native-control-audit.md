@@ -364,8 +364,13 @@ Repeated startup and warm browsing reliability remain unqualified.
 ### Bounded read settling and existing URL display forms
 
 A traced follow-up on 2026-11-05 reached foreground Safari in 258.8 seconds.
+Its foreground capture still showed blank page content, loading controls and
+rectangular toolbar artifacts; foreground verification was not visual readiness.
 Its first local diagnostic passed workers, canvas and WebGL checks, returning
-at 320.1 seconds from launch. A distinct warm navigation acknowledged in
+at 320.1 seconds from launch. That page's capture showed its canvas and results
+but still displayed collection in progress, without the saved observation ID.
+A completed first-page display within 300 seconds was not established.
+A distinct warm navigation acknowledged in
 0.62 seconds and completed its diagnostic callback in 19.62 seconds. The
 15-second capture was still collecting, with an empty canvas; the 30-second
 capture showed the matching saved result, and the 60-second image was identical.
