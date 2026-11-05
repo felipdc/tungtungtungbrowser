@@ -341,3 +341,46 @@ hit test also accepted a deliberately covered fixture button. It therefore does
 not establish pointer actionability, and no selector tap was sent from this
 experiment. The probe is not part of the public SDK. Generic selector clicks,
 background-tab identity checks and coverage/occlusion checks remain open.
+
+
+### Paired captures after warm navigation
+
+A subsequent owned-session trial reached a second local fixture page and then
+an external document. Committed-URL conditions, body lookup, original document
+responses and rendered HTML reads succeeded. Creation took 13.95 seconds and
+verified owned-tab cleanup 10.14 seconds, preserving the original tab.
+
+| Operation | Second local fixture | External document |
+| --- | ---: | ---: |
+| Native navigation acknowledgement | 19.45 s | 18.53 s |
+| Subsequent committed-URL wait | 1.27 s | 0.63 s |
+| Subsequent body selector | 0.32 s | 0.31 s |
+| Rendered HTML read | 0.35 s | 4.94 s |
+
+Sequential guest JPEG and host display PNG captures both showed the local
+fixture correctly. Both showed a black content area on the external document,
+while Safari chrome remained visible. The failure is therefore not specific to
+the guest capture path in this sample; its rendering cause is still unknown.
+The two capture paths were sampled sequentially, not simultaneously. No visual
+success or full cross-page acceptance is claimed. This trial used the
+experimental mobile-user address-field reader and a 4-second input settling
+delay, so it does not qualify new public defaults or isolate the reader's effect.
+
+Two earlier private recorder errors were retained separately: an invalid network
+predicate and a malformed native key request. One failed cleanup rejected a
+URL mismatch while navigation was committing; a later ownership-checked recovery
+closed that tab. The corrected run above used a fresh owned tab and completed
+without cleanup errors.
+
+
+The same boot reached foreground Safari in 255.04 seconds, within the approximate
+300-second budget, but its initial capture had blank content. This qualifies
+neither cold page readiness nor repeatable Inspector installation. The final
+container sample was 6.36 GiB current and 6.50 GiB peak, with 1,801 memory-limit
+events and no OOM or OOM-kill events. These are cumulative run values, not an
+isolated operation measurement or evidence of a lower-resource configuration.
+The clock recorder retained a health-request timeout and later acknowledged time
+offers; its cause has not been isolated. Final accessibility settings were both
+off. The original tab rendered in the final host capture, and shutdown completed
+in 7.68 seconds without forced termination. Parent disks, parent cache and six
+original baseline files were unchanged; no experimental guest state was promoted.

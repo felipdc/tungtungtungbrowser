@@ -28,9 +28,10 @@ where they preserve native Safari behavior. Optimizations now need a failure or
 measured bottleneck in this API workflow; the observations below remain evidence,
 not prerequisites that must all be solved before API work starts.
 
-The latest [owned-tab trial](inspector-api.md#owned-tab-trial-and-warm-rendering-failure)
-completed native navigation, DOM/network reads and automatic cleanup, but its
-post-navigation captures showed black content areas. Treat native focus failures
+The latest [paired-capture trial](inspector-api.md#paired-captures-after-warm-navigation)
+completed native navigation, DOM/network reads and automatic cleanup. Both guest
+and host captures rendered the local fixture, but both showed black content on
+the external document. Treat native focus failures
 and rendered-page readiness as the immediate warm-workflow reliability issues.
 Do not count successful DOM conditions or screenshot file creation as a visual
 pass. Retain the roughly 300-second cold-start budget while working on these
