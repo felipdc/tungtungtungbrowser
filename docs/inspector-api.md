@@ -314,6 +314,20 @@ sessions remains required before promoting the API.
 
 ### Owned-tab trial and warm rendering failure
 
+Creation checks both that the bootstrap URL belongs to a new tab ID and that
+earlier tabs remain listed. A later native trial opened the requested fixture
+with a new ID while the previously listed blank tab disappeared. Creation still
+fails in that case. The SDK now retains the proven new tab's ownership so error
+cleanup can close it, and records the before, observed, matching and missing tab
+IDs in `tab_cleanup`. It does not claim a reused existing ID or restore a missing
+prior tab. Offline tests cover the lost-open-reply variant as well.
+
+Native server-error pages expose a separate unresolved cleanup case: the tab
+listing can become `data:text/html,` while Safari's address field retains the
+failed HTTP URL. Automatic cleanup currently refuses that non-HTTP listing.
+It does not guess the active tab from an earlier URL. The original failure and
+retained ownership need to remain visible to the caller.
+
 A later native trial created and rendered an owned fixture tab, but its first
 navigation failed while reading native focus. Cleanup also exposed two SDK
 issues: a listing could still name the session's own Inspector connection after

@@ -302,7 +302,8 @@ class InspectorSession:
             raise InspectorError('The generated bootstrap URL is already open')
         self._tab_open_requested = True
         self._create_app, self._create_before = app, set(before)
-        self.tab_cleanup = {'owned': False, 'status': 'open_requested'}
+        self.tab_cleanup = {'owned': False, 'status': 'open_requested',
+                            'before_page_ids': sorted(before)}
         await self._native(self.browser.goto, self.url)
         while True:
             pages = await self._fresh_pages(app.id_)
@@ -313,15 +314,24 @@ class InspectorSession:
 
     def _claim_created_tab(self, pages):
         matches = [page for page in pages.values() if page.web_url == self.url]
+        self.tab_cleanup.update(observed_page_ids=sorted(pages),
+                                matching_page_ids=sorted(page.id_ for page in matches))
         if len(matches) > 1:
             raise InspectorError('More than one tab has the generated bootstrap URL')
         if not matches:
             return False
         page = matches[0]
-        if page.id_ in self._create_before or not self._create_before.issubset(pages):
-            raise InspectorError('Native URL open did not preserve existing tabs and create a new tab')
+        if page.id_ in self._create_before:
+            raise InspectorError('Native URL open reused an existing tab; ownership was not acquired')
         self._app, self._page = self._create_app, page
         self.tab_cleanup.update(owned=True, status='open', app_id=self._app.id_, page_id=page.id_)
+        missing = sorted(self._create_before - set(pages))
+        if missing:
+            # The operation still failed to preserve prior tabs, but this new
+            # ID with our unique URL is owned. Retain that fact so failure
+            # cleanup can release it instead of leaking a proven new tab.
+            self.tab_cleanup['missing_before_page_ids'] = missing
+            raise InspectorError('Native URL open did not preserve existing tabs')
         return True
 
     async def _unique_tab_url(self):

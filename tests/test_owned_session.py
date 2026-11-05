@@ -41,9 +41,11 @@ class TabFixture(NativeProtocolFixture):
         if method == 'apps.open_url':
             self.events.append('open')
             self.guest.address_value = params['url']
-            if self.open_mode in ('new', 'new_lost_reply'):
+            if self.open_mode in ('new', 'new_lost_reply', 'new_drop_original', 'new_drop_original_lost_reply'):
                 self.pages['2'] = page(2, params['url'])
-                if self.open_mode == 'new_lost_reply':
+                if self.open_mode.startswith('new_drop_original'):
+                    self.pages.pop('1')
+                if self.open_mode.endswith('lost_reply'):
                     raise InspectorError('Open reply lost after creating tab')
             elif self.open_mode == 'reuse':
                 self.pages['1'].web_url = params['url']
@@ -57,7 +59,7 @@ class TabFixture(NativeProtocolFixture):
                 raise InspectorError('Close reply lost')
             if self.close_mode == 'close':
                 self.pages.pop('2', None)
-                self.guest.address_value = self.pages['1'].web_url
+                self.guest.address_value = self.pages['1'].web_url if '1' in self.pages else 'about:blank'
         return result
 
     def subscribe_listings(self):
@@ -176,6 +178,24 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
                 pass
         self.assertEqual(session.tab_cleanup['status'], 'closed')
         self.assertEqual(native.pages['1'].web_url, 'about:blank')
+
+    async def test_missing_original_tab_still_fails_but_releases_proven_new_tab(self):
+        for mode in ('new_drop_original', 'new_drop_original_lost_reply'):
+            with self.subTest(mode=mode):
+                session, native, guest = fixture()
+                native.open_mode = mode
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    with self.assertRaises(InspectorError):
+                        await session.__aenter__()
+                self.assertTrue(session.tab_cleanup['owned'])
+                self.assertEqual(session.tab_cleanup['before_page_ids'], [1])
+                self.assertEqual(session.tab_cleanup['observed_page_ids'], [2])
+                self.assertEqual(session.tab_cleanup['matching_page_ids'], [2])
+                self.assertEqual(session.tab_cleanup['missing_before_page_ids'], [1])
+                self.assertEqual(session.tab_cleanup['status'], 'closed')
+                self.assertEqual(native.events, ['open', 'close'])
+                self.assertFalse(native.pages)
+                session.transport.close.assert_awaited_once()
 
     async def test_scheme_only_tab_difference_blocks_navigation_and_cleanup(self):
         session, native, guest = fixture()
