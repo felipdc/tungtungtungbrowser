@@ -14,7 +14,7 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError
 from tungtungtungbrowser import Browser
 
 
@@ -62,7 +62,8 @@ def main(argv=None):
     deadline = start + args.deadline_seconds
     result = {'launch': launch, 'navigation_verified': False,
               'safari_foreground_verified': False, 'screenshot_captured': False,
-              'visual_review': 'pending', 'status': 'running', 'stage': 'starting'}
+              'visual_review': 'pending', 'status': 'running', 'stage': 'starting',
+              'once_only_requests': []}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     screenshot_path = args.output.with_suffix('.png' if args.qmp_socket else '.jpg')
     failure_path = args.output.with_suffix('.failure.png')
@@ -107,11 +108,33 @@ def main(argv=None):
                 time.sleep(min(5, max(0, deadline - time.monotonic())))
         raise TimeoutError(f'{label} deadline exceeded: {last_error}')
 
-    def unlock(guest):
-        value = guest.call('screen.unlock', timeout=60)
-        if value.get('locked') is not False:
-            raise GuestError('Screen remains locked')
-        return value
+    def request_once(method, timeout, operation):
+        # Publish before sending. A timeout ends the host's wait, not the native
+        # operation. Keep that uncertainty and its original timing in the report.
+        started = time.monotonic()
+        request = {'method': method, 'status': 'in_flight',
+                   'started_seconds': started - start, 'timeout_seconds': timeout}
+        result['once_only_requests'].append(request)
+        checkpoint()
+        try:
+            value = operation(Guest(launch['cid'], timeout=timeout))
+        except Exception as exc:
+            request.update(status='error', error=str(exc))
+            if isinstance(exc, GuestTransportError):
+                request['transport'] = {
+                    'phase': exc.phase, 'errno': exc.errno,
+                    'request_may_have_been_sent': exc.request_may_have_been_sent,
+                }
+            raise
+        else:
+            # This records the reply, not foreground, render or page readiness.
+            request['status'] = 'response_received'
+            return value
+        finally:
+            finished = time.monotonic()
+            request.update(finished_seconds=finished - start,
+                           duration_seconds=finished - started)
+            checkpoint()
 
     def unlock_once():
         # A reset or malformed reply can occur after the guest received input,
@@ -124,7 +147,10 @@ def main(argv=None):
         if remaining <= 0:
             raise TimeoutError('Screen unlock deadline exceeded')
         try:
-            unlock(Guest(launch['cid'], timeout=min(90, remaining)))
+            value = request_once('screen.unlock', min(90, remaining),
+                                 lambda guest: guest.call('screen.unlock', timeout=60))
+            if value.get('locked') is not False:
+                raise GuestError('Screen remains locked')
         except GuestError as exc:
             raise GuestError(f'screen_unlocked: {exc}; not retrying native input automatically') from exc
         result['screen_unlocked_seconds'] = time.monotonic() - start
@@ -194,7 +220,8 @@ def main(argv=None):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError('Clock synchronization deadline exceeded')
-            result['clock_sync_response'] = Guest(launch['cid'], timeout=min(30, remaining)).sync_clock()
+            result['clock_sync_response'] = request_once(
+                'time.clock', min(30, remaining), lambda guest: guest.sync_clock())
             checkpoint()
             if result['clock_sync_response']['automatic'] is not True:
                 raise GuestError('Clock synchronization requires automatic guest time; inspect the guest clock settings')
@@ -209,8 +236,9 @@ def main(argv=None):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('Safari launch deadline exceeded')
-        result['safari_launch_response'] = Guest(launch['cid'], timeout=min(120, remaining)).call(
-            'apps.launch', bundle_id='com.apple.mobilesafari')
+        result['safari_launch_response'] = request_once(
+            'apps.launch', min(120, remaining),
+            lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
         result['safari_launch_request_seconds'] = time.monotonic() - start
         checkpoint()
         if result['safari_launch_response'].get('frontmost_verified') is True:

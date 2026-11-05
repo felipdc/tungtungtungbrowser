@@ -355,3 +355,34 @@ The returned crash inventory and available changed bodies contained no new
 current-boot report. Native shutdown completed without forced termination in
 16.1 seconds, and the parent disks and cache were unchanged. Runtime defaults
 remain unchanged.
+
+## Fresh-render candidate stopped during readiness
+
+A separate candidate on 2026-11-05 tested requesting a render when a display
+update arrives without a dirty flag. The opt-in change marks the frame dirty
+only when no render is already running; an existing job retains its original
+completion behavior. It therefore cannot guarantee a latest frame when an
+update arrives during a render. Fourteen synthetic scenarios passed with
+sanitizers across disabled/enabled tracing and flag values, and the full QEMU
+build and machine-without-a-guest trace-control check passed. These checks do
+not establish native display correctness.
+
+The native attempt used the same stopped parent, copied renderer cache, two
+application CPUs and 2 GiB guest RAM as the preceding control. Clock readiness
+completed at 166.2 seconds and unlock at 192.7 seconds. The one Safari launch
+request then exceeded its 120-second transport timeout while receiving headers.
+Readiness failed at approximately 313 seconds; it did not verify foreground
+Safari or perform a navigation. The failure screenshot showed Home. A later
+finalization screenshot showed Safari with an old page, without establishing
+when launch finished. That later image does not turn the failed request into
+a successful boot or justify repeating an action with an unknown outcome.
+
+The warm sequence and external-page checks were not entered. This attempt
+cannot assess the candidate's display effect or attribute the launch delay to
+it. The 420-second resource window averaged 2.42 host CPU cores and peaked at
+6.42 GiB, with zero recorded memory-limit and OOM events. Since the planned
+browser workload never ran, these are failure-run measurements, not evidence
+of savings. Available changed crash bodies identified older boots; one added
+hidden report was not collected and remains unattributed. Shutdown completed
+cleanly in 7.1 seconds, preserving the parent disks and cache. The candidate
+remains unqualified and runtime defaults are unchanged.

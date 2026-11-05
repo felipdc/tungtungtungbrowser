@@ -132,6 +132,10 @@ check native rendering at each stage before adopting an optimization.
       fresh render changes those observations, retaining both capture paths and
       the possibility of a deeper guest-rendering fault. Measure its cost
       separately and keep runtime defaults unchanged until native qualification.
+      The first [fresh-render candidate](display-trace.md#fresh-render-candidate-stopped-during-readiness)
+      built successfully but stopped at a native Safari launch transport timeout,
+      before warm browsing. Its display effect and performance remain unmeasured;
+      preserve that failed boot when repeating the controlled comparison.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

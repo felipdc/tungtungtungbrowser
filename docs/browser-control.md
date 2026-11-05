@@ -42,6 +42,23 @@ docker compose -f runtime/compose.yaml exec iphone \
   --settle-seconds 30 --output /vm/captures/example-001
 ```
 
+The report's `once_only_requests` array records explicit clock offers, unlock
+and Safari launch. Each entry is published as `in_flight` before dispatch and
+retains the original launch-relative start/end times, host-observed duration
+and configured transport timeout. `response_received` means the controller
+returned a reply; the separate foreground, rendering and navigation checks
+still apply. A locked-screen reply, for example, leaves that request recorded
+as received while failing readiness.
+
+On a structured transport error, the entry also retains `transport.phase`,
+`transport.errno` and `transport.request_may_have_been_sent`. A failure in
+`connect` means this exchange did not send the request. Failures during sending,
+receiving headers or reading the body leave its native outcome uncertain. Other
+errors do not acquire an inferred transport phase. The recorder never repeats
+these requests or extends the original startup deadline to obtain a pass. This
+array excludes health polling, foreground observations and launcher-managed
+clock maintenance; those retain their separate reports and timing fields.
+
 Each capture has an exclusive output directory, a screenshot, metadata
 and a manifest. Add `--accessibility` or `--ocr` when you need native text
 diagnostics. These queries can be slow; they run after the screenshot, and

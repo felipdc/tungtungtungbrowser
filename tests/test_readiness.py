@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import measure_ready
-from tungtungtungbrowser.guest import GuestError
+from tungtungtungbrowser.guest import GuestError, GuestTransportError
 
 
 class SavedShot:
@@ -161,6 +161,78 @@ class ReadinessTest(unittest.TestCase):
         self.assertNotIn('failure_screenshot', result)
         self.guest.sync_clock.assert_not_called()
 
+    def test_once_only_requests_are_published_before_send_and_keep_timing(self):
+        def observe(method, **params):
+            if method in {'screen.unlock', 'apps.launch'}:
+                request = self.report()['once_only_requests'][-1]
+                self.assertEqual(request['method'], method)
+                self.assertEqual(request['status'], 'in_flight')
+                self.assertGreaterEqual(request['started_seconds'], 10)
+                self.assertNotIn('finished_seconds', request)
+            return self.native(method, **params)
+
+        self.guest.call.side_effect = observe
+        self.run_measurement()
+        requests = self.report()['once_only_requests']
+        self.assertEqual([r['method'] for r in requests], ['screen.unlock', 'apps.launch'])
+        self.assertEqual([r['timeout_seconds'] for r in requests], [90, 120])
+        for request in requests:
+            self.assertEqual(request['status'], 'response_received')
+            self.assertGreaterEqual(request['duration_seconds'], 0)
+            self.assertAlmostEqual(request['duration_seconds'],
+                                   request['finished_seconds'] - request['started_seconds'])
+            self.assertNotIn('transport', request)
+
+    def test_once_only_transport_failure_keeps_phase_without_retrying(self):
+        for method in ['screen.unlock', 'apps.launch']:
+            for phase in ['connect', 'send_request', 'receive_headers', 'read_body']:
+                with self.subTest(method=method, phase=phase):
+                    self.output = self.vm / f'{method}-{phase}.json'
+                    self.calls.clear()
+                    failure = GuestTransportError(phase, TimeoutError('timed out'))
+
+                    def fail(selected, **params):
+                        self.native(selected, **params)
+                        if selected == method:
+                            raise failure
+                        return {'locked': False}
+
+                    self.guest.call.side_effect = fail
+                    with self.assertRaises(GuestError):
+                        self.run_measurement()
+                    result = self.report()
+                    request = result['once_only_requests'][-1]
+                    self.assertEqual(request['method'], method)
+                    self.assertEqual(request['status'], 'error')
+                    self.assertEqual(request['error'], str(failure))
+                    self.assertEqual(request['transport'], {
+                        'phase': phase, 'errno': None,
+                        'request_may_have_been_sent': phase != 'connect',
+                    })
+                    self.assertIn('duration_seconds', request)
+                    self.assertEqual([m for m, _ in self.calls],
+                                     ['screen.unlock'] if method == 'screen.unlock'
+                                     else ['screen.unlock', 'apps.launch'])
+                    self.assertFalse(result['safari_foreground_verified'])
+                    self.assertEqual(result['status'], 'failed')
+                    self.assertNotIn('safari_launch_response', result)
+
+    def test_nontransport_error_does_not_infer_whether_request_was_sent(self):
+        self.failure_method = 'apps.launch'
+        with self.assertRaises(GuestError):
+            self.run_measurement()
+        request = self.report()['once_only_requests'][-1]
+        self.assertEqual(request['status'], 'error')
+        self.assertNotIn('transport', request)
+        self.assertNotIn('request_may_have_been_sent', request)
+
+    def test_once_only_timeouts_still_use_remaining_original_deadline(self):
+        measure_ready.main([str(self.vm), '--output', str(self.output),
+                            '--deadline-seconds', '20'])
+        for request in self.report()['once_only_requests']:
+            self.assertGreater(request['timeout_seconds'], 0)
+            self.assertLessEqual(request['timeout_seconds'], 10)
+
     def test_explicit_clock_sync_precedes_unlock_and_keeps_launch_clock(self):
         response = {'time': 1800000000.0, 'automatic': True, 'changed': True, 'offset': 600.0}
 
@@ -174,6 +246,8 @@ class ReadinessTest(unittest.TestCase):
         self.guest.sync_clock.assert_called_once_with()
         result = self.report()
         self.assertEqual(result['clock_sync_response'], response)
+        self.assertEqual(result['once_only_requests'][0]['method'], 'time.clock')
+        self.assertEqual(result['once_only_requests'][0]['status'], 'response_received')
         self.assertGreaterEqual(result['clock_sync_seconds'], 10)
         self.assertEqual(result['launch'], self.launch)
         self.assertEqual(result['status'], 'complete')
@@ -233,6 +307,9 @@ class ReadinessTest(unittest.TestCase):
         self.guest.call.assert_called_once_with('screen.unlock', timeout=60)
         self.assertFalse(self.report()['safari_foreground_verified'])
         self.assertNotIn('safari_launch_response', self.report())
+        request = self.report()['once_only_requests'][0]
+        self.assertEqual(request['status'], 'response_received')
+        self.assertEqual(self.report()['status'], 'failed')
 
     def test_unverified_launch_response_survives_foreground_timeout(self):
         self.launch_response = {'pid': 0, 'frontmost_verified': False}
