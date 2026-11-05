@@ -14,6 +14,9 @@
       return value;
     }
     const steps = integer('steps', 16, 1, 64);
+    const firstSequence = integer('start', 1, 1, 255);
+    const lastSequence = firstSequence + steps - 1;
+    if (lastSequence > 255) throw new Error('Sequence exceeds eight-bit range');
     const dwell = integer('dwell_ms', 12000, 1000, 60000);
     const run = Array.from(crypto.getRandomValues(new Uint8Array(12)),
       value => value.toString(16).padStart(2, '0')).join('');
@@ -36,7 +39,7 @@
         const response = await fetch(new URL('input', location.href), {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({diagnostic: 'display-sequence', version: 1,
-            run, steps, dwellMilliseconds: dwell, url: location.href,
+            run, steps, firstSequence, lastSequence, dwellMilliseconds: dwell, url: location.href,
             performanceTimeOrigin: performance.timeOrigin,
             elapsedMilliseconds: performance.now() - start,
             visibility: document.visibilityState, ...observation}),
@@ -47,7 +50,7 @@
       } finally { clearTimeout(timer); }
     }
     status.textContent = 'Run ' + run + '; ' + steps + ' steps';
-    for (let sequence = 1; sequence <= steps; sequence++) {
+    for (let sequence = firstSequence; sequence <= lastSequence; sequence++) {
       const written = performance.now();
       number.textContent = String(sequence).padStart(3, '0');
       cells.replaceChildren();
@@ -75,9 +78,9 @@
       await record({phase: 'step', sequence, writtenMilliseconds: written,
         firstAnimationFrameMilliseconds: first, secondAnimationFrameMilliseconds: second,
         domText: number.textContent, rectangles: {dom: rect(cells), canvas: rect(canvas)}});
-      if (sequence < steps) await sleep(dwell);
+      if (sequence < lastSequence) await sleep(dwell);
     }
-    await record({phase: 'complete', sequence: steps});
+    await record({phase: 'complete', sequence: lastSequence});
     status.textContent = 'Complete: ' + run;
   } catch (error) {
     status.textContent = 'Stopped: ' + error;

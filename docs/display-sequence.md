@@ -28,6 +28,17 @@ two animation-frame callbacks, saves a record through the existing `input`
 collector, then waits the dwell interval before advancing. Failed callbacks
 stop the sequence without retry. A fresh page run has a fresh identifier.
 
+For navigation tests, use nonoverlapping counter ranges so an earlier page is
+recognizable in either region. For example, open `?start=17&steps=4&dwell_ms=5000`
+and then `?start=65&steps=4&dwell_ms=5000` in distinct native navigation requests.
+The first page displays 17 through 20; the second displays 65 through 68.
+`start` defaults to 1 and accepts integers from 1 to 255; the final value
+(`start + steps - 1`) must also be at most 255. Invalid ranges stop before
+drawing or sending callbacks. Callback records include both endpoints. Retain
+the run identifier as well as the counter range, since a reload could use the
+same range with a new run. Counter ranges identify content; they do not verify
+which tab is active or that Safari finished navigating.
+
 Keep the requested URL, run identifier and original navigation clock. Save
 capture start and finish times, backend, pixels and metadata. Compare the
 per-step `input-*.json` records with captures of both regions. Request-journal
