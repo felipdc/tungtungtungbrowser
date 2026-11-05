@@ -219,9 +219,19 @@ its first root accessibility request with native error `-25216`. The existing
 full-tree observer had returned the same error in a separate completed request.
 The helper visited no elements; its failed RPC took 2.48 seconds, including
 0.67 seconds in the root request. No field tap, URL text or Return followed,
-and Command-L was not repeated. A successful focused field query, the meaning
-and cause of the native error, and a latency improvement remain unverified.
-The experimental helper remains outside the published controller backend.
+and Command-L was not repeated. A successful focused field query and a latency
+improvement remain unverified. The experimental helper remains outside the
+published controller backend.
+
+Offline inspection then found a branch in this firmware's attribute-copy path
+that converts `0x10000004` and `0x10004003` to `-25216`. Apple's
+[Mach message definitions](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/message.h)
+identify those values as send and receive timeouts. This supports investigating
+the native messaging deadline; it does not identify the slow endpoint or prove
+that a larger budget will resolve the failure. The focused probe allowed
+0.15 seconds for its root request, while the pinned original query configures
+0.5 seconds. A future comparison should vary that root budget independently,
+retain the overall query deadline, and preserve the original failed requests.
 
 That run reached verified foreground Safari in 225.0 seconds, but its cold
 page's shared worker missed the 15-second deadline. A distinct warm navigation
