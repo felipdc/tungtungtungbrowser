@@ -76,3 +76,32 @@ launches, and diagnostic coverage differed. These results do not establish a
 CPU or memory improvement, qualify a smaller host, or justify changing the
 default runtime pin. See the [runtime candidate evaluation](native-fp.md) and
 [warm browsing observations](browser-control.md#warm-navigation-observations).
+
+## Follow-up with QMP captures
+
+A subsequent run kept the same runtime, guest parent, renderer cache and
+resource settings, rebooted the Linux host, and omitted the optional live-log
+collectors. Foreground Safari took 273.2 seconds. The first local callback
+arrived at 342.1 seconds from launch, but both workers exceeded their original
+15-second deadlines. That cold-page failure was retained.
+
+Three later default opens passed the worker, canvas and WebGL checks in the
+same Safari process. Acknowledgements took 0.74, 0.65 and 0.81 seconds;
+callbacks took 17.94, 10.59 and 12.56 seconds. All six 30- and 60-second images
+showed the matching saved identifier and canvas. Saved tabs again grew from
+ten to thirteen. The later database copy still named the second warm page as
+active, while the images showed the third; these sequential database reads
+were not used as proof of the displayed page.
+
+Both ordinary external HTTPS pages showed their requested content at 30 and
+60 seconds. Their six QMP captures took 0.038–0.140 seconds each, without a
+missed slot. The configured proxy exit matched its preboot observation at the
+checked stages. These are sampled rendered outcomes, not exact load times or
+a guarantee of future routing and browsing reliability.
+
+The 300-second warm window averaged 2.03 CPU cores and peaked at 6.37 GiB;
+the 240-second external-page window averaged 2.10 cores and peaked at 6.29 GiB.
+Neither window recorded a memory-limit event or OOM kill. Changing diagnostic
+coverage and rebooting the host prevent attributing differences to one cause.
+This successful warm sequence still does not qualify the failed cold page,
+reduce the supported memory limit, or justify adopting the runtime candidate.
