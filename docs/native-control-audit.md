@@ -296,6 +296,19 @@ recorded. A distinct warm navigation passed workers, canvas and WebGL checks in
 at 15 seconds, and the matching saved result was visible at 30 and 60 seconds.
 This does not establish repeated cold reliability or resource savings.
 
+The focused reads also left Safari in its address/start-page flow. Their
+success therefore does not demonstrate normal page focus or a completed
+navigation. Subsequent default external navigations exposed a separate display
+failure: one page stayed blank at 30 and 60 seconds, while the next displayed
+its expected content. After one native Escape and a distinct navigation to the
+first page, its content appeared at 30 seconds, but the 60-second capture showed
+the preceding page beneath the new address bar. Overlapping browser chrome
+remained visible. All original captures and failed outcomes were retained.
+This sequence does not establish that Escape repaired focus, that the later
+navigation remained correct, or whether guest compositing or display capture
+caused the stale content. Warm control latency and sustained visual correctness
+remain separate adoption requirements.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.
