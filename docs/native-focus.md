@@ -101,3 +101,14 @@ cumulative values for the whole boot and investigation, not memory attributed
 to the focus helper or the two navigations. No memory reduction is established.
 Guest shutdown completed in 7.28 seconds without forced termination; the
 parent overlays, parent cache and six original baseline files were unchanged.
+
+A subsequent cold boot reached foreground Safari in 262.3 seconds, but its
+first two address-bar attempts failed before text or Return: one native helper
+request exceeded its 30-second administrative deadline, and another returned
+AX error `-25215`. Later in that same boot, after separate local-page work, the
+public focus reader and native address-bar path navigated to an external page
+in 28.3 seconds, followed by an 8.6-second committed-URL wait and a rendered
+screenshot. The later warm success does not qualify the failed earlier control
+attempts. Read-only samples found both accessibility switches off after the
+first failure; those samples do not establish their state throughout the failed
+request or explain its cause.

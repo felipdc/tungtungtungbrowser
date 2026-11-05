@@ -43,3 +43,28 @@ physical-device equivalence. Inspect the event sequence, resulting DOM and
 screenshot together. Keep native action failures, timing records and captured
 results outside the repository. The fixture provides test conditions; it does
 not add selector-click support to the SDK by itself.
+
+## Native observations
+
+One native fixture session completed original-response retrieval, rendered HTML,
+the delayed DOM condition, request/response waiters, XHR JSON capture, two
+reviewed touch actions, a bounded delay and screenshots in 31.3 seconds. The two
+action sequences, including lookup, native checks and DOM readback, took 10.8 and
+9.0 seconds. Cleanup retained no pending commands or native workers and reported
+no errors. Both touches produced `pointerdown`, `touchstart`, `pointerup`,
+`touchend` and `click`, all with `isTrusted == true`; the recorded pointer type
+was `touch` for the pointer down/up events and `mouse` for `click`.
+
+Those actions used the private diagnostic's visually reviewed fixture labels and
+native frames. They are **not validation of generic CSS/XPath clicks**. The first
+native accessibility snapshot returned HTML IDs for the buttons; subsequent
+reads and hit tests omitted those IDs. Direct native queries returned no value
+for the web nodes' identifier attribute. A preceding attempt that required those
+IDs failed before sending any touch. Keep arbitrary selector actions unqualified
+until DOM identity can be tied to a reliable native touch target.
+
+The initial image five seconds after opening the fixture was blank; a later
+image rendered it. Rendered controls and successful input do not erase that
+initial observation. The fixture screenshots also retained artifacts around
+Safari's address bar. No general rendering-fidelity claim follows from these
+results.

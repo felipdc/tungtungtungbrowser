@@ -47,6 +47,21 @@ A fresh deployment of the unchanged bridge binary passed its identity and
 health checks in that guest. The installer now avoids a second observed failure
 where the guest refused to rename an upload over an earlier executable.
 
+If a requested deployment fails, `deploy.json` also retains read-only service
+status, launchd's detailed state and up to 16 KiB of its own log, when available.
+A missing log is recorded as a diagnostic error and does not replace the original
+installation failure. These reads require matching service label and executable
+identity. The installer does not automatically restart a failed service.
+
+In a subsequent cold-guest trial, even a fresh deployment reported a running PID
+but never opened the bridge port. A diagnostic build behaved the same way.
+Launchd reported `state = xpcproxy`, `execs = 0` and `initialized = 0`, and neither
+job created its log. Direct execution of the unchanged bridge binary worked;
+after its clean stop, an explicit start of the original service became ready in
+0.77 seconds. This isolates an observed service-start path failure but does not
+establish its cause or qualify a cold-start fix. The successful warm start does
+not erase the original deployment failures.
+
 The optional protocol dependency is pymobiledevice3 at commit
 `776d601cec83b894c3ad0eeee8ab4db375a46e4a`. The small adapter bypasses its Lockdown
 pairing/service-start path because the native bridge already owns an open

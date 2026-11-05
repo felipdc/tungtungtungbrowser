@@ -99,6 +99,30 @@ def install(guest, data, digest, output, health_check):
         if result.get('source') != staging or result.get('destination') != path:
             raise GuestError('Bridge installation was not acknowledged')
 
+    def capture_failure_diagnostics():
+        # launchd can report a PID while its job is still in xpcproxy, before
+        # the executable has initialized or opened its log. Preserve that state
+        # without restarting input, replacing a process, or masking the failure.
+        diagnostics = report['failure_diagnostics'] = {}
+        try:
+            status = rpc('services.status', label=label)
+            diagnostics['service'] = status
+            if (not isinstance(status, dict) or status.get('label') != label
+                    or status.get('program') != executable):
+                diagnostics['identity_verified'] = False
+                return
+            diagnostics['identity_verified'] = True
+        except Exception as error:
+            diagnostics['service_error'] = f'{type(error).__name__}: {error}'
+            return
+        for name, method, params in (
+                ('launchd', 'services.print', {'label': label}),
+                ('log', 'files.read', {'path': log, 'limit': 16384})):
+            try:
+                diagnostics[name] = rpc(method, **params)
+            except Exception as error:
+                diagnostics[name + '_error'] = f'{type(error).__name__}: {error}'
+
     save()
     try:
         try:
@@ -114,6 +138,7 @@ def install(guest, data, digest, output, health_check):
                                  'StandardOutPath': log, 'StandardErrorPath': log})
         (output / 'service.plist').write_bytes(service)
         put(plist, service, '600')
+        report['service_load_requested'] = True
         loaded = rpc('services.load', paths=[plist], override=False)
         rows = [row for row in loaded.get('services', []) if row.get('label') == label]
         if len(rows) != 1 or not rows[0].get('running') or rows[0].get('program') != executable:
@@ -133,6 +158,8 @@ def install(guest, data, digest, output, health_check):
         return report
     except Exception as error:
         report.update(status='failed', error=str(error))
+        if report.get('service_load_requested'):
+            capture_failure_diagnostics()
         raise
     finally:
         save()
