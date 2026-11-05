@@ -75,6 +75,48 @@ diagnostics. The container health check verifies the local tunnel, not remote
 proxy availability or geographic targeting. Verify those through the browser
 and verify failure behavior before relying on a new proxy configuration.
 
+### Check gateway acceptance before boot
+
+Before starting either container, an optional host-side check can attempt one
+CONNECT using the same private proxy JSON. Supply a destination authority with
+an explicit port:
+
+```sh
+python3 scripts/check_proxy_gateway.py --target example.org:443 \
+  --timeout 15 --output /external/private/gateway-check-001 \
+  < /external/private/proxy.json
+```
+
+This helper supports HTTP and HTTPS proxies. It connects only to the configured
+IPv4 gateway address. HTTPS verifies the gateway certificate using `host`;
+credentials arrive through stdin and never appear in command-line arguments.
+It sends one CONNECT, records the HTTP status and closes the connection without
+sending destination TLS or application data. It does not follow redirects,
+retry, select another session, read the response body or change routing.
+Environment proxy settings are not used.
+
+Exit zero means the gateway returned a 2xx CONNECT response. Exit one preserves
+a failed observation; exit two indicates invalid input or an unusable output
+path. SOCKS5 is explicitly unsupported by this diagnostic. The report records
+the last stage and distinguishes gateway TCP, gateway TLS, response timeout,
+malformed response and proxy HTTP-status failures. A disposable process bounds
+the entire check by the requested deadline, followed by bounded cleanup. A
+timeout during a write or response wait leaves delivery uncertain; it does not
+authorize retrying the operation automatically.
+
+The output directory must be new, outside the source checkout. The directory
+has mode `0700` and `report.json` has mode `0600`. Raw response headers, reason
+phrases, bodies, credentials and exception text are omitted. Keep provider
+diagnostics and session choices in private evidence alongside this report.
+
+Gateway acceptance does not establish the egress namespace's route, country,
+DNS operation, destination TLS, future availability or native Safari behavior.
+Follow it with the separate route check below after router initialization.
+A DNS failure in that check may originate from the proxy rejecting the DNS
+service's CONNECT. Compare the retained router log and gateway observation
+before attributing it to the DNS service or device. A session that pins an
+unavailable peer can fail even while the gateway and local tunnel remain up.
+
 ### Check the upstream route before browsing
 
 An available TUN interface can coexist with failed upstream connections. Run

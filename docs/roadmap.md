@@ -47,6 +47,10 @@ check native rendering at each stage before adopting an optimization.
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
       single successful page or one failure as proof of the cause.
+      Use the optional [gateway preflight](../runtime/proxy/README.md#check-gateway-acceptance-before-boot)
+      before boot and the initialized-namespace route check before/after an
+      external sequence. A later successful replacement session does not change
+      the original failed browser or network result.
 - [ ] Resolve periodic clock-offer timeouts under slow native inspection while
       preserving once-only requests and recorded failure outcomes. The separate
       30-second offer timeout has accepted native replies taking 20.0 and 5.6

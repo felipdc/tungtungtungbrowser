@@ -119,6 +119,12 @@ application data, so keep these artifacts outside the source repository.
 Python callers can use `Guest().logs(seconds=10, process='MobileSafari')`
 from `tungtungtungbrowser.guest` to receive the native result directly.
 
+Capture lifecycle events while the failure is happening. Two process snapshots
+can establish that a PID/start-time identity disappeared, but do not establish
+whether it crashed, was deliberately replaced or exited normally. A later live
+log request cannot recover the intervening events. Keep process identity,
+native termination reports, request timings and rendered-page evidence separate.
+
 ## Python API and touch input
 
 An optional [calibrated native tap helper](native-touch-helper.md) can be
@@ -358,6 +364,47 @@ cores and reached the 6.5 GiB memory limit, recording 1,078 memory-limit events
 and no OOM kills. It included fixed display captures and two brief host memory
 inspection reads. This reinforces the need to measure sustained browsing beyond
 the local diagnostic window before qualifying a smaller memory limit.
+
+A later foreground-only repeat on 2026-11-05 completed three distinct default
+URL opens in the same Safari process. Requests were acknowledged in 0.65, 1.40
+and 0.59 seconds; the corresponding local callbacks arrived in 17.14, 11.24 and
+10.82 seconds. Both workers, the expected canvas hash and WebGL checks passed
+on each page. All six 30- and 60-second captures showed the correct saved
+observation identifier and canvas. Sequential database/WAL copies again showed
+saved tabs increasing from ten to thirteen. This is bounded consecutive-use
+evidence; the default open path still accumulates tabs.
+
+The same run retained a failed cold result: foreground Safari was verified at
+220.4 seconds, but the first local callback arrived at 342.2 seconds from boot
+and its shared worker exceeded the 15-second diagnostic deadline. WebKit
+content, networking and graphics process identities differed between the
+snapshots before navigation and after that failure. Those snapshots do not
+identify why the processes were replaced or establish that replacement caused
+the worker timeout.
+
+Its first external page rendered in the paired captures at 30 and 60 seconds.
+The second was still blank at 60 seconds. A separate later QMP/native/QMP
+observation, starting 261.3 seconds after the original navigation, showed the
+expected content while retaining Safari's process identity. No navigation was
+repeated. Preserve the failed early readiness observation alongside the later
+completion; it does not establish prompt or consistent external browsing.
+
+The 300-second warm-navigation resource window averaged 2.01 CPU cores and
+sampled a 6.19-GiB memory peak. The following 240-second external-browsing window
+averaged 1.77 cores, reached the 6.5-GiB container limit and recorded 337
+`memory.events max` increments without an OOM or OOM kill. These measurements
+include the diagnostic activity in each window. They do not qualify a lower
+memory limit or a resource improvement, particularly with the failed cold and
+external-page outcomes retained.
+
+For a local diagnostic sequence, attribute each callback to the exact requested
+page before using its timestamp. The probe server publishes `request.json`
+before `observations.json`; its saved request headers include the `Referer`.
+A newly created observation can still belong to a previous navigation that
+finished late. Reject missing, duplicated or mismatched attribution rather than
+counting any new file as the current page's success. Record an expired wait as
+an expired wait, without a callback-arrival timestamp. This is diagnostic-page
+evidence, not a general network-interception API or proof of displayed pixels.
 
 ## Transport failures
 
