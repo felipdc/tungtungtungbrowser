@@ -105,7 +105,7 @@ pending waits. Cleanup problems are retained in `page.cleanup_errors` and
 | `expect_response(predicate, timeout=30)` | Equivalent response waiter; `waiter.value` is available after the context exits. |
 | `response.body()`, `.text()`, `.json()` | Wait for `loadingFinished`, then retrieve the native body. Failure, eviction, redirect replacement and destroyed page processes are errors. Default body limit is 16 MiB. Text defaults to UTF-8; pass `encoding` explicitly for other encodings. |
 | `reload()` | One native WebKit reload request. Completion does not mean the page is ready. |
-| `goto(url)` | Uses the supplied `Browser`'s verified native address-bar path in the inspected foreground Safari application. Native input is not retried. Follow it with a URL/selector condition. This path still has native accessibility failures. |
+| `goto(url)` | Uses the supplied `Browser`'s verified native address-bar path in the inspected foreground Safari application. Native input is not retried. Follow it with a URL/selector condition. The optional [native focus reader](native-focus.md) reads the editing field without a whole-tree query. Initial focus and foreground verification can still fail. |
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
 
 For application JSON, register a suitably narrow predicate, trigger the action,

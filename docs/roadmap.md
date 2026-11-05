@@ -254,8 +254,12 @@ to an existing tab, DOM serialization, CSS/XPath lookup, attached/detached and U
 waits, bounded delays, request/response expectations and complete response bodies.
 Native large-document reads and application JSON capture passed after replacing
 a stalled WebSocket forwarding path with a direct stream. A subsequent native
-address-field query failed on the next navigation. The complete workflow and the
-broader contracts below remain open; selector clicks are not implemented yet.
+address-field query failed on the next navigation. An optional
+[native focus reader](native-focus.md) subsequently passed two consecutive
+external navigations with CSS/XPath lookup, HTML, response bodies, screenshots
+and cleanup in one warm session. Initial focus and foreground verification
+remain possible failure points. The complete workflow and the broader contracts
+below remain open; selector clicks are not implemented yet.
 
 - [ ] **Original response HTML:** retrieve the main document response body
       before DOM parsing/loading completes, including URL, status, headers,

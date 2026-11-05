@@ -60,7 +60,8 @@ class Browser:
     serialized; navigation requests never assert that page content is ready.
     """
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
-                 qmp_socket=None, display_timeout=15, touch_helper_sha256=None):
+                 qmp_socket=None, display_timeout=15, touch_helper_sha256=None,
+                 address_field_reader=None):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         if guest is not None and touch_helper_sha256 is not None:
@@ -69,6 +70,9 @@ class Browser:
         self.input_settle = input_settle
         self.qmp_socket = qmp_socket
         self.display_timeout = display_timeout
+        if address_field_reader is not None and not callable(address_field_reader):
+            raise ValueError('address_field_reader must be callable')
+        self.address_field_reader = address_field_reader
         self._lock = threading.RLock()
 
     def health(self):
@@ -182,6 +186,22 @@ class Browser:
                     'method': method, 'navigation_verified': False}
 
     def _address_field(self, foreground, *, require_editing=True):
+        if self.address_field_reader is not None:
+            field = self.address_field_reader(foreground['pid'])
+            if field is not None:
+                if (not isinstance(field, dict) or field.get('source') != 'ax_first_responder'
+                        or type(field.get('pid')) is not int or field['pid'] != foreground['pid']):
+                    raise GuestError('Cannot verify Safari focused-field ownership')
+                if field.get('identifier') == 'URL':
+                    if type(field.get('traits')) is not int or field['traits'] < 0:
+                        raise GuestError('Safari focused-field editing state is unavailable')
+                    if require_editing and not field['traits'] & _AX_IS_EDITING:
+                        raise GuestError('Safari address field is not editing; navigation not submitted')
+                    return field
+            if require_editing:
+                raise GuestError('Safari address field is not focused; navigation not submitted')
+            # Command-L can reveal an unfocused URL field. Only this initial
+            # lookup uses the native tree to find a frame for one focus attempt.
         for attempt in range(2):
             tree = self.guest.call('ui.tree', max_elements=30, visible_only=True, limit=30)
             if tree.get('source') != 'ax' or tree.get('pid') != foreground.get('pid'):

@@ -199,6 +199,10 @@ automatically. Live Safari validation is still required. The controller uses
 native interfaces without injected page scripts or JavaScript property
 replacements.
 
+An optional [native focus reader](docs/native-focus.md) verifies the editing
+address field after keyboard layout changes, reducing whole-tree accessibility
+queries during tab reuse. It has a separate native build and installer.
+
 The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
 attached/detached selector waits and native request/response observation, including
 response bodies. It has a separate native bridge build and installer. Request
