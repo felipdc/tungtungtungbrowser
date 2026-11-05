@@ -198,6 +198,23 @@ showed collection in progress; the 30-second capture showed the matching saved
 observation, and the 60-second capture was identical. These are distinct
 measures of control, page execution and sampled visual completion.
 
+Cold foreground verification took 264.6 seconds. The first cold page delivered
+its diagnostic results at 353.7 seconds from launch; its captured canvas was
+correct, but the screen still showed collection in progress. Foreground timing
+therefore does not establish a completed first page within the approximate
+300-second target. Comparing the returned crash inventory with the immutable
+parent found one added report and no changed entries; the addition carried an
+older boot's panic identity. No new current-boot crash was found in that
+inventory. The guest subsequently stopped cleanly in 7.4 seconds.
+
+The 420-second cold, 300-second warm and 600-second sequence/resource windows
+averaged 2.36, 1.97 and 1.80 host CPU cores respectively. Their sampled memory
+peaks were 6.42, 6.43 and 6.43 GiB, with zero memory-limit or OOM events. These
+different workloads and tracing intervals do not form an optimization
+comparison. Memory remains close to the 6.5 GiB cap; a smaller cap is not
+qualified. A separate [untouched-browser CPU observation](qemu-wfe.md#cpu-use-with-a-settled-warm-page)
+identifies the busiest guest CPU threads for further profiling.
+
 This run did not reproduce the earlier blank-QMP/native-completed disagreement.
 That failure remains unresolved. The earlier sequence included address-field
 focus and tab reuse, whereas these were all default URL opens; tracing also
