@@ -276,6 +276,11 @@ ordering problem without sending a page command. Failed handoffs record a fixed
 XPC error category or acknowledgement timeout in the bridge log; they do not
 restart the service or change inspection preferences.
 
+The queued-client build subsequently opened multiple native sessions on the
+same guest boot, but a later handoff still failed with `connection_interrupted`.
+Keep that later failure alongside the successful connections: this change does
+not yet qualify repeatable cold or warm Inspector availability.
+
 When WebKit reports a newly paused target, the SDK now waits for the native
 `Target.resume` acknowledgement. A rejection or missing reply fails the session
 without replaying the command. Page readiness is not signalled before that

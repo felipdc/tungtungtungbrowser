@@ -28,11 +28,15 @@ where they preserve native Safari behavior. Optimizations now need a failure or
 measured bottleneck in this API workflow; the observations below remain evidence,
 not prerequisites that must all be solved before API work starts.
 
-The latest [paired-capture trial](inspector-api.md#paired-captures-after-warm-navigation)
-completed native navigation, DOM/network reads and automatic cleanup. Both guest
-and host captures rendered the local fixture, but both showed black content on
-the external document. Treat native focus failures
-and rendered-page readiness as the immediate warm-workflow reliability issues.
+The [paired-capture trials](inspector-api.md#paired-captures-after-warm-navigation)
+have completed native navigation, DOM/network reads and automatic cleanup, while
+also retaining failures. Both guest and host captures rendered the local fixture,
+but both showed black content on an external document. Treat native focus,
+repeatable tab creation and rendered-page readiness as the immediate warm-workflow
+reliability issues. A later run also exposed native tab reuse, a stale blank-page
+listing after an explicit new-tab action, and a failed Inspector handoff after
+earlier successful connections. Neither the experimental process launcher nor
+the queued-client handoff is a general startup-reliability claim.
 Do not count successful DOM conditions or screenshot file creation as a visual
 pass. Retain the roughly 300-second cold-start budget while working on these
 failures; reducing the startup number is not the current optimization target.
