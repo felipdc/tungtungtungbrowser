@@ -12,6 +12,16 @@ can enable both switches when reading a tree. Inspecting the tree first can
 therefore change the state being investigated. The switches are system-wide;
 their values do not identify which application or client enabled them.
 
+The pinned Icli implementation deliberately keeps the switches enabled between
+queries until process exit or an explicit `icli_ax_restore_switches()` call.
+Its restoration behavior does not depend on whether a flat query was truncated.
+The pinned daemon's [flat interface handler](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI%2BInput.swift)
+calls `uiElements` under an interface lock but does not restore the switches at
+that handler's return. This is a concrete path to investigate when a later
+mobile-user sample differs from a helper's earlier before/after samples; it
+does not establish which operation caused an observed change. Compare samples
+under the same user identity and boot, and account for every intervening query.
+
 ## Build and execute
 
 On Linux, use Clang, the Mach-O LLD linker and `ldid`:

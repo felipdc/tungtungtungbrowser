@@ -51,6 +51,7 @@ def session_fixture(**options):
     session.target_id = 'page-a'
     session._targets.add('page-a')
     session._inspector = NativeProtocolFixture(session)
+    session._attached = True
     session._inspector.teardown_inspector_socket = AsyncMock()
     session._inspector.close = AsyncMock()
     return session

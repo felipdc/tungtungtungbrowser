@@ -37,6 +37,8 @@ class NativeFixture:
             return {'events': 2, 'normalized': False, 'finger_down': False, 'duration_ms': 50}
         if method == 'input.paste' and not self.drop_text:
             self.address_value = params['text']
+        if method == 'input.key':
+            return {'key': params['name'], 'dispatched': True}
         if method == 'ui.tree':
             if self.address_trees:
                 tree = self.address_trees.pop(0)
@@ -124,6 +126,55 @@ class BrowserContractTest(unittest.TestCase):
         self.assertFalse(result['navigation_verified'])
         self.assertIn(('input.paste', {'text': 'https://example.com/'}), guest.calls)
         self.assertNotIn('apps.open_url', [method for method, _ in guest.calls])
+
+    def test_expected_tab_url_and_pid_guard_navigation_before_text(self):
+        for expected_url, expected_pid in [('https://other.invalid/', 301),
+                                           ('https://example.org/', 302)]:
+            guest = NativeFixture()
+            with self.assertRaises(GuestError):
+                Browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
+                    expected_url=expected_url, expected_pid=expected_pid)
+            self.assertNotIn('input.paste', [m for m, _ in guest.calls])
+            self.assertNotIn('apps.open_url', [m for m, _ in guest.calls])
+        guest = NativeFixture()
+        Browser(guest=guest, input_settle=0).goto('https://next.invalid/', reuse_tab=True,
+            expected_url='https://example.org/', expected_pid=301)
+        self.assertEqual(guest.calls[-1], ('input.key', {'name': 'return'}))
+
+    def test_guarded_navigation_never_opens_another_tab_on_foreground_mismatch(self):
+        guest = NativeFixture(foreground='com.example.notes')
+        with self.assertRaises(GuestError):
+            Browser(guest=guest).goto('https://next.invalid/', reuse_tab=True,
+                                    expected_url='https://example.org/')
+        self.assertFalse(any(m.startswith('input.') or m == 'apps.open_url' for m, _ in guest.calls))
+
+    def test_tab_close_verifies_url_sends_one_key_and_does_not_claim_disappearance(self):
+        guest = NativeFixture()
+        result = Browser(guest=guest, input_settle=0).close_tab(
+            expected_url='https://example.org/', expected_pid=301)
+        self.assertFalse(result['tab_closed_verified'])
+        self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+w'})), 1)
+        for expected_url, expected_pid in [('https://other.invalid/', 301),
+                                           ('https://example.org/', 302)]:
+            guest = NativeFixture()
+            with self.assertRaises(GuestError):
+                Browser(guest=guest, input_settle=0).close_tab(
+                    expected_url=expected_url, expected_pid=expected_pid)
+            self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    def test_tab_close_uncertain_key_result_is_not_repeated(self):
+        guest = NativeFixture()
+        original = guest.call
+        def call_once(method, **params):
+            result = original(method, **params)
+            if method == 'input.key' and params['name'] == 'cmd+w':
+                raise GuestError('reply lost after input')
+            return result
+        guest.call = call_once
+        with self.assertRaises(GuestError):
+            Browser(guest=guest, input_settle=0).close_tab(
+                expected_url='https://example.org/', expected_pid=301)
+        self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+w'})), 1)
 
     def test_other_or_unverified_foreground_never_receives_url_typing(self):
         for foreground, verified in [('com.example.notes', True), ('com.apple.mobilesafari', False)]:

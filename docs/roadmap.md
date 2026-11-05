@@ -279,6 +279,10 @@ below remain open; selector clicks are not implemented yet.
 - [ ] **Owned sessions:** create, attach and close a session with explicit tab,
       transport and event-subscription ownership. Verify cleanup on success,
       timeout, navigation failure and caller cancellation.
+      The experimental `new_tab_url` option now creates a uniquely identified
+      bootstrap tab and verifies its disappearance on cleanup. Local protocol
+      tests cover tab preservation, wrong-active-tab rejection, duplicate URLs,
+      uncertain actions and cancellation; repeated native qualification remains.
 - [ ] **`waitForTimeout`:** provide a bounded, cancellable delay in a documented
       time unit. Keep condition-based waits available for deterministic flows.
 - [ ] **`waitForNetworkRequest`:** wait for requests by URL, method, resource

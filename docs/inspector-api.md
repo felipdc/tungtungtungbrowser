@@ -2,7 +2,7 @@
 
 `InspectorSession` adds rendered HTML, CSS/XPath lookup, condition waits and
 request/response observation to the native `Browser` controller. It attaches to
-one existing Safari tab. This is an experimental API, not a complete Playwright
+one existing Safari tab or creates and owns a new bootstrap tab. This is an experimental API, not a complete Playwright
 or WebDriver replacement. Selector clicks, frame-scoped locators, visibility
 waits, request modification and reliable repeated navigation remain unfinished.
 
@@ -68,7 +68,7 @@ pairing/service-start path because the native bridge already owns an open
 Inspector service. No upstream source is vendored. Its GPL license remains
 applicable; see [third-party notices](../THIRD_PARTY_NOTICES.md).
 
-## An owned session
+## Attach to an existing tab
 
 Run the controller on the VM host. Set `TTT_PAGE_URL` to the exact URL of an
 already open Safari tab. If `url` is omitted, exactly one inspectable Safari tab
@@ -107,6 +107,54 @@ on close. Closing detaches inspection, releases the native socket and cancels
 pending waits. Cleanup problems are retained in `page.cleanup_errors` and
 `page.transport.failure`; inspect those when assessing a workflow's success.
 
+## Create and close an owned tab
+
+The experimental `new_tab_url` option opens a new native Safari tab and owns its
+cleanup. Safari must already be warmed and verified in the foreground. Supply a
+static HTTP(S) bootstrap page you control, reachable by the guest, with no URL
+fragment or redirect. The [portable fixture](api-fixture.md) can serve this page.
+The SDK appends a unique fragment, verifies that a new tab ID appeared while the
+existing tabs remained, and attaches native inspection. Bootstrap requests occur
+before attachment; register expectations before the subsequent `goto` to capture
+the actual destination's traffic.
+
+```python
+async with InspectorSession(
+    browser=browser,
+    new_tab_url=os.environ['TTT_BOOTSTRAP_URL'],
+    timeout=90,
+) as page:
+    async with page.expect_response(os.environ['TTT_DESTINATION_URL'], timeout=90) as response:
+        await page.goto(os.environ['TTT_DESTINATION_URL'])
+    await page.wait_for_selector('body', timeout=90)
+    rendered_html = await page.content()
+    original_html = await response.value.text(timeout=90)
+    await page.screenshot(os.environ['TTT_SCREENSHOT_PATH'])
+
+assert page.tab_cleanup['status'] in {'closed', 'already_absent'}
+assert not page.cleanup_errors
+```
+
+Navigation checks a fresh tab listing and the inspected document URL, then the
+native editing address field before replacing its text. Duplicate URLs, a changed
+Safari PID, a different active tab or an unverified address field cause failure.
+The exact full URL must match; the SDK does not guess an identity from a title,
+shortened address display or matching hostname. Keep one controller per guest
+and avoid manual tab switches while an operation is in flight.
+
+On exit, inspection is detached first. The SDK checks the owned tab's unique URL
+and the native active address field, sends Command-W once, and waits for that tab
+ID to disappear while preserving the other listed tabs. `tab_cleanup` records the
+outcome. Failed or uncertain cleanup raises `InspectorError` after releasing the
+connection; if the body already raised, that original exception is preserved with
+a cleanup note. Concurrent close calls share one cleanup task. Cancellation joins
+an already dispatched operation; it does not replay input. An uncertain creation
+without proven tab ownership is reported as `unknown` and no tab is closed.
+
+This owns one tab and its inspection resources, not a separate browser profile.
+Cookies and other site data are shared with the running Safari instance. These
+lifecycle contracts have local protocol tests; native qualification is ongoing.
+
 ## Available operations
 
 | Operation | Behavior and limits |
@@ -120,7 +168,7 @@ pending waits. Cleanup problems are retained in `page.cleanup_errors` and
 | `expect_response(predicate, timeout=30)` | Equivalent response waiter; `waiter.value` is available after the context exits. |
 | `response.body()`, `.text()`, `.json()` | Wait for `loadingFinished`, then retrieve the native body. Failure, eviction, redirect replacement and destroyed page processes are errors. Default body limit is 16 MiB. Text defaults to UTF-8; pass `encoding` explicitly for other encodings. |
 | `reload()` | One native WebKit reload request. Completion does not mean the page is ready. |
-| `goto(url)` | Uses the supplied `Browser`'s verified native address-bar path in the inspected foreground Safari application. Native input is not retried. Follow it with a URL/selector condition. The optional [native focus reader](native-focus.md) reads the editing field without a whole-tree query. Initial focus and foreground verification can still fail. |
+| `goto(url)` | Verifies that the inspected tab has a unique URL and that the native active editing field contains that exact URL, then uses the supplied `Browser`'s address-bar path. Native input is not retried. Follow it with a URL/selector condition. The optional [native focus reader](native-focus.md) avoids a whole-tree query. Initial focus and foreground verification can still fail. |
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
 
 For application JSON, register a suitably narrow predicate, trigger the action,

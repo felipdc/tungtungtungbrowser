@@ -129,7 +129,7 @@ class Browser:
             return {**result, 'browser': SAFARI, 'requested': True,
                     'visual_readiness_verified': False, 'navigation_verified': False}
 
-    def goto(self, url, *, reuse_tab=False):
+    def goto(self, url, *, reuse_tab=False, expected_url=None, expected_pid=None):
         """Request navigation through native Safari URL opening.
 
         Experimental tab reuse uses native HID events and address-field
@@ -137,6 +137,13 @@ class Browser:
         instead of receiving text. Neither path asserts that content loaded.
         """
         url = web_url(url)
+        if expected_url is not None:
+            web_url(expected_url)
+            if not reuse_tab:
+                raise ValueError('An expected URL requires tab reuse')
+        if expected_pid is not None:
+            if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647 or not reuse_tab:
+                raise ValueError('An expected PID requires tab reuse and a valid process ID')
         with self._lock:
             self.unlock()
             foreground = self.guest.call('apps.foreground') if reuse_tab else None
@@ -149,28 +156,11 @@ class Browser:
                 pid = foreground.get('pid')
                 if type(pid) is not int or not 1 < pid <= 2147483647:
                     raise GuestError('Cannot verify Safari process identity; native input not sent')
-                self.guest.call('input.key', name='cmd+l')
-                time.sleep(self.input_settle)
-                field = self._address_field(foreground, require_editing=False)
-                if not field['traits'] & _AX_IS_EDITING:
-                    # Command-L can reveal the field without making it editable.
-                    # Its center coordinates become zero in some editing states;
-                    # use the verified field's frame for this one focus attempt.
-                    frame = field.get('frame', {})
-                    if not isinstance(frame, dict):
-                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
-                    values = [frame.get(key) for key in ('x', 'y', 'width', 'height')]
-                    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                                and math.isfinite(v) for v in values)
-                            or min(values[:2]) < 0 or min(values[2:]) <= 0):
-                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
-                    x, y, width, height = values
-                    center = (x + width / 2, y + height / 2)
-                    if not all(math.isfinite(v) for v in center):
-                        raise GuestError('Safari address field has invalid focus geometry; text not sent')
-                    self.guest.tap(*center)
-                    time.sleep(self.input_settle)
-                    self._address_field(foreground)
+                if expected_pid is not None and pid != expected_pid:
+                    raise GuestError('Safari process changed; navigation not submitted')
+                field = self._focus_address_field(foreground)
+                if expected_url is not None and field.get('value') != expected_url:
+                    raise GuestError('Active Safari tab does not contain the expected URL; navigation not submitted')
                 self.guest.call('input.key', name='cmd+a')
                 time.sleep(self.input_settle)
                 self.guest.call('input.paste', text=url)
@@ -180,10 +170,58 @@ class Browser:
                 self.guest.call('input.key', name='return')
                 method = 'native_address_bar'
             else:
+                if expected_url is not None or expected_pid is not None:
+                    raise GuestError('Expected Safari tab is not in the foreground; navigation not submitted')
                 self.guest.open(url)
                 method = 'native_open_url'
             return {'url': url, 'browser': SAFARI, 'requested': True,
                     'method': method, 'navigation_verified': False}
+
+    def _focus_address_field(self, foreground):
+        self.guest.call('input.key', name='cmd+l')
+        time.sleep(self.input_settle)
+        field = self._address_field(foreground, require_editing=False)
+        if not field['traits'] & _AX_IS_EDITING:
+            # Command-L can reveal the field without making it editable. Only
+            # this verified native field supplies geometry for one focus tap.
+            frame = field.get('frame', {})
+            if not isinstance(frame, dict):
+                raise GuestError('Safari address field has invalid focus geometry; text not sent')
+            values = [frame.get(key) for key in ('x', 'y', 'width', 'height')]
+            if (not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                        and math.isfinite(v) for v in values)
+                    or min(values[:2]) < 0 or min(values[2:]) <= 0):
+                raise GuestError('Safari address field has invalid focus geometry; text not sent')
+            x, y, width, height = values
+            center = (x + width / 2, y + height / 2)
+            if not all(math.isfinite(v) for v in center):
+                raise GuestError('Safari address field has invalid focus geometry; text not sent')
+            self.guest.tap(*center)
+            time.sleep(self.input_settle)
+            field = self._address_field(foreground)
+        return field
+
+    def close_tab(self, *, expected_url, expected_pid):
+        """Send Command-W once after verifying the active tab's full editing URL.
+
+        The caller must separately establish unique tab ownership and verify its
+        disappearance. A failure never closes another tab or repeats the input.
+        """
+        web_url(expected_url)
+        if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
+            raise ValueError('Closing a tab requires a valid expected process ID')
+        with self._lock:
+            foreground = self.guest.call('apps.foreground')
+            if (not isinstance(foreground, dict) or foreground.get('verified') is not True
+                    or foreground.get('bundle_id') != SAFARI
+                    or type(foreground.get('pid')) is not int or foreground['pid'] != expected_pid):
+                raise GuestError('Expected Safari tab is not in the foreground; tab not closed')
+            if self._focus_address_field(foreground).get('value') != expected_url:
+                raise GuestError('Active Safari tab does not contain the expected URL; tab not closed')
+            result = self.guest.call('input.key', name='cmd+w')
+            if not isinstance(result, dict) or result.get('key') != 'cmd+w' or result.get('dispatched') is not True:
+                raise GuestError('Native tab close was not acknowledged; outcome is unknown')
+            return {'requested': True, 'method': 'native_close_tab', 'tab_closed_verified': False}
 
     def _address_field(self, foreground, *, require_editing=True):
         if self.address_field_reader is not None:

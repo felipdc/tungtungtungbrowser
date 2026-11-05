@@ -9,6 +9,7 @@ import json
 import time
 import uuid
 
+from .guest import web_url
 from .inspector_transport import InspectorError, InspectorTransport
 
 
@@ -138,12 +139,13 @@ class _Expectation:
 class InspectorSession:
     """Own native inspection of one existing Safari tab.
 
-    A session releases its subscriptions and connection on exit. It never closes
-    an existing tab, clears site state, or retries an action. The optional native
+    A session releases its subscriptions and connection on exit. With new_tab_url
+    it also owns the newly opened tab. It never closes an existing tab, clears
+    site state, or retries an action. The optional native
     Browser provides navigation/input/screenshot methods; inspection reads use
     WebKit's DOM and Network domains, with no Runtime.evaluate calls.
     """
-    def __init__(self, *, transport=None, browser=None, url=None, timeout=30,
+    def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, timeout=30,
                  max_requests=512, max_events=128, max_metadata_bytes=4 * 1024**2):
         self.timeout = _timeout(timeout)
         for limit in (max_requests, max_events):
@@ -151,6 +153,19 @@ class InspectorSession:
                 raise ValueError('Retention limits must be integers between 1 and 4096')
         self.transport = transport or InspectorTransport(timeout=timeout)
         self.browser, self.url = browser, url
+        if new_tab_url is not None:
+            web_url(new_tab_url)
+            if browser is None or url is not None or '#' in new_tab_url:
+                raise ValueError('new_tab_url requires a Browser, no url filter, and no existing fragment')
+            # A caller-controlled static bootstrap page avoids a third-party
+            # dependency. Its fragment identifies this one native open request.
+            self.url = new_tab_url + '#ttt-session-' + uuid.uuid4().hex
+        self.new_tab_url = new_tab_url
+        self.tab_cleanup = {'owned': False, 'status': 'not_owned'}
+        self._tab_open_requested = False
+        self._create_app = None
+        self._create_before = set()
+        self._close_task = None
         self.max_requests = max_requests
         if type(max_metadata_bytes) is not int or not 1024 <= max_metadata_bytes <= 64 * 1024**2:
             raise ValueError('max_metadata_bytes must be between 1 KiB and 64 MiB')
@@ -166,6 +181,7 @@ class InspectorSession:
         self._id = 0
         self._session_id = str(uuid.uuid4()).upper()
         self._inspector = self._app = self._page = self.target_id = None
+        self._attached = False
         self._send_lock = asyncio.Lock()
         self._native_lock = asyncio.Lock()
         self._native_tasks = set()
@@ -206,6 +222,8 @@ class InspectorSession:
                         (f': {type(error).__name__}: {error}' if error is not None else '')))
                 await self._inspector.connect()
                 await self._inspector._get_connected_applications()
+                if self.new_tab_url is not None:
+                    await self._create_tab()
                 # Listings are asynchronous. Wait for an unambiguous matching tab;
                 # never silently choose another tab on an explicitly requested URL.
                 while True:
@@ -217,24 +235,102 @@ class InspectorSession:
                     if len(matches) > 1:
                         raise InspectorError('More than one Safari tab matches; specify a unique URL')
                     if matches:
+                        if self.tab_cleanup['owned'] and (matches[0][0].id_, matches[0][1].id_) != (
+                                self.tab_cleanup['app_id'], self.tab_cleanup['page_id']):
+                            raise InspectorError('The created tab identity changed before attachment')
                         self._app, self._page = matches[0]
                         if self._page.web_connection_id:
                             raise InspectorError('Safari tab is already held by an Inspector connection')
                         break
                     self._check()
                     await asyncio.sleep(0.05)
+                self._attached = True  # A failed send may already have reached the service.
                 await self._inspector.setup_inspector_socket(self._session_id,
                     self._app.id_, self._page.id_, automatically_pause=False)
                 await self._target_ready.wait()
                 self._check()
                 await self._root_command('Target.setPauseOnStart', pauseOnStart=True)
                 return self
-        except BaseException:
-            await self.close()
+        except BaseException as error:
+            try:
+                await self.close()
+            except Exception as cleanup_error:
+                error.add_note(f'Session cleanup failed: {cleanup_error}')
             raise
 
-    async def __aexit__(self, *args):
-        await self.close()
+    async def __aexit__(self, kind, error, traceback):
+        try:
+            await self.close()
+        except Exception as cleanup_error:
+            if error is None:
+                raise
+            error.add_note(f'Session cleanup failed: {cleanup_error}')
+
+    async def _fresh_pages(self, app_id):
+        """Await a listing requested after subscription; normalize wire dict keys."""
+        queue = self._inspector.subscribe_listings()
+        try:
+            async with asyncio.timeout(self.timeout):
+                await self._inspector._forward_get_listing(app_id)
+                while await queue.get() != app_id:
+                    pass
+            if app_id not in self._inspector.connected_application:
+                raise InspectorError('Safari application disappeared while listing its tabs')
+            return {page.id_: page for page in self._inspector.application_pages.get(app_id, {}).values()
+                    if page.type_.value in ('WIRTypeWebPage', 'WIRTypeWeb')}
+        finally:
+            self._inspector.unsubscribe_listings(queue)
+
+    async def _create_tab(self):
+        foreground = await self._native(self.browser.guest.call, 'apps.foreground')
+        if (not isinstance(foreground, dict) or foreground.get('verified') is not True
+                or foreground.get('bundle_id') != 'com.apple.mobilesafari'
+                or type(foreground.get('pid')) is not int or foreground['pid'] <= 1):
+            raise InspectorError('Creating a tab requires warmed Safari in the verified foreground')
+        while True:
+            apps = [app for app in self._inspector.connected_application.values()
+                    if app.bundle == 'com.apple.mobilesafari' and app.pid == foreground['pid']]
+            if len(apps) == 1:
+                app = apps[0]
+                break
+            self._check()
+            await asyncio.sleep(0.05)
+        before = await self._fresh_pages(app.id_)
+        if any(page.web_url == self.url for page in before.values()):
+            raise InspectorError('The generated bootstrap URL is already open')
+        self._tab_open_requested = True
+        self._create_app, self._create_before = app, set(before)
+        self.tab_cleanup = {'owned': False, 'status': 'open_requested'}
+        await self._native(self.browser.goto, self.url)
+        while True:
+            pages = await self._fresh_pages(app.id_)
+            if self._claim_created_tab(pages):
+                return
+            self._check()
+            await asyncio.sleep(0.05)
+
+    def _claim_created_tab(self, pages):
+        matches = [page for page in pages.values() if page.web_url == self.url]
+        if len(matches) > 1:
+            raise InspectorError('More than one tab has the generated bootstrap URL')
+        if not matches:
+            return False
+        page = matches[0]
+        if page.id_ in self._create_before or not self._create_before.issubset(pages):
+            raise InspectorError('Native URL open did not preserve existing tabs and create a new tab')
+        self._app, self._page = self._create_app, page
+        self.tab_cleanup.update(owned=True, status='open', app_id=self._app.id_, page_id=page.id_)
+        return True
+
+    async def _unique_tab_url(self):
+        pages = await self._fresh_pages(self._app.id_)
+        page = pages.get(self._page.id_)
+        if page is None:
+            raise InspectorError('The inspected tab is no longer listed')
+        url = web_url(page.web_url)
+        if sum(candidate.web_url == url for candidate in pages.values()) != 1:
+            raise InspectorError('Multiple Safari tabs have this URL; native tab identity is ambiguous')
+        return url
 
     def _spawn(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -531,13 +627,20 @@ class InspectorSession:
     async def goto(self, url):
         if self.browser is None:
             raise InspectorError('Native navigation requires a Browser instance')
+        web_url(url)
+        expected_url = await self._unique_tab_url()
+        target, generation, document = await self._document()
+        if document['root'].get('documentURL') != expected_url:
+            raise DocumentChangedError('Tab listing and inspected document URL disagree')
         def navigate():
             with self.browser._lock:
+                self._same_document(target, generation)
                 foreground = self.browser.guest.call('apps.foreground')
                 if (foreground.get('verified') is not True or foreground.get('pid') != self._app.pid
                         or foreground.get('bundle_id') != 'com.apple.mobilesafari'):
                     raise InspectorError('The inspected Safari application is not the verified foreground app')
-                result = self.browser.goto(url, reuse_tab=True)
+                result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
+                                           expected_pid=self._app.pid)
                 if result.get('method') != 'native_address_bar':
                     raise InspectorError('Native navigation opened a different tab; inspected tab readiness is unknown')
                 return result
@@ -571,26 +674,94 @@ class InspectorSession:
         return await self._native(self.browser.screenshot, path, overwrite=overwrite)
 
     async def close(self):
-        if self._closed:
+        if self._close_task is None:
+            self._closed = True
+            self._fail('Inspector session closed')
+            self._close_task = asyncio.create_task(self._close())
+        cancellation = None
+        while True:
+            try:
+                await asyncio.shield(self._close_task)
+                break
+            except asyncio.CancelledError as error:
+                if self._close_task.cancelled():
+                    raise
+                # Repeated caller cancellation must not release ownership of a
+                # native close already in progress. The exchange stays bounded
+                # by its transport, and every close caller joins the same task.
+                cancellation = error
+            except Exception:
+                if cancellation is not None:
+                    raise cancellation
+                raise
+        if cancellation is not None:
+            raise cancellation
+
+    async def _close_owned_tab(self):
+        pages = await self._fresh_pages(self._app.id_)
+        if self._page.id_ not in pages:
+            self.tab_cleanup['status'] = 'already_absent'
             return
-        self._closed = True
-        self._fail('Inspector session closed')
+        if pages[self._page.id_].web_connection_id:
+            raise InspectorError('Owned tab is still held by an Inspector connection; tab not closed')
+        expected_url = web_url(pages[self._page.id_].web_url)
+        if sum(page.web_url == expected_url for page in pages.values()) != 1:
+            raise InspectorError('Multiple Safari tabs have this URL; owned tab cannot be safely closed')
+        other_ids = set(pages) - {self._page.id_}
+        self.tab_cleanup['status'] = 'close_started'
+        await asyncio.to_thread(self.browser.close_tab, expected_url=expected_url, expected_pid=self._app.pid)
+        self.tab_cleanup['status'] = 'close_requested'
+        async with asyncio.timeout(self.timeout):
+            while True:
+                after = await self._fresh_pages(self._app.id_)
+                if self._page.id_ not in after:
+                    if not other_ids.issubset(after):
+                        raise InspectorError('Another tab disappeared during owned-tab cleanup')
+                    self.tab_cleanup['status'] = 'closed'
+                    return
+                await asyncio.sleep(0.05)
+
+    async def _close(self):
         await asyncio.gather(*self._native_tasks, return_exceptions=True)
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self._tab_open_requested and not self.tab_cleanup['owned']:
+            # A timed-out open can have created the tab. Read back once after
+            # joining the native worker, without repeating the open operation.
+            try:
+                pages = await self._fresh_pages(self._create_app.id_)
+                self.tab_cleanup['reconciled_after_failed_creation'] = self._claim_created_tab(pages)
+            except Exception as error:
+                self.tab_cleanup['reconciliation_error'] = f'{type(error).__name__}: {error}'
+        async def cleanup(operation):
+            try:
+                await asyncio.wait_for(operation, 5)
+            except Exception as error:
+                self.cleanup_errors.append(f'{type(error).__name__}: {error}')
+        # Release native inspection before closing its page; the app's listing
+        # stream remains open so tab disappearance can still be verified.
+        if self._inspector is not None and self._attached:
+            await cleanup(self._send_outer('Target.setPauseOnStart', pauseOnStart=False))
+            await cleanup(self._inspector.teardown_inspector_socket(
+                self._session_id, self._app.id_, self._page.id_))
+        tab_error = None
+        if self.tab_cleanup['owned']:
+            try:
+                await self._close_owned_tab()
+            except Exception as error:
+                tab_error = error
+                self.tab_cleanup.update(status='failed', error=f'{type(error).__name__}: {error}')
+                self.cleanup_errors.append('Owned tab: ' + self.tab_cleanup['error'])
+        elif self._tab_open_requested:
+            tab_error = InspectorError('Native tab open was requested but ownership was not established; tab outcome is unknown')
+            self.tab_cleanup.update(status='unknown', error=str(tab_error))
+            self.cleanup_errors.append(str(tab_error))
         if self._inspector is not None:
-            async def cleanup(operation):
-                try:
-                    await asyncio.wait_for(operation, 5)
-                except Exception as error:
-                    self.cleanup_errors.append(f'{type(error).__name__}: {error}')
-            if self._app is not None and self._page is not None:
-                await cleanup(self._send_outer('Target.setPauseOnStart', pauseOnStart=False))
-                await cleanup(self._inspector.teardown_inspector_socket(
-                    self._session_id, self._app.id_, self._page.id_))
             await cleanup(self._inspector.close())
         await self.transport.close()
         self.responses.clear()
         self.retained_metadata_bytes = 0
+        if tab_error is not None:
+            raise InspectorError('Owned-tab cleanup did not complete; inspect tab_cleanup and cleanup_errors') from tab_error
