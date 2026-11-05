@@ -33,11 +33,19 @@ The build requires `clang-19`, `ld64.lld-19`, and Linux `ldid`. Override them wi
 `TTT_INSPECTOR_CLANG`, `TTT_INSPECTOR_LINKER`, and `TTT_INSPECTOR_LDID` when needed.
 It uses declarations rather than an Apple SDK. Keep the generated executable,
 manifest and deployment evidence outside this repository. The installer checks
-source and executable hashes, verifies upload readback, loads a uniquely named
-native service, and checks that its PID owns the bridge port. It refuses to
-replace a running bridge. Deployment is separate from ordinary VM startup.
-The service plist is retained in the deployment record; loading this optional
-service after a later guest reboot is currently an explicit deployment step.
+source and executable hashes, verifies upload readback, installs a uniquely named
+executable and native service, and checks that its PID owns the bridge port. It
+refuses to replace a running bridge. A later deployment can use the same build;
+files retained by an earlier stopped deployment are preserved. Use a new output
+directory for each deployment so its evidence remains separate.
+
+Deployment is separate from ordinary VM startup. After a guest reboot, run the
+installer again and verify its health result before creating an Inspector
+session. Merely reloading a saved service plist has not been qualified: in one
+native restart trial it reported a process but provided no listening port.
+A fresh deployment of the unchanged bridge binary passed its identity and
+health checks in that guest. The installer now avoids a second observed failure
+where the guest refused to rename an upload over an earlier executable.
 
 The optional protocol dependency is pymobiledevice3 at commit
 `776d601cec83b894c3ad0eeee8ab4db375a46e4a`. The small adapter bypasses its Lockdown

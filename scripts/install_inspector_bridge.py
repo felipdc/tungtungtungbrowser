@@ -56,7 +56,11 @@ def install(guest, data, digest, output, health_check):
     output.mkdir(mode=0o700, exist_ok=False, parents=True)
     token = uuid.uuid4().hex
     label = 'dev.tungtungtungbrowser.inspector-' + token
-    executable = '/private/var/root/ttt-inspector-bridge-v1-' + digest
+    # A stopped deployment can leave its executable behind across a guest boot.
+    # The guest's atomic rename refuses an existing destination. Give each
+    # deployment its own executable as well as its own launchd label; never
+    # overwrite a binary that another deployment may still have mapped.
+    executable = '/private/var/root/ttt-inspector-bridge-v1-' + digest + '-' + token
     plist = '/private/var/root/' + label + '.plist'
     log = '/private/var/root/' + label + '.log'
     report = {'status': 'installing', 'helper_sha256': digest, 'path': executable,
