@@ -19,8 +19,11 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {'': ('probe.html', 'text/html; charset=utf-8'),
           'display-sequence.html': ('display-sequence.html', 'text/html; charset=utf-8'),
+          'api-workflow.html': ('api-workflow.html', 'text/html; charset=utf-8'),
+          'api-fixture-data.json': ('api-fixture-data.json', 'application/json; charset=utf-8'),
           **{name: (name, 'text/javascript; charset=utf-8')
-             for name in ('probe-common.js', 'probe-worker.js', 'probe.js', 'display-sequence.js')}}
+             for name in ('probe-common.js', 'probe-worker.js', 'probe.js', 'display-sequence.js',
+                          'api-workflow.js')}}
 
 
 def publish_json(path, value):

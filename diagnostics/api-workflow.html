@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser API fixture</title>
+<style>
+  body { font: 18px system-ui; margin: 24px; color: #172334; background: #f7f9fc; }
+  button, a { display: block; box-sizing: border-box; padding: 16px; margin: 16px 0; }
+  button { width: 100%; font: inherit; }
+  [hidden] { display: none; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+  .covered { position: relative; }
+  .cover { position: absolute; inset: 0; display: grid; place-items: center; background: #ccd3dd; }
+</style>
+<script src="api-workflow.js" defer></script>
+<h1>Browser API fixture</h1>
+<p id="state">Original document response</p>
+<button id="load-data">Load fixture JSON</button>
+<button id="record-click">Record another click</button>
+<a id="next-page" href="api-workflow.html?page=2">Open the second page</a>
+<pre id="events">No input received</pre>
+<pre id="result">No response received</pre>
+<button id="disabled-button" disabled>Disabled control</button>
+<div class="covered">
+  <button id="covered-button">Covered control</button>
+  <div class="cover" id="cover">This control is covered</div>
+</div>
+<button id="hidden-button" hidden>Hidden control</button>
+<button>Control without an HTML ID</button>
+</html>

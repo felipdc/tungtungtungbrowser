@@ -111,6 +111,8 @@ pending waits. Cleanup problems are retained in `page.cleanup_errors` and
 For application JSON, register a suitably narrow predicate, trigger the action,
 then call `await waiter.value.json()`. Observation does not pause or modify XHR
 or fetch requests. Network interception/fulfillment remains on the roadmap.
+The [portable API fixture](api-fixture.md) provides a local page with distinct
+original/rendered HTML, delayed DOM conditions, XHR JSON and input event records.
 The original document body currently becomes available after the response
 finishes; streaming HTML before DOM parsing completes is not implemented.
 
