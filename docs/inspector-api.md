@@ -146,6 +146,39 @@ pending waits. Cleanup problems are retained in `page.cleanup_errors` and
 
 ## Create and close an owned tab
 
+The experimental `new_tab=True` option requests a blank Safari tab with native
+Command-T, verifies a new `about:blank` tab ID and preservation of the existing
+tabs, then attaches inspection before the first navigation. Supply the native
+`browser` configured with address-field readback as above. Safari must already
+be warmed and verified in the foreground. This mode does not need a bootstrap
+server. Local protocol tests cover the ownership and cleanup behavior, but the
+native end-to-end workflow is not qualified.
+
+```python
+async with InspectorSession(browser=browser, new_tab=True, timeout=90) as page:
+    async with page.expect_response(os.environ['TTT_DESTINATION_URL'], timeout=90) as response:
+        await page.goto(os.environ['TTT_DESTINATION_URL'])
+    await page.wait_for_selector('body', timeout=90)
+    rendered_html = await page.content()
+```
+
+An existing inspectable blank tab blocks creation before input: two blank tabs
+cannot be distinguished by their native editing addresses. Multiple newly
+appearing tabs or a missing input acknowledgement also prevent ownership from
+being claimed. The SDK sends Command-T once and reports an uncertain result;
+it does not retry the key or close an unowned tab. For a uniquely owned blank tab,
+the expected native editing address is exactly empty or `about:blank`.
+Navigation destinations still must be HTTP(S) URLs.
+
+In the first native trial, the initial inspection connection failed before
+input. A later attempt created a distinct blank tab and preserved the previous
+tab, but inspection initialization exceeded its deadline. Cleanup then failed
+on incomplete native address-field attributes. A subsequent read identified the
+address field and returned localized placeholder text as its value. That text
+is deliberately not treated as a verified empty address. No destination URL was
+submitted and tab closure was not established. This option remains experimental
+while native empty-field identification and initialization are being qualified.
+
 The experimental `new_tab_url` option opens a new native Safari tab and owns its
 cleanup. Safari must already be warmed and verified in the foreground. Supply a
 static HTTP(S) bootstrap page you control, reachable by the guest, with no URL

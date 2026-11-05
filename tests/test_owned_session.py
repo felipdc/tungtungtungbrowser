@@ -38,6 +38,15 @@ class TabFixture(NativeProtocolFixture):
 
     def native_call(self, method, **params):
         result = self.actual_call(method, **params)
+        if method == 'input.key' and params['name'] == 'cmd+t':
+            self.events.append('new_blank')
+            if self.open_mode != 'blank_no_tab':
+                self.pages['2'] = page(2, 'about:blank')
+                self.guest.address_value = ''
+            if self.open_mode == 'blank_multiple':
+                self.pages['3'] = page(3, 'about:blank')
+            if self.open_mode == 'blank_lost_reply':
+                raise InspectorError('New-tab reply lost')
         if method == 'apps.open_url':
             self.events.append('open')
             self.guest.address_value = params['url']
@@ -98,13 +107,70 @@ def fixture(**options):
     guest = NativeFixture()
     browser = Browser(guest=guest, input_settle=0)
     transport = SimpleNamespace(open=AsyncMock(return_value=SimpleNamespace()), close=AsyncMock())
-    session = InspectorSession(transport=transport, browser=browser, timeout=0.3,
-                               new_tab_url='http://fixture.invalid/bootstrap.html', **options)
+    bootstrap = {} if options.get('new_tab') else {'new_tab_url': 'http://fixture.invalid/bootstrap.html'}
+    session = InspectorSession(transport=transport, browser=browser, timeout=0.3, **bootstrap, **options)
     native = TabFixture(session, guest)
     return session, native, guest
 
 
 class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_blank_session_attaches_before_first_navigation_without_bootstrap_request(self):
+        session, native, guest = fixture(new_tab=True)
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                self.assertTrue(session.tab_cleanup['owned'])
+                self.assertEqual(session._page.web_url, 'about:blank')
+                self.assertEqual(native.events, ['new_blank', 'attach'])
+                await session.goto('https://destination.invalid/product')
+                self.assertEqual(native.pages['2'].web_url, 'https://destination.invalid/product')
+        self.assertEqual(native.events, ['new_blank', 'attach', 'detach', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(native.pages['1'].web_url, 'https://example.org/')
+        self.assertNotIn('apps.open_url', [method for method, _ in guest.calls])
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+
+    async def test_unused_blank_session_closes_its_verified_empty_address(self):
+        session, native, guest = fixture(new_tab=True)
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                pass
+        self.assertEqual(native.events, ['new_blank', 'attach', 'detach', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+
+    async def test_preexisting_blank_is_rejected_before_native_input(self):
+        for address in ('about:blank', ''):
+            session, native, guest = fixture(new_tab=True)
+            native.pages['1'].web_url = address
+            with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                with self.assertRaisesRegex(InspectorError, 'blank tab already exists'):
+                    await session.__aenter__()
+            self.assertFalse(native.events)
+            self.assertFalse(session.tab_cleanup['owned'])
+            self.assertFalse(any(method.startswith('input.') for method, _ in guest.calls))
+
+    async def test_ambiguous_missing_or_unacknowledged_blank_tab_never_replays_or_claims(self):
+        for mode in ('blank_multiple', 'blank_no_tab', 'blank_lost_reply'):
+            with self.subTest(mode=mode):
+                session, native, guest = fixture(new_tab=True)
+                native.open_mode = mode
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    with self.assertRaises((InspectorError, TimeoutError)):
+                        await session.__aenter__()
+                self.assertEqual(native.events, ['new_blank'])
+                self.assertFalse(session.tab_cleanup['owned'])
+                self.assertEqual(session.tab_cleanup['status'], 'unknown')
+                self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+t'})), 1)
+                self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    def test_blank_mode_rejects_conflicting_or_missing_control_before_use(self):
+        for options in ({'new_tab': 1}, {'new_tab': True},
+                        {'new_tab': True, 'browser': object()},
+                        {'new_tab': True, 'browser': Browser(), 'url': 'about:blank'},
+                        {'new_tab': True, 'browser': Browser(), 'new_tab_url': 'https://fixture.invalid/'}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                InspectorSession(**options)
+
     async def test_owned_workflow_attaches_before_navigation_and_preserves_original_tab(self):
         session, native, guest = fixture()
         with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):

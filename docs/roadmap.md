@@ -300,6 +300,9 @@ actionability.
       bootstrap tab and verifies its disappearance on cleanup. Local protocol
       tests cover tab preservation, wrong-active-tab rejection, duplicate URLs,
       uncertain actions and cancellation; repeated native qualification remains.
+      The experimental `new_tab=True` mode can attach to a newly created native
+      blank tab before navigation, without a bootstrap server. It refuses
+      ambiguous blank tabs and unacknowledged input; native qualification remains.
 - [ ] **`waitForTimeout`:** provide a bounded, cancellable delay in a documented
       time unit. Keep condition-based waits available for deterministic flows.
 - [ ] **`waitForNetworkRequest`:** wait for requests by URL, method, resource

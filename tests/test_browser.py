@@ -60,6 +60,46 @@ class NativeFixture:
 
 
 class BrowserContractTest(unittest.TestCase):
+    def test_new_tab_requires_exact_foreground_process_and_one_acknowledged_key(self):
+        guest = NativeFixture()
+        result = Browser(guest=guest).new_tab(expected_pid=301)
+        self.assertEqual(guest.calls, [('screen.unlock', {'timeout': 60}),
+                                      ('apps.foreground', {}), ('input.key', {'name': 'cmd+t'})])
+        self.assertTrue(result['requested'])
+        self.assertFalse(result['tab_created_verified'])
+        for guest, pid in [(NativeFixture(foreground='com.example.notes'), 301),
+                           (NativeFixture(verified=False), 301), (NativeFixture(), 302)]:
+            with self.assertRaises(GuestError):
+                Browser(guest=guest).new_tab(expected_pid=pid)
+            self.assertFalse(any(method.startswith('input.') for method, _ in guest.calls))
+
+    def test_new_tab_lost_or_invalid_acknowledgement_is_not_replayed(self):
+        for reply in [None, {'key': 'cmd+t', 'dispatched': False},
+                      {'key': 'cmd+w', 'dispatched': True}, GuestError('Lost reply')]:
+            guest = Mock()
+            guest.call.side_effect = [{'locked': False},
+                {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': 301}, reply]
+            with self.assertRaises(GuestError):
+                Browser(guest=guest).new_tab(expected_pid=301)
+            self.assertEqual(guest.call.call_count, 3)
+
+    def test_blank_expected_address_allows_only_empty_or_exact_blank_state(self):
+        for value in ['', 'about:blank', ' ', 'about:blank#other', 'https://other.invalid/']:
+            guest = NativeFixture()
+            guest.address_value = value
+            browser = Browser(guest=guest, input_settle=0)
+            if value in ('', 'about:blank'):
+                browser.goto('https://next.invalid/', reuse_tab=True,
+                             expected_pid=301, expected_url='about:blank')
+                self.assertEqual(guest.calls[-1], ('input.key', {'name': 'return'}))
+            else:
+                with self.assertRaises(GuestError):
+                    browser.goto('https://next.invalid/', reuse_tab=True,
+                                 expected_pid=301, expected_url='about:blank')
+                self.assertNotIn('input.paste', [method for method, _ in guest.calls])
+        with self.assertRaises(ValueError):
+            Browser(guest=NativeFixture()).goto('about:blank')
+
     def test_launch_preserves_native_foreground_result_without_navigation_or_polling(self):
         for native in [{'pid': 301, 'frontmost_verified': True},
                        {'pid': 0, 'frontmost_verified': False, 'warning': 'Foreground unknown'}]:

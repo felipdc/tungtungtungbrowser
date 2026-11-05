@@ -10,7 +10,7 @@ import time
 import uuid
 
 from .guest import web_url
-from .browser import _native_address_key
+from .browser import _expected_address, _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
 
 
@@ -138,15 +138,15 @@ class _Expectation:
 
 
 class InspectorSession:
-    """Own native inspection of one existing Safari tab.
+    """Own native inspection of one Safari tab.
 
-    A session releases its subscriptions and connection on exit. With new_tab_url
-    it also owns the newly opened tab. It never closes an existing tab, clears
+    A session releases its subscriptions and connection on exit. With new_tab
+    or new_tab_url it also owns the newly opened tab. It never closes an existing tab, clears
     site state, or retries an action. The optional native
     Browser provides navigation/input/screenshot methods; inspection reads use
     WebKit's DOM and Network domains, with no Runtime.evaluate calls.
     """
-    def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, timeout=30,
+    def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, new_tab=False, timeout=30,
                  max_requests=512, max_events=128, max_metadata_bytes=4 * 1024**2):
         self.timeout = _timeout(timeout)
         for limit in (max_requests, max_events):
@@ -154,6 +154,15 @@ class InspectorSession:
                 raise ValueError('Retention limits must be integers between 1 and 4096')
         self.transport = transport or InspectorTransport(timeout=timeout)
         self.browser, self.url = browser, url
+        if type(new_tab) is not bool:
+            raise ValueError('new_tab must be a boolean')
+        if new_tab:
+            if (browser is None or url is not None or new_tab_url is not None
+                    or not callable(getattr(browser, 'new_tab', None))):
+                raise ValueError('new_tab requires native Browser.new_tab and no URL or bootstrap filter')
+            self.url = 'about:blank'
+        self.new_tab = new_tab
+        self._blank_open_acknowledged = False
         if new_tab_url is not None:
             web_url(new_tab_url)
             if browser is None or url is not None or '#' in new_tab_url:
@@ -224,7 +233,7 @@ class InspectorSession:
                         (f': {type(error).__name__}: {error}' if error is not None else '')))
                 await self._inspector.connect()
                 await self._inspector._get_connected_applications()
-                if self.new_tab_url is not None:
+                if self.new_tab or self.new_tab_url is not None:
                     await self._create_tab()
                 # Listings are asynchronous. Wait for an unambiguous matching tab;
                 # never silently choose another tab on an explicitly requested URL.
@@ -298,13 +307,22 @@ class InspectorSession:
             self._check()
             await asyncio.sleep(0.05)
         before = await self._fresh_pages(app.id_)
+        if self.new_tab and any(_native_address_key(page.web_url) == 'about:blank' for page in before.values()):
+            raise InspectorError('An inspectable blank tab already exists; new blank-tab input not sent')
         if any(page.web_url == self.url for page in before.values()):
             raise InspectorError('The generated bootstrap URL is already open')
         self._tab_open_requested = True
         self._create_app, self._create_before = app, set(before)
         self.tab_cleanup = {'owned': False, 'status': 'open_requested',
                             'before_page_ids': sorted(before)}
-        await self._native(self.browser.goto, self.url)
+        if self.new_tab:
+            result = await self._native(self.browser.new_tab, expected_pid=app.pid)
+            if (not isinstance(result, dict) or result.get('requested') is not True
+                    or result.get('method') != 'native_new_tab'):
+                raise InspectorError('Native blank-tab request was not acknowledged')
+            self._blank_open_acknowledged = True
+        else:
+            await self._native(self.browser.goto, self.url)
         while True:
             pages = await self._fresh_pages(app.id_)
             if self._claim_created_tab(pages):
@@ -316,6 +334,12 @@ class InspectorSession:
         matches = [page for page in pages.values() if page.web_url == self.url]
         self.tab_cleanup.update(observed_page_ids=sorted(pages),
                                 matching_page_ids=sorted(page.id_ for page in matches))
+        if self.new_tab:
+            if not self._blank_open_acknowledged:
+                raise InspectorError('Unacknowledged blank-tab input cannot establish ownership')
+            added = set(pages) - self._create_before
+            if len(added) > 1:
+                raise InspectorError('More than one new tab appeared; blank-tab ownership is ambiguous')
         if len(matches) > 1:
             raise InspectorError('More than one tab has the generated bootstrap URL')
         if not matches:
@@ -339,7 +363,7 @@ class InspectorSession:
         page = pages.get(self._page.id_)
         if page is None:
             raise InspectorError('The inspected tab is no longer listed')
-        url = web_url(page.web_url)
+        url = _expected_address(page.web_url)
         if sum(_native_address_key(candidate.web_url) == _native_address_key(url)
                for candidate in pages.values()) != 1:
             raise InspectorError('Multiple Safari tabs have this URL; native tab identity is ambiguous')
@@ -770,7 +794,7 @@ class InspectorSession:
         # listing can still name our own connection after teardown was sent.
         # We own both that inspection and this tab; closing the tab is valid.
         self.tab_cleanup['own_inspection_still_listed'] = bool(connection)
-        expected_url = web_url(pages[self._page.id_].web_url)
+        expected_url = _expected_address(pages[self._page.id_].web_url)
         if sum(_native_address_key(page.web_url) == _native_address_key(expected_url)
                for page in pages.values()) != 1:
             raise InspectorError('Multiple Safari tabs have this URL; owned tab cannot be safely closed')

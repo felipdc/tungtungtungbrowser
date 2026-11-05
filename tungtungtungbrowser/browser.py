@@ -16,8 +16,15 @@ SAFARI = 'com.apple.mobilesafari'
 _AX_IS_EDITING = 1 << 21
 
 
+def _expected_address(url):
+    """An existing HTTP(S) document or Safari's explicit blank-page state."""
+    return url if url == 'about:blank' else web_url(url)
+
+
 def _native_address_key(url):
     """Comparison key for a full native address, including Safari's root form."""
+    if url in ('', 'about:blank'):
+        return 'about:blank'
     if isinstance(url, str) and url.lower().startswith(('http://', 'https://')):
         address = url.split('://', 1)[1]
         parsed = urlsplit(url)
@@ -28,6 +35,8 @@ def _native_address_key(url):
 
 
 def _matches_active_url(value, url):
+    if url == 'about:blank':
+        return isinstance(value, str) and value in ('', 'about:blank')
     forms = {url, url.split('://', 1)[1]}
     parsed = urlsplit(url)
     if parsed.path == '/' and not parsed.query and not parsed.fragment:
@@ -149,6 +158,23 @@ class Browser:
             return {**result, 'browser': SAFARI, 'requested': True,
                     'visual_readiness_verified': False, 'navigation_verified': False}
 
+    def new_tab(self, *, expected_pid):
+        """Request one native blank tab; its creation must be verified separately."""
+        if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
+            raise ValueError('Creating a tab requires a valid expected process ID')
+        with self._lock:
+            self.unlock()
+            foreground = self.guest.call('apps.foreground')
+            if (not isinstance(foreground, dict) or foreground.get('verified') is not True
+                    or foreground.get('bundle_id') != SAFARI
+                    or type(foreground.get('pid')) is not int or foreground['pid'] != expected_pid):
+                raise GuestError('Expected Safari process is not in the foreground; new tab not requested')
+            result = self.guest.call('input.key', name='cmd+t')
+            if (not isinstance(result, dict) or result.get('key') != 'cmd+t'
+                    or result.get('dispatched') is not True):
+                raise GuestError('Native new-tab input was not acknowledged; outcome is unknown')
+            return {'requested': True, 'method': 'native_new_tab', 'tab_created_verified': False}
+
     def goto(self, url, *, reuse_tab=False, expected_url=None, expected_pid=None):
         """Request navigation through native Safari URL opening.
 
@@ -158,7 +184,7 @@ class Browser:
         """
         url = web_url(url)
         if expected_url is not None:
-            web_url(expected_url)
+            _expected_address(expected_url)
             if not reuse_tab:
                 raise ValueError('An expected URL requires tab reuse')
         if expected_pid is not None:
@@ -228,7 +254,7 @@ class Browser:
         The caller must establish ownership and uniqueness across those forms,
         then verify disappearance. Input is never repeated after a failure.
         """
-        web_url(expected_url)
+        _expected_address(expected_url)
         if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
             raise ValueError('Closing a tab requires a valid expected process ID')
         with self._lock:
