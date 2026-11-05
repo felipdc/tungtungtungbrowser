@@ -18,6 +18,12 @@ class DocumentChangedError(InspectorError):
     """The page changed during a read; only condition waiters poll a fresh document."""
 
 
+class _ProtocolCommandError(InspectorError):
+    def __init__(self, error):
+        super().__init__(str(error))
+        self.error = error
+
+
 def _timeout(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 300:
         raise ValueError('timeout must be between 0 and 300 seconds')
@@ -187,6 +193,8 @@ class InspectorSession:
         self._pending, self._outer = {}, {}
         self._root_pending = {}
         self._waiters, self._tasks, self._targets = set(), set(), set()
+        self._auxiliary_targets = set()
+        self.retired_target_resumes = 0
         self._target_ready = asyncio.Event()
         self._id = 0
         self._session_id = str(uuid.uuid4()).upper()
@@ -391,6 +399,23 @@ class InspectorSession:
         if self.target_id == target:
             self._target_ready.set()
 
+    async def _resume_auxiliary_target(self, target):
+        if target not in self._auxiliary_targets:
+            self.retired_target_resumes += 1
+            return
+        try:
+            await self._root_command('Target.resume', targetId=target)
+        except _ProtocolCommandError as error:
+            # Short-lived frames can disappear between targetCreated and the
+            # native resume reply. Only the specific missing-target response,
+            # after observed destruction of this non-page target, is harmless.
+            # Transport failures, timeouts and errors for live targets remain fatal.
+            if (target in self._auxiliary_targets or not isinstance(error.error, dict)
+                    or error.error.get('code') != -32000
+                    or error.error.get('message') != 'Missing target for given targetId'):
+                raise
+            self.retired_target_resumes += 1
+
     def _receive(self, destination, message):
         if destination != self._session_id or self._closed:
             return
@@ -398,7 +423,7 @@ class InspectorSession:
             root = self._root_pending.get(message['id'])
             if root is not None and not root.done():
                 if 'error' in message:
-                    root.set_exception(InspectorError(str(message['error'])))
+                    root.set_exception(_ProtocolCommandError(message['error']))
                 else:
                     root.set_result(message.get('result', {}))
                 return
@@ -412,8 +437,9 @@ class InspectorSession:
         if method == 'Target.targetCreated':
             info = params['targetInfo']
             if info.get('type', 'page') != 'page':
+                self._auxiliary_targets.add(info['targetId'])
                 if info.get('isPaused', False):
-                    self._spawn(self._root_command('Target.resume', targetId=info['targetId']))
+                    self._spawn(self._resume_auxiliary_target(info['targetId']))
                 return
             target = info['targetId']
             self._targets.add(target)
@@ -425,6 +451,7 @@ class InspectorSession:
             self.document_generation += 1
         elif method == 'Target.targetDestroyed':
             target = params['targetId']
+            self._auxiliary_targets.discard(target)
             self._targets.discard(target)
             for pending_target, future in self._pending.values():
                 if pending_target == target and not future.done():

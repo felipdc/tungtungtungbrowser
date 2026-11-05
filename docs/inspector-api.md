@@ -111,6 +111,14 @@ Run the controller on the VM host. Set `TTT_PAGE_URL` to the exact URL of an
 already open Safari tab. If `url` is omitted, exactly one inspectable Safari tab
 must exist. Another Inspector connection must not already own that tab.
 
+Short-lived child frames can disappear before their native resume acknowledgement
+arrives. The SDK skips a resume for an already destroyed non-page target and
+tolerates the native missing-target reply only after it has observed that exact
+target's destruction. `retired_target_resumes` counts those cases. They do not
+invalidate the main page or its response waiters. A live target's error, a
+different protocol error, or a transport timeout still fails the session; no
+resume command is replayed.
+
 ```python
 import asyncio
 import os

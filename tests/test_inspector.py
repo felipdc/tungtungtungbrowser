@@ -323,6 +323,59 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('frame-a', s._targets)
         self.assertFalse(s._root_pending)
 
+    async def test_frame_destroyed_before_resume_task_starts_sends_no_command(self):
+        s = session_fixture()
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'frame-a', 'type': 'frame', 'isPaused': True}}})
+        s._receive(s._session_id, {'method': 'Target.targetDestroyed', 'params': {'targetId': 'frame-a'}})
+        await asyncio.gather(*s._tasks)
+        self.assertEqual(s._inspector.commands, [])
+        self.assertEqual(s.retired_target_resumes, 1)
+        self.assertEqual(s.target_id, 'page-a')
+        self.assertIsNone(s._failure)
+
+    async def test_destroyed_frame_missing_target_reply_preserves_main_page_and_response(self):
+        s = session_fixture()
+        value = response(s)
+        resumes = []
+        async def send(session_id, app_id, page_id, message):
+            resumes.append(message)
+            s._receive(session_id, {'method': 'Target.targetDestroyed', 'params': {'targetId': 'frame-a'}})
+            s._receive(session_id, {'id': message['id'], 'error': {
+                'code': -32000, 'message': 'Missing target for given targetId'}})
+        s._inspector.send_socket_data = send
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'frame-a', 'type': 'frame', 'isPaused': True}}})
+        await asyncio.gather(*s._tasks)
+        self.assertEqual(len(resumes), 1)
+        self.assertEqual(s.retired_target_resumes, 1)
+        self.assertEqual(s.target_id, 'page-a')
+        self.assertIsNone(s._failure)
+        self.assertIsNone(value._error)
+        self.assertFalse(value._finished.is_set())
+        self.assertFalse(s._root_pending)
+
+    async def test_frame_resume_live_target_other_error_and_timeout_remain_failures(self):
+        for destroyed, error in [(False, {'code': -32000, 'message': 'Missing target for given targetId'}),
+                                 (True, {'code': -32000, 'message': 'Permission denied'}), (True, None)]:
+            with self.subTest(destroyed=destroyed, error=error):
+                s = session_fixture(timeout=0.01)
+                resumes = []
+                async def send(session_id, app_id, page_id, message):
+                    resumes.append(message)
+                    if destroyed:
+                        s._receive(session_id, {'method': 'Target.targetDestroyed', 'params': {'targetId': 'frame-a'}})
+                    if error is not None:
+                        s._receive(session_id, {'id': message['id'], 'error': error})
+                s._inspector.send_socket_data = send
+                s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+                    'targetInfo': {'targetId': 'frame-a', 'type': 'frame', 'isPaused': True}}})
+                await asyncio.gather(*s._tasks, return_exceptions=True)
+                self.assertEqual(len(resumes), 1)
+                self.assertEqual(s.retired_target_resumes, 0)
+                self.assertIsNotNone(s._failure)
+                self.assertFalse(s._root_pending)
+
     async def test_large_metadata_is_evicted_under_byte_limit(self):
         s = session_fixture(max_metadata_bytes=1024)
         s._event('page-a', {'method': 'Network.responseReceived', 'params': {
