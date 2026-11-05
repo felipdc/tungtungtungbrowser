@@ -43,6 +43,10 @@ check native rendering at each stage before adopting an optimization.
       found both native accessibility switches off before and after warm
       browsing, while a same-boot launch watchdog remained. Those later samples
       do not establish boot-time settings or explain the cold first-page failure.
+      The optional [initial-URL readiness path](browsing-reliability.md#experimental-startup-with-an-initial-url)
+      avoids the separate application-launch operation while retaining native
+      foreground and image checks. Its host failure-path tests pass; qualify
+      it on cold native starts and subsequent warm browsing before adoption.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a

@@ -39,6 +39,7 @@ class ReadinessTest(unittest.TestCase):
         self.guest = Mock()
         self.guest.health.return_value = {'status': 'ok'}
         self.guest.call.side_effect = self.native
+        self.guest.open.side_effect = lambda url: self.native('apps.open_url', url=url)
         self.calls = []
         self.failure_method = None
         self.launch_response = {'accepted': True}
@@ -57,11 +58,14 @@ class ReadinessTest(unittest.TestCase):
         return {
             'screen.unlock': {'locked': False},
             'apps.launch': self.launch_response,
+            'apps.open_url': {'opened': True},
             'apps.foreground': {'bundle_id': 'com.apple.mobilesafari', 'verified': True},
         }[method]
 
-    def run_measurement(self, *, qmp=True, sync_clock=False):
+    def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None):
         argv = [str(self.vm), '--output', str(self.output)]
+        if initial_url is not None:
+            argv += ['--initial-url', initial_url]
         if sync_clock:
             argv += ['--sync-clock']
         if qmp:
@@ -70,6 +74,86 @@ class ReadinessTest(unittest.TestCase):
 
     def report(self):
         return json.loads(self.output.read_text())
+
+    def test_initial_url_opens_once_and_keeps_content_unverified(self):
+        url = 'https://example.org/first?run=1'
+        def opened(value):
+            self.assertEqual(value, url)
+            request = self.report()['once_only_requests'][-1]
+            self.assertEqual(request['method'], 'apps.open_url')
+            self.assertEqual(request['status'], 'in_flight')
+            self.assertNotIn('finished_seconds', request)
+            return self.native('apps.open_url', url=value)
+        self.guest.open.side_effect = opened
+        self.run_measurement(initial_url=url)
+        report = self.report()
+        self.assertEqual(report['status'], 'complete')
+        self.assertEqual(report['initial_url'], url)
+        self.assertEqual(report['startup_method'], 'native_open_url')
+        self.assertFalse(report['navigation_verified'])
+        self.assertFalse(report['initial_url_content_verified'])
+        self.assertEqual(report['visual_review'], 'pending')
+        self.assertEqual(report['safari_foreground_source'], 'apps.foreground')
+        self.assertNotIn('safari_launch_response', report)
+        self.assertEqual(self.calls, [('screen.unlock', 'screen_unlocked'),
+                                     ('apps.open_url', 'safari_open_url'),
+                                     ('apps.foreground', 'safari_foreground')])
+        self.assertEqual([r['method'] for r in report['once_only_requests']],
+                         ['screen.unlock', 'apps.open_url'])
+        self.guest.open.assert_called_once_with(url)
+
+    def test_initial_url_failure_never_retries_or_falls_back_to_launch(self):
+        for phase in ['connect', 'send_request', 'receive_headers', 'read_body']:
+            with self.subTest(phase=phase):
+                self.output = self.vm / (phase + '.json')
+                self.calls.clear()
+                self.guest.open.reset_mock()
+                self.guest.open.side_effect = GuestTransportError(phase, TimeoutError('timed out'))
+                with self.assertRaises(GuestTransportError):
+                    self.run_measurement(initial_url='https://example.org/')
+                self.guest.open.assert_called_once()
+                self.assertEqual(self.calls, [('screen.unlock', 'screen_unlocked')])
+                report = self.report()
+                self.assertEqual(report['stage'], 'safari_open_url')
+                self.assertEqual(report['status'], 'failed')
+                self.assertEqual(report['once_only_requests'][-1]['transport']['phase'], phase)
+                self.assertNotIn('initial_url_ack_seconds', report)
+                self.assertTrue(self.output.with_suffix('.failure.png').exists())
+
+    def test_initial_url_ack_does_not_hide_foreground_timeout(self):
+        self.failure_method = 'apps.foreground'
+        with self.assertRaises(GuestError):
+            self.run_measurement(initial_url='https://example.org/')
+        self.assertEqual([method for method, _ in self.calls],
+                         ['screen.unlock', 'apps.open_url', 'apps.foreground'])
+        report = self.report()
+        self.assertEqual(report['status'], 'failed')
+        self.assertFalse(report['safari_foreground_verified'])
+        self.assertFalse(report['initial_url_content_verified'])
+        self.assertIn('initial_url_ack_seconds', report)
+        self.guest.open.assert_called_once()
+
+    def test_initial_url_unlock_failure_prevents_open(self):
+        self.failure_method = 'screen.unlock'
+        with self.assertRaises(GuestError):
+            self.run_measurement(initial_url='https://example.org/')
+        self.guest.open.assert_not_called()
+        self.assertEqual([method for method, _ in self.calls], ['screen.unlock'])
+
+    def test_invalid_initial_url_is_rejected_before_evidence_or_requests(self):
+        for url in ['javascript:1', 'https://user:secret@example.org/',
+                    'https://example.org:99999/', 'https://example.org/\n']:
+            with self.subTest(url=url), self.assertRaises(SystemExit):
+                self.run_measurement(initial_url=url)
+        self.factory.assert_not_called()
+        self.assertFalse(self.output.exists())
+
+    def test_initial_url_respects_existing_evidence_before_input(self):
+        self.output.write_text('original failed result')
+        with self.assertRaises(FileExistsError):
+            self.run_measurement(initial_url='https://example.org/')
+        self.assertEqual(self.output.read_text(), 'original failed result')
+        self.factory.assert_not_called()
 
     def managed_clock(self, status, **fields):
         self.launch['started_unix'] = 1800000000.0

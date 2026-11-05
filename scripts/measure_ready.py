@@ -14,7 +14,7 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError
+from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, web_url
 from tungtungtungbrowser import Browser
 
 
@@ -44,7 +44,15 @@ def main(argv=None):
     parser.add_argument('--qmp-socket', type=Path, help='Capture the rendered display as PNG instead of guest JPEG')
     parser.add_argument('--sync-clock', action='store_true',
                         help='Offer host time once before unlock; requires automatic guest time')
+    parser.add_argument('--initial-url',
+                        help='Experimental: open one HTTP(S) URL in Safari instead of apps.launch; '
+                             'foreground and rendering still require separate observations')
     args = parser.parse_args(argv)
+    if args.initial_url is not None:
+        try:
+            web_url(args.initial_url)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.output.suffix != '.json':
         parser.error('output must have a .json suffix')
     launch = json.loads((args.vm / 'launch.json').read_text())
@@ -64,6 +72,9 @@ def main(argv=None):
               'safari_foreground_verified': False, 'screenshot_captured': False,
               'visual_review': 'pending', 'status': 'running', 'stage': 'starting',
               'once_only_requests': []}
+    if args.initial_url is not None:
+        result.update(initial_url=args.initial_url, startup_method='native_open_url',
+                      initial_url_content_verified=False)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     screenshot_path = args.output.with_suffix('.png' if args.qmp_socket else '.jpg')
     failure_path = args.output.with_suffix('.failure.png')
@@ -228,28 +239,37 @@ def main(argv=None):
             result['clock_sync_seconds'] = time.monotonic() - start
             checkpoint()
         unlock_once()
-        # Request launch once. Foreground polling must not relaunch Safari or
-        # rescan its running state for every poll. Native launch can be slow on TCG.
-        result['stage'] = 'safari_launch'
+        # Select the startup operation before sending it. A failed URL open
+        # must never fall back to a second open or an application launch.
+        result['stage'] = 'safari_open_url' if args.initial_url is not None else 'safari_launch'
         checkpoint()
         alive()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('Safari launch deadline exceeded')
-        result['safari_launch_response'] = request_once(
-            'apps.launch', min(120, remaining),
-            lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
-        result['safari_launch_request_seconds'] = time.monotonic() - start
-        checkpoint()
-        if result['safari_launch_response'].get('frontmost_verified') is True:
-            # The pinned native launch method already checks foreground identity.
-            # Repeating apps.foreground also scans installed/running apps and can
-            # add substantial work under TCG. Keep the original observation time.
-            result['safari_foreground_source'] = 'apps.launch'
-            result['safari_foreground_seconds'] = result['safari_launch_request_seconds']
-        else:
+        if args.initial_url is not None:
+            result['initial_url_response'] = request_once(
+                'apps.open_url', min(120, remaining), lambda guest: guest.open(args.initial_url))
+            result['initial_url_ack_seconds'] = time.monotonic() - start
+            checkpoint()
+            # URL opening acknowledges an asynchronous operation. It supplies
+            # neither foreground proof nor page-load completion.
             result['safari_foreground_source'] = 'apps.foreground'
             result['safari_foreground_response'] = retry('safari_foreground', safari)
+        else:
+            result['safari_launch_response'] = request_once(
+                'apps.launch', min(120, remaining),
+                lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
+            result['safari_launch_request_seconds'] = time.monotonic() - start
+            checkpoint()
+            if result['safari_launch_response'].get('frontmost_verified') is True:
+                # Native launch already checks foreground identity. Avoid a
+                # duplicate installed/running-app scan under TCG.
+                result['safari_foreground_source'] = 'apps.launch'
+                result['safari_foreground_seconds'] = result['safari_launch_request_seconds']
+            else:
+                result['safari_foreground_source'] = 'apps.foreground'
+                result['safari_foreground_response'] = retry('safari_foreground', safari)
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)
         # Native foreground identity plus a valid image still requires inspection

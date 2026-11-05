@@ -310,3 +310,12 @@ would not, by itself, demonstrate the required whole-browser reduction.
 Measure host allocator retention and translation-cache use separately before
 changing either policy; preserve native fidelity and warm operation latency
 as acceptance requirements.
+
+The subsequent [host allocator trial](browsing-reliability.md#host-allocator-trial-stopped-during-startup)
+did not reach the browsing workload because the original launch reply timed
+out. `MALLOC_ARENA_MAX` controls glibc's arena limit, as described in the
+[GNU C Library manual](https://sourceware.org/glibc/manual/latest/html_node/Memory-Allocation-Tunables.html).
+It does not control every allocator in this runtime: the pinned renderer's
+Rust library uses prefixed jemalloc on x86-64 Linux, while host C code and
+drivers retain the system allocator. No allocator default or supported memory
+limit changed after that failed trial.

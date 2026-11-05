@@ -158,3 +158,68 @@ parents, the original renderer cache and deployed source hashes were verified
 unchanged. The corrected helper deployment enabled the intended observations,
 but warm latency variation and memory pressure remain unresolved. Keep the
 runtime candidate experimental and retain the current resource limits.
+
+## Host allocator trial stopped during startup
+
+A separate trial set `MALLOC_ARENA_MAX=2` only in the QEMU process environment.
+The runtime image reported glibc 2.41. The emulator binary, stopped guest parent,
+complete renderer-cache seed, CPU/RAM limits and display matched the previous
+tab-cleanup repeat. The host was rebooted. A preboot gateway refusal required a
+new proxy session before the guest started; both the original failure and the
+replacement's successful gateway and route checks were retained.
+
+The single Safari-launch request started 177.7 seconds after guest launch and
+timed out waiting for response headers at 297.8 seconds. Its outcome remained
+uncertain; no launch was repeated. A later diagnostic image showed Safari's
+Start Page. That image does not establish when Safari became foreground or
+turn the timed-out operation into a successful readiness check. No cold-page,
+warm or external navigation was requested after the failed gate.
+
+The complete 420-second startup window averaged 2.27 CPU cores and peaked at
+6.15 GiB, with no memory-limit event or OOM kill. The previous 6.41-GiB startup
+window included a completed local diagnostic page; these are different
+workloads. The lower peak does not demonstrate a usable memory reduction.
+Two newly listed panic-related reports remained unattributed: one captured body
+was malformed JSON and the other body was unavailable. Native shutdown completed
+without forced termination in 15.9 seconds, and parent disks, cache and deployed
+source hashes were verified. The allocator setting remains unadopted.
+
+## Experimental startup with an initial URL
+
+`scripts/measure_ready.py --initial-url URL` selects the existing native Safari
+URL-opening path instead of `apps.launch`. The pinned launch implementation
+enumerates installed/running applications and checks foreground state; its
+response can be much slower than a warm URL-open acknowledgement. That source
+observation motivates the alternative, but does not prove the cause of a
+particular timeout or establish a faster startup.
+
+For a separate diagnostic run inside the runtime container:
+
+```sh
+python3 /app/scripts/measure_ready.py /vm \
+  --qmp-socket /vm/control.sock \
+  --output /vm/readiness-initial-url.json \
+  --initial-url https://example.org/
+```
+
+Use a new output name and the launcher's PID namespace, just as for ordinary
+readiness measurement. The URL must be absolute HTTP(S), without embedded
+credentials or whitespace. Keep private query parameters and captured content
+outside the checkout. If a diagnostic page is the initial URL, observe that
+original navigation's callback; do not open it a second time to measure the
+first request.
+
+This path waits for the existing managed-clock correction, unlocks once and
+attempts one URL open in Safari. It then separately checks native foreground
+state and captures the display. A failed or timed-out open does not trigger
+another open or a fallback application launch. The original launch clock,
+per-request timing and transport uncertainty remain in the report. The
+`initial_url_ack_seconds` field records the reply time from guest launch; it
+is not a page-load timestamp.
+
+Completion still leaves `navigation_verified` and `initial_url_content_verified`
+false, with visual review pending. Acknowledgement, Safari foreground identity
+and a valid image do not establish that the URL's content loaded. Host tests
+cover request preservation, invalid URLs, existing evidence, unlock failures
+and foreground timeouts. Native cold-start and subsequent warm-browsing
+qualification are still pending. The default startup method is unchanged.
