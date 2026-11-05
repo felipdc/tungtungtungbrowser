@@ -125,7 +125,8 @@ not a complete rendering pass.
 These observations distinguish page execution, native screenshots and the host
 display capture. They do not prove whether the fault lies in guest composition,
 the emulated display update or QMP readback. The captures are sequential and
-native capture can perturb the workload. Preserve their original timing and
+the [native capture path](display-trace.md#what-the-paired-captures-observe)
+can request separate guest rendering. Preserve their original timing and
 raw pixels before changing the capture backend or renderer defaults. The same
 Safari process remained alive throughout, which does not establish visual
 correctness or external-page acceptance.
@@ -139,4 +140,6 @@ savings or qualify a smaller memory limit.
 
 The optional [host display trace](display-trace.md) separates queued rendering,
 encoding, waiting, readback and surface-copy observations. Its local equivalence
-checks and QMP event controls passed; native qualification is still pending.
+checks and QMP event controls passed. A native control with three default URL
+opens did not reproduce this disagreement; the mixed focus/reuse sequence still
+needs qualification.

@@ -82,6 +82,27 @@ incomplete observation remains incomplete. Preserve raw logs, captures, host
 boot identity, process identity and resource samples outside the repository.
 Logging adds work; compare performance only with equivalent tracing settings.
 
+### What the paired captures observe
+
+QMP reads QEMU's display surface after requesting an update through the device.
+The native screenshot takes a separate path. In the pinned
+[Icli implementation](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliPrivate/IcliPrivate.m),
+`orientedScreenImage` first tries `_UICreateScreenUIImage` when its SpringBoard
+and capture-readiness conditions hold. Otherwise, or when that returns no image,
+it asks `CARenderServerRenderDisplay` to draw into a newly allocated IOSurface,
+then copies its pixels. The
+[native API](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Input/Screen.swift)
+encodes a JPEG but does not report which branch supplied the image.
+
+Neither path reads the other's returned pixels. A completed native image
+between blank QMP captures therefore demonstrates a disagreement between the
+capture paths; it does not locate the fault in QMP readback. Native capture can
+request additional guest rendering, and its exact image-production time lies
+somewhere inside the recorded RPC interval. Keep both surrounding QMP captures,
+compare page counters and run identifiers, and retain any later regression.
+Do not treat sequential captures as simultaneous or infer the native branch
+from the resulting image alone.
+
 ## Read the events
 
 Each event includes `ns`, the host-side `QEMU_CLOCK_REALTIME` value in nanoseconds.
