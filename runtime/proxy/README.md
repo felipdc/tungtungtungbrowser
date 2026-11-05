@@ -117,6 +117,13 @@ service's CONNECT. Compare the retained router log and gateway observation
 before attributing it to the DNS service or device. A session that pins an
 unavailable peer can fail even while the gateway and local tunnel remain up.
 
+In a native evaluation, this preboot guard returned HTTP 410 and stopped the
+launch before creating guest storage or starting the iPhone. A deliberately
+selected replacement configuration passed CONNECT and the initialized route
+check before a subsequent launch. Both reports were retained. This validates
+the guard's sequencing; it does not establish future proxy availability or
+authorize automatic session rotation.
+
 ### Check the upstream route before browsing
 
 An available TUN interface can coexist with failed upstream connections. Run

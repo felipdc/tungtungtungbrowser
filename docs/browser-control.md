@@ -125,6 +125,13 @@ whether it crashed, was deliberately replaced or exited normally. A later live
 log request cannot recover the intervening events. Keep process identity,
 native termination reports, request timings and rendered-page evidence separate.
 
+Keep optional log collection separate from the browser's readiness result.
+Large responses can fail during transport even after another diagnostic page
+has completed. Preserve that collection failure without turning it into a
+browser-crash diagnosis or repeating input. See the
+[browsing reliability measurements](browsing-reliability.md) for observed
+log-transfer and screenshot failures that affected test sequencing.
+
 ## Python API and touch input
 
 An optional [calibrated native tap helper](native-touch-helper.md) can be
