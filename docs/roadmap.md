@@ -97,9 +97,11 @@ check native rendering at each stage before adopting an optimization.
       changes with the same tab state and preserve session data.
       A [native UI cleanup](native-touch-helper.md#validation) closed the active
       group's accumulated tabs through reviewed taps and an 800 ms hold. It
-      preserved the other saved groups and displayed the Start Page. Verify
-      that state after a clean shutdown and fresh boot, then compare equivalent
-      successful warm workloads before claiming a performance or memory gain.
+      preserved the other saved groups and displayed the Start Page. A fresh
+      boot retained that saved state, but failed both cold worker deadlines;
+      an incomplete diagnostic deployment then stopped the warm comparison.
+      Verify required helper files before boot and compare equivalent successful
+      warm workloads before claiming a performance or memory gain.
       Automatic address-field focus recovery has passed a native local-page
       check; slow foreground and accessibility queries remain a latency issue.
       A [focused address-field experiment](native-control-audit.md#focused-address-field-query-experiment)

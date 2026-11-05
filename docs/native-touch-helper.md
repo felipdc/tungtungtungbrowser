@@ -160,10 +160,15 @@ Start Page; Safari retained the same PID and process-start time.
 
 Read-only copies of the saved-tab database showed the active group changing
 from seven entries to one, with three entries in other groups unchanged.
-Those live copies are not atomic snapshots. This qualifies the observed UI
-sequence, not a general tab-management API, persistent cleanup after reboot,
-or a resource reduction. That boot's original shared-worker deadline failure
-remains a failed cold-page result despite the later successful UI actions.
+Those live copies are not atomic snapshots. A separate fresh boot after clean
+shutdown retained the four entries, one in each group, and the blank active-group
+state. This supports persistence of the observed cleanup, not a general
+tab-management API or a resource reduction. The preparation boot's original
+shared-worker deadline failure remains a failed cold-page result despite the
+later successful UI actions. Both worker deadlines failed on the fresh boot;
+its warm comparison then stopped because a host diagnostic helper was absent
+from the deployed payload. Keep that failed run and verify required helper
+files and hashes before a new trial starts.
 
 Live validation must load the local diagnostic page, invoke `Browser.tap` on
 its visible button, retain the callback and native screenshot, and run
