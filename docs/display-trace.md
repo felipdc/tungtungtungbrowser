@@ -386,3 +386,12 @@ of savings. Available changed crash bodies identified older boots; one added
 hidden report was not collected and remains unattributed. Shutdown completed
 cleanly in 7.1 seconds, preserving the parent disks and cache. The candidate
 remains unqualified and runtime defaults are unchanged.
+
+A subsequent [unchanged control](native-control-audit.md#control-repeat-with-cold-worker-and-address-field-failures)
+reached foreground Safari within 300 seconds but failed its cold shared-worker
+check and later address-field verification. Its warm default page completed;
+the focus sequence and external observations did not. This preserves startup
+and control variability as unresolved factors rather than attributing the
+earlier launch timeout to the display change. A separate
+[default-off QOM experiment](display-refresh.md) can now be enabled after
+startup for a warm comparison. Its native display effect remains unmeasured.

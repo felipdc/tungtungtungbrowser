@@ -33,6 +33,12 @@ check native rendering at each stage before adopting an optimization.
       kernel PID/start-time identity without enumerating applications. Native
       installation checks passed, but a post-Home query timed out; it remains
       a diagnostic and does not replace foreground or rendering checks.
+      A later [unchanged control](native-control-audit.md#control-repeat-with-cold-worker-and-address-field-failures)
+      reached foreground Safari within the budget but failed its cold shared
+      worker and recorded an accessibility-service launch watchdog from that
+      boot. Audit inherited accessibility settings before changing them; their
+      role is unproven. Preserve the separate warm success and subsequent
+      address-field and periodic-clock failures.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
@@ -136,6 +142,10 @@ check native rendering at each stage before adopting an optimization.
       built successfully but stopped at a native Safari launch transport timeout,
       before warm browsing. Its display effect and performance remain unmeasured;
       preserve that failed boot when repeating the controlled comparison.
+      A [default-off QOM control](display-refresh.md) now allows the experiment
+      to be changed after warm-up. Its source-function checks, full build and
+      paused-device property check passed; compare native warm captures and
+      resource windows before adopting it.
 - [ ] Correct native touch geometry and verify pointer/touch field consistency.
       Calibrated contacts of different sizes still produce touch force values
       that follow the radius while UIKit and pointer pressure remain zero.

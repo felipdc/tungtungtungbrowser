@@ -1,0 +1,163 @@
+/* Synthetic renderer/queue fixtures for the real QEMU rendering functions.
+ * scripts/check_qemu_display_refresh.py inserts the pinned source at RENDER_CODE.
+ * No firmware, guest code, GPU, or browser execution is used by this fixture.
+ */
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
+
+#define QEMU_CLOCK_REALTIME 0
+#define GUI_REFRESH_INTERVAL_IDLE 3000
+#define LOG_GUEST_ERROR 1
+#define RVG_OK 0
+typedef int RvgStatus;
+typedef struct { int refs; } RvgFrameTarget;
+typedef struct { int unused; } RvgFrame;
+typedef struct { uint32_t width, height, stride; uint8_t data[256]; } DisplaySurface;
+typedef struct { unsigned updates, done; } QemuConsole;
+typedef struct { void *pool; bool window, refresh_on_update; } AppleGFXState;
+typedef struct {
+    AppleGFXState *state; void *pgdisp; QemuConsole *con;
+    DisplaySurface *surface; RvgFrameTarget *target;
+    bool rendering, frame_dirty; uint64_t render_sequence; int64_t watched_until_ms;
+} AppleGFXDisplay;
+
+static unsigned jobs, encodes, commits, waits, reads, ns_reads, stage_events, state_events, copy_events;
+static bool trace_on, trace_copy_encoded, trace_copy_size, trace_copy_target;
+static int encode_status, read_status, commit_status, wait_status;
+static int observed_commit_status, observed_wait_status;
+static int64_t now_ms = 100;
+static int (*pending_worker)(void *);
+static void *worker_arg;
+static void (*pending_bh)(void *);
+static void *bh_arg;
+static char stages[256];
+static RvgFrame frame;
+static const char *refresh_value;
+static unsigned char render_pixel = 0x5a;
+static bool refresh_enabled(void) { return refresh_value && strcmp(refresh_value,"1")==0; }
+static bool bql_locked(void) { return true; }
+static int64_t qemu_clock_get_ms(int clock) { (void)clock; return now_ms; }
+static int64_t qemu_clock_get_ns(int clock) { (void)clock; return now_ms * 1000000 + ++ns_reads; }
+static void *qemu_get_aio_context(void) { return NULL; }
+static void *g_malloc(size_t size) { void *p = malloc(size); assert(p); return p; }
+#define g_new0(type, count) ((type *)calloc((count), sizeof(type)))
+#define g_free free
+static unsigned surface_width(DisplaySurface *s) { assert(s); return s->width; }
+static unsigned surface_height(DisplaySurface *s) { assert(s); return s->height; }
+static unsigned surface_stride(DisplaySurface *s) { assert(s); return s->stride; }
+static uint8_t *surface_data(DisplaySurface *s) { assert(s); return s->data; }
+static void dpy_gfx_update_full(QemuConsole *c) { c->updates++; }
+static void graphic_hw_update_done(QemuConsole *c) { c->done++; }
+static RvgFrameTarget *rvg_frame_target_retain(RvgFrameTarget *t) { t->refs++; return t; }
+static void rvg_frame_target_release(RvgFrameTarget *t) { assert(t->refs > 1); t->refs--; }
+static RvgStatus rvg_display_encode_frame(void *d, RvgFrameTarget *t, void *opt, RvgFrame **out)
+{ (void)d; (void)t; (void)opt; encodes++; *out = &frame; return encode_status; }
+static RvgStatus rvg_frame_commit(RvgFrame *f) { assert(f == &frame); commits++; return commit_status; }
+static RvgStatus rvg_frame_wait(RvgFrame *f) { assert(f == &frame); waits++; return wait_status; }
+static void rvg_frame_release(RvgFrame *f) { assert(f == &frame); }
+static RvgStatus rvg_frame_target_read_pixels(RvgFrameTarget *t, uint8_t *p, size_t stride, size_t bytes)
+{ (void)t; assert(stride && bytes); reads++; memset(p, render_pixel, bytes); return read_status; }
+static const char *rvg_status_message(RvgStatus s) { (void)s; return "test failure"; }
+#define qemu_log_mask(...) ((void)0)
+static void thread_pool_submit_immediate(void *pool, int (*fn)(void *), void *arg, void *callback)
+{ (void)pool; (void)callback; assert(!pending_worker); jobs++; pending_worker=fn; worker_arg=arg; }
+static void aio_bh_schedule_oneshot(void *ctx, void (*fn)(void *), void *arg)
+{ (void)ctx; assert(!pending_bh); pending_bh=fn; bh_arg=arg; }
+#define TRACE_APPLE_GFX_FRAME_STATE 1
+#define TRACE_APPLE_GFX_FRAME_STAGE 2
+#define TRACE_APPLE_GFX_FRAME_JOB 3
+#define TRACE_APPLE_GFX_FRAME_COPY 4
+#define trace_event_get_state_backends(event) (trace_on)
+static void trace_apple_gfx_frame_state(int64_t ns,const char *stage,void *d,uint64_t job,bool dirty,bool rendering)
+{ (void)ns;(void)d;(void)job;(void)dirty;(void)rendering;assert(strcmp(stage,"request")==0 || strcmp(stage,"present")==0 || strcmp(stage,"completion")==0 || strcmp(stage,"request-no-render")==0);state_events++; }
+static void trace_apple_gfx_frame_stage(int64_t ns,const char *stage,void *d,uint64_t job,int status)
+{ (void)ns;(void)d;if(strcmp(stage,"commit-end")==0)observed_commit_status=status;if(strcmp(stage,"wait-end")==0)observed_wait_status=status;assert(job>0);stage_events++;assert(strlen(stages)+strlen(stage)+2<sizeof(stages));strcat(stages,stage);strcat(stages,","); }
+static void trace_apple_gfx_frame_job(int64_t ns,void *d,uint64_t job,void *target,uint32_t w,uint32_t h)
+{ (void)ns;assert(d&&target&&job>0&&w==2&&h==2); }
+static void trace_apple_gfx_frame_copy(int64_t ns,void *d,uint64_t job,bool encoded,bool same_size,bool same_target)
+{ (void)ns;(void)d;assert(job>0);copy_events++;trace_copy_encoded=encoded;trace_copy_size=same_size;trace_copy_target=same_target; }
+
+/* RENDER_CODE */
+
+static void run_worker(void)
+{ assert(pending_worker); int (*fn)(void *)=pending_worker;void *arg=worker_arg;pending_worker=NULL;assert(fn(arg)==0); }
+static void run_bh(void)
+{ assert(pending_bh);void (*fn)(void *)=pending_bh;void *arg=bh_arg;pending_bh=NULL;fn(arg); }
+static void drain(void)
+{ unsigned n=0;while(pending_worker||pending_bh){assert(n++<4);if(pending_worker)run_worker();if(pending_bh)run_bh();} }
+
+static void scenario(unsigned n, bool enabled)
+{
+    AppleGFXState state={.refresh_on_update=refresh_enabled()};QemuConsole console={0};
+    DisplaySurface surface={.width=2,.height=2,.stride=12};
+    RvgFrameTarget target={.refs=1}, replacement={.refs=1};
+    AppleGFXDisplay d={.state=&state,.con=&console,.surface=&surface,.target=&target};
+    memset(surface.data,0x33,sizeof(surface.data));
+    jobs=encodes=commits=waits=reads=ns_reads=stage_events=state_events=copy_events=0;
+    render_pixel=0x5a;encode_status=read_status=commit_status=wait_status=0;observed_commit_status=observed_wait_status=-1;trace_on=enabled;stages[0]=0;
+    assert(!pending_worker&&!pending_bh);
+    switch(n) {
+    case 0: /* Current surface: no work is manufactured by a screenshot. */
+        apple_gfx_fb_update_display(&d);
+        if(refresh_enabled()){assert(jobs==1&&console.done==0);drain();assert(console.done==1&&surface.data[0]==0x5a);}
+        else assert(jobs==0&&console.done==1);break;
+    case 1: /* Padded surface: copy just pixel bytes, preserve every row's padding. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);assert(jobs==1&&console.done==0);drain();
+        assert(console.updates==1&&console.done==1&&reads==1);
+        for(unsigned y=0;y<2;y++)for(unsigned x=0;x<12;x++)assert(surface.data[y*12+x]==(x<8?0x5a:0x33));
+        if(enabled){assert(copy_events==1&&trace_copy_encoded&&trace_copy_size&&trace_copy_target);assert(strcmp(stages,"encode-begin,encode-end,commit-begin,commit-end,wait-begin,wait-end,read-begin,read-end,")==0);}break;
+    case 2: /* A present during an outstanding render does not start concurrent work. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);apple_gfx_fb_update_display(&d);
+        new_frame_handler_bh(&d);assert(jobs==1&&d.frame_dirty&&d.rendering);run_worker();run_bh();
+        assert(jobs==2&&console.done==1&&d.rendering);drain();assert(console.updates==2&&console.done==2);break;
+    case 3: /* An encode failure completes the pending request without replacing pixels. */
+        encode_status=7;d.frame_dirty=true;apple_gfx_fb_update_display(&d);drain();
+        assert(console.done==1&&console.updates==0&&reads==0&&waits==0&&surface.data[0]==0x33);
+        if(enabled)assert(!trace_copy_encoded&&strcmp(stages,"encode-begin,encode-end,")==0);break;
+    case 4: /* A readback failure also preserves the prior surface. */
+        read_status=9;d.frame_dirty=true;apple_gfx_fb_update_display(&d);drain();
+        assert(console.done==1&&console.updates==0&&reads==1&&waits==1&&surface.data[0]==0x33);
+        if(enabled)assert(!trace_copy_encoded);break;
+    case 5: /* An intervening dimension change rejects the old job's pixels. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);surface.width=3;drain();
+        assert(console.done==1&&console.updates==0&&surface.data[0]==0x33);
+        if(enabled)assert(trace_copy_encoded&&!trace_copy_size);break;
+    case 6: /* Observe same-size target replacement; do not silently repair upstream behavior. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);d.target=&replacement;drain();
+        assert(console.done==1&&console.updates==1&&surface.data[0]==0x5a);
+        if(enabled)assert(trace_copy_encoded&&trace_copy_size&&!trace_copy_target);break;
+    case 7: /* No target: finish without consuming the dirty flag or allocating a job. */
+        d.target=NULL;d.frame_dirty=true;apple_gfx_fb_update_display(&d);
+        assert(jobs==0&&console.done==1&&d.frame_dirty);break;
+    case 8: /* An unwatched present stays lazy until a display request. */
+        new_frame_handler_bh(&d);assert(jobs==0&&d.frame_dirty);
+        apple_gfx_fb_update_display(&d);drain();assert(jobs==1&&console.done==1);break;
+    case 9: /* A library window does not start a second automatic renderer. */
+        state.window=true;d.watched_until_ms=now_ms+1000;new_frame_handler_bh(&d);
+        assert(jobs==0&&d.frame_dirty);apple_gfx_fb_update_display(&d);drain();assert(jobs==1);break;
+    case 10: /* Upstream ignores a commit failure; observe it without changing the copy. */
+        commit_status=11;d.frame_dirty=true;apple_gfx_fb_update_display(&d);drain();
+        assert(commits==1&&waits==1&&reads==1&&console.updates==1);
+        if(enabled)assert(observed_commit_status==11&&observed_wait_status==0&&trace_copy_encoded);break;
+    case 11: /* Upstream also continues after a wait failure. */
+        wait_status=12;d.frame_dirty=true;apple_gfx_fb_update_display(&d);drain();
+        assert(commits==1&&waits==1&&reads==1&&console.updates==1);
+        if(enabled)assert(observed_commit_status==0&&observed_wait_status==12&&trace_copy_encoded);break;
+    case 12: /* Changed source contents without a delivered present. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);drain();assert(surface.data[0]==0x5a);
+        render_pixel=0x6b;assert(!d.frame_dirty);apple_gfx_fb_update_display(&d);drain();
+        assert(surface.data[0]==(refresh_enabled()?0x6b:0x5a));assert(jobs==(refresh_enabled()?2u:1u));break;
+    case 13: /* Concurrent requests still share the in-flight job. */
+        d.frame_dirty=true;apple_gfx_fb_update_display(&d);apple_gfx_fb_update_display(&d);assert(jobs==1&&!d.frame_dirty);drain();assert(jobs==1&&console.done==1);break;
+    }
+    assert(target.refs==1&&replacement.refs==1&&!pending_worker&&!pending_bh&&!d.rendering);
+    if(!enabled)assert(ns_reads==0&&stage_events==0&&copy_events==0&&state_events==0);
+    printf("%u %u %u %u %u %u %u\n",n,jobs,encodes,commits,waits,reads,console.updates);
+}
+int main(int argc,char **argv)
+{ bool enabled=argc>=2&&strcmp(argv[1],"trace")==0;refresh_value=argc>=3?argv[2]:NULL;for(unsigned n=0;n<14;n++)scenario(n,enabled);return 0; }

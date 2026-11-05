@@ -1,5 +1,11 @@
 # Pinned runtime patches
 
+`qemu-display-refresh-toggle.patch` is an optional, default-off display
+experiment on the traced QEMU `14c9913d` source. Its host QOM boolean permits
+comparisons within an already warmed guest, with changes rejected during an
+outstanding render. The default build does not apply it. See the
+[offline checks, QMP control and native-validation limits](../docs/display-refresh.md).
+
 `metal2vulkan-log-all-placements.patch` is an optional diagnostic for the pinned
 renderer. It records small pooled placements omitted by the upstream memory
 log, without changing allocation policy. The default build does not apply it.

@@ -1,0 +1,68 @@
+--- a/hw/display/apple-gfx.c
++++ b/hw/display/apple-gfx.c
+@@ -272,6 +272,12 @@
+      * signals completion with graphic_hw_update_done(). Without a render
+      * under way the surface already has the newest frame.
+      */
++    /* Optional experiment: request a new encode when no job is running.
++     * Existing jobs retain their original completion and present ordering.
++     */
++    if (!d->rendering && d->state->refresh_on_update) {
++        d->frame_dirty = true;
++    }
+     if (!apple_gfx_render_new_frame(d)) {
+         apple_gfx_trace_state(d, "request-no-render");
+         graphic_hw_update_done(d->con);
+@@ -623,8 +629,42 @@
+ 
+ /* ------ Initialisation and startup ------ */
+ 
++/* Host-only diagnostic control; all accesses occur under the BQL. */
++static void apple_gfx_get_refresh(Object *obj, Visitor *v, const char *name,
++                                  void *opaque, Error **errp)
++{
++    AppleGFXState *s = opaque;
++    bool value = s->refresh_on_update;
++
++    assert(bql_locked());
++    visit_type_bool(v, name, &value, errp);
++}
++
++static void apple_gfx_set_refresh(Object *obj, Visitor *v, const char *name,
++                                  void *opaque, Error **errp)
++{
++    AppleGFXState *s = opaque;
++    bool value;
++    size_t i;
++
++    assert(bql_locked());
++    if (!visit_type_bool(v, name, &value, errp)) {
++        return;
++    }
++    for (i = 0; i < ARRAY_SIZE(s->displays); i++) {
++        if (s->displays[i].rendering) {
++            error_setg(errp, "apple-gfx: refresh mode cannot change during a render");
++            return;
++        }
++    }
++    s->refresh_on_update = value;
++}
++
+ void apple_gfx_common_init(Object *obj, AppleGFXState *s, const char *obj_name)
+ {
++    s->refresh_on_update = false;
++    object_property_add(obj, "x-refresh-on-update", "bool",
++                        apple_gfx_get_refresh, apple_gfx_set_refresh, NULL, s);
+     trace_apple_gfx_common_init(obj_name, RVG_DEVICE_MMIO_SIZE);
+     memory_region_init_io(&s->iomem_gfx, obj, &apple_gfx_ops, s, obj_name,
+                           RVG_DEVICE_MMIO_SIZE);
+--- a/hw/display/apple-gfx.h
++++ b/hw/display/apple-gfx.h
+@@ -92,6 +92,7 @@
+     QEMUBH *event_bh;
+ 
+     /* Mutable state (BQL protected) */
++    bool refresh_on_update; /* Optional host display experiment, default false */
+     uint32_t input_buttons; /* RVG_WINDOW_BUTTON_* bits the guest was sent */
+ };
+ 

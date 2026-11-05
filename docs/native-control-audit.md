@@ -457,6 +457,65 @@ qualify the immediate post-typing state and sustained rendered navigation before
 adopting it. These measurements identify warm-control costs without establishing
 a resource reduction or physical-device equivalence.
 
+### Control repeat with cold-worker and address-field failures
+
+A further control on 2026-11-05 retained the unchanged traced runtime, stopped
+parent, copied renderer cache and CPU-only configuration. The fresh-render
+experiment was absent. Foreground Safari was verified at 261.39 seconds. The
+startup recorder retained the one unlock request's 25.44-second duration and
+the one launch request's 63.76-second duration. The first local page returned
+its callback at 355.55 seconds from launch, but its shared worker exceeded the
+15-second page deadline. That cold sequence failed; foreground readiness alone
+does not qualify reliable startup or a usable first page.
+
+A separately recorded warm default open acknowledged in 0.62 seconds and
+returned its diagnostic callback in 17.40 seconds. Both workers, canvas and
+WebGL passed. The 15-second image still showed collection in progress; the
+30- and 60-second captures showed the same matching completed result. Safari's
+PID and process-start time were unchanged across that warm sequence. A final
+process-inventory read took 27.92 seconds, separate from page completion. The
+saved-tab snapshots grew from ten to eleven; this open did not reuse a tab.
+
+The following local sequence page reached its final counter in both native and
+QMP captures at 45 and 90 seconds. Tab reuse then stopped after one Command-L.
+The first full accessibility-tree request completed with native error `-25216`
+after 35.78 seconds. One separately recorded read after ten seconds returned
+in 17.33 seconds, identifying the expected Safari PID and an untruncated tree,
+but no element had the required `URL` identifier. A URL-shaped value in an
+unidentified element was not sufficient ownership evidence. The recorder
+stopped before any focus tap, selection, paste or Return. Neither the focused
+observer nor the remaining navigation stages ran. External browsing was not
+attempted in this boot.
+
+The periodic clock worker also timed out on a 30-second offer during the first
+full-tree RPC. The overlap does not establish which native operation caused
+the delay, and no later read repaired that failed maintenance state. The crash
+inventory contained an `AccessibilityUIServer` report whose boot UUID matched
+this boot: its background process launch exceeded a 30-second watchdog. The
+sampled main thread was in a Mach-message/run-loop path during UIKit startup.
+That sample is not a duration trace and does not establish a cause for either
+the watchdog or the later address-field failure. Two other changed reports
+identified older boots; all changed report bodies were available this time.
+
+The cold, warm and interrupted focus resource windows averaged 2.31, 2.08 and
+1.87 host CPU cores, with sampled peaks of approximately 6.41 GiB and no
+memory-limit or OOM events. The focus window includes idle time after failure,
+so its lower average is not evidence of an optimization. Shutdown completed
+cleanly in 7.8 seconds, preserving the parent disks and cache. No resource
+reduction, reliable cold-start guarantee or sustained tab-reuse capability is
+established by this control.
+
+The pinned [Icli accessibility implementation](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliPrivate/Accessibility.m)
+enables application accessibility and automation when a query needs them.
+Those switches are system-wide and persistent; the implementation retains them
+between queries and restores switches it enabled at normal process exit or an
+explicit restoration call. A process that finds a switch already enabled does
+not claim ownership of it. Before changing startup settings, observe their
+values in the preserved parent and in a fresh boot. Whether inherited settings
+contribute to this watchdog remains an untested hypothesis; this trial did not
+record their initial values. Do not automatically disable accessibility that
+another client or the device owner enabled.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.

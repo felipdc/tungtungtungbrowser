@@ -1,0 +1,38 @@
+/* Exercise actual QOM accessors with synthetic visitors; no native guest. */
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+typedef struct { int unused; } Object;
+typedef struct { bool failed; } Error;
+typedef struct { bool input, valid, value; } Visitor;
+typedef struct { bool refresh_on_update; struct { bool rendering, frame_dirty; } displays[4]; } AppleGFXState;
+static bool bql_locked(void) { return true; }
+static Error failure;
+static bool visit_type_bool(Visitor *v, const char *name, bool *value, Error **errp) {
+ assert(strcmp(name,"x-refresh-on-update")==0);
+ if (!v->valid) { *errp=&failure;return false; }
+ if (v->input) *value=v->value; else v->value=*value;
+ return true;
+}
+static void error_setg(Error **errp, const char *message) { assert(strstr(message,"during a render"));*errp=&failure; }
+/* PROPERTY_CODE */
+
+int main(void) {
+ AppleGFXState s={0};Object obj={0};Error *err=NULL;Visitor read={.valid=true},write={.input=true,.valid=true,.value=true};
+ apple_gfx_get_refresh(&obj,&read,"x-refresh-on-update",&s,&err);assert(!err&&!read.value);
+ write.valid=false;apple_gfx_set_refresh(&obj,&write,"x-refresh-on-update",&s,&err);assert(err&&!s.refresh_on_update);
+ err=NULL;write.valid=true;apple_gfx_set_refresh(&obj,&write,"x-refresh-on-update",&s,&err);assert(!err&&s.refresh_on_update);
+ apple_gfx_get_refresh(&obj,&read,"x-refresh-on-update",&s,&err);assert(!err&&read.value);
+ for (size_t i=0;i<ARRAY_SIZE(s.displays);i++) {
+  s.displays[i].rendering=true;s.displays[i].frame_dirty=true;write.value=false;
+  apple_gfx_set_refresh(&obj,&write,"x-refresh-on-update",&s,&err);assert(err&&s.refresh_on_update&&s.displays[i].rendering&&s.displays[i].frame_dirty);
+  err=NULL;s.displays[i].rendering=false;
+ }
+ apple_gfx_set_refresh(&obj,&write,"x-refresh-on-update",&s,&err);assert(!err&&!s.refresh_on_update);
+ apple_gfx_get_refresh(&obj,&read,"x-refresh-on-update",&s,&err);assert(!err&&!read.value);
+ for(size_t i=0;i<ARRAY_SIZE(s.displays);i++)assert(s.displays[i].frame_dirty);
+ puts("default/get/set/type-error/all-display-busy/reversible/no-frame-mutation passed");return 0;
+}
