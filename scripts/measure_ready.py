@@ -223,7 +223,11 @@ def main(argv=None):
     try:
         if managed_clock:
             wait_for_managed_clock()
-        retry('vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
+        result['vphoned_health_response'] = retry(
+            'vphoned_healthy', lambda guest: guest.health(), timeout=5, retry_timeouts=True)
+        # Keep the already-requested identity/address snapshot before input.
+        # A guest IP is useful evidence, not proof of Safari network readiness.
+        checkpoint()
         if args.sync_clock:
             result['stage'] = 'clock_sync'
             checkpoint()

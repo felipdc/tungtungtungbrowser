@@ -6,6 +6,13 @@ it is not a guarantee. Measure foreground readiness, first complete page,
 warm request acknowledgement, page execution and visible rendering separately.
 An accepted URL request does not establish that the requested page loaded.
 
+Readiness reports retain the successful guest health response in
+`vphoned_health_response` before the recorder sends native input. It includes
+the returned guest-instance identity and IP address when supplied by the
+daemon. This preserves the existing observation without another request.
+An address is not proof that Safari's network process is ready or that a
+page can load; retain the subsequent page outcome separately.
+
 ## Retain each stage's outcome
 
 The local diagnostic page reports worker, canvas and WebGL results to its
@@ -221,5 +228,72 @@ Completion still leaves `navigation_verified` and `initial_url_content_verified`
 false, with visual review pending. Acknowledgement, Safari foreground identity
 and a valid image do not establish that the URL's content loaded. Host tests
 cover request preservation, invalid URLs, existing evidence, unlock failures
-and foreground timeouts. Native cold-start and subsequent warm-browsing
-qualification are still pending. The default startup method is unchanged.
+and foreground timeouts. The first native observation below passed foreground
+verification and later warm browsing, but failed its initial page. Repeated
+qualification remains necessary. The default startup method is unchanged.
+
+### First native initial-URL observation
+
+The first run used the same stopped tab-cleanup parent, copied renderer cache,
+experimental emulator and resource settings as the earlier repeat. The host
+was rebooted, and the allocator environment used its original defaults.
+Gateway and configured proxy-route checks passed before the guest started.
+
+Native unlock took 32.32 seconds. The single URL-open request started at
+183.94 seconds from guest launch and returned at 210.14 seconds, taking
+26.20 seconds. Separate foreground verification completed at 223.24 seconds;
+the display capture completed at 223.42 seconds. No `apps.launch` call or
+second initial URL open was sent.
+
+The first page still failed: no matching diagnostic callback arrived within
+180 seconds of the URL acknowledgement, and the retained image showed
+Safari's disconnected-network error. The server journal recorded no request
+before that deadline; its first request belonged to the later warm sequence.
+Foreground readiness within the startup budget did not establish a usable
+first page. Host-side proxy preflight also
+did not establish Safari network readiness. The original page was not retried.
+
+The separate warm sequence completed three new local navigations in the same
+Safari process:
+
+| Navigation | Request acknowledgement | Complete callback | 30- and 60-second images |
+| --- | ---: | ---: | --- |
+| First | 0.80 s | 16.88 s | Matching completed page |
+| Second | 0.79 s | 13.34 s | Matching completed page |
+| Third | 1.56 s | 16.74 s | Matching completed page |
+
+All three callbacks passed dedicated/shared workers, canvas and WebGL. All six
+images displayed their matching saved identifiers and canvas, without a sampled
+return to an earlier page. Saved tab records grew from four to seven, based on
+sequential database/WAL copies. Both ordinary external HTTPS pages subsequently
+displayed the requested content at 30 and 60 seconds.
+
+The complete 420-second startup window averaged 2.26 CPU cores and peaked at
+6.38 GiB. The 300-second warm window averaged 2.00 cores and peaked at 6.36 GiB.
+Neither recorded a memory-limit event or OOM kill. Those warm readings are
+close to earlier runs, and the initial-page workloads differed. They do not
+establish a resource reduction or faster warm browsing caused by the startup
+method. A stale allocator assertion in the read-only memory recorder was
+corrected before that recorder ran; both source versions were preserved, and
+the running emulator configuration was unchanged.
+
+The 240-second ordinary external-page window averaged 2.13 cores and peaked
+at 6.32 GiB. A later 240-second browsing window averaged 2.09 cores and sampled
+a 6.498-GiB peak; the container's lifetime peak reached its 6.5-GiB limit, with
+seven memory-limit events and no OOM kill. These observations still do not
+qualify a smaller memory limit.
+
+A collected InputUI process-launch watchdog matched the current native boot
+UUID and reported a 30-second allowance. The returned inventory also contained
+an accessibility-service report and a panic report from different boots.
+Successful Safari process continuity therefore does not establish an error-free
+guest, and the InputUI report alone does not explain the failed first page.
+Native shutdown completed without forced termination in 7.8 seconds. Parent
+disks, renderer cache and all 53 deployed source files were verified unchanged
+against their retained records, including the explicit recorder revision.
+
+The health-response recording described above was added after this native run
+started. This run therefore cannot establish what IP address the original
+health response contained. Preserve that snapshot in future comparisons and
+investigate guest/browser network readiness separately from successful host
+proxy routing. Keep the initial-URL option experimental.

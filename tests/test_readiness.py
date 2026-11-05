@@ -140,6 +140,26 @@ class ReadinessTest(unittest.TestCase):
         self.guest.open.assert_not_called()
         self.assertEqual([method for method, _ in self.calls], ['screen.unlock'])
 
+    def test_health_identity_and_address_survive_later_input_failure(self):
+        health = {'status': 'ok', 'instance': 'original-guest-instance', 'ip': '10.0.2.15'}
+        self.guest.health.return_value = health
+
+        def unlock(method, **params):
+            self.assertEqual(method, 'screen.unlock')
+            self.assertEqual(self.report()['vphoned_health_response'], health)
+            raise GuestTransportError('receive_headers', TimeoutError('timed out'))
+
+        self.guest.call.side_effect = unlock
+        with self.assertRaises(GuestError):
+            self.run_measurement(initial_url='https://example.org/')
+        self.guest.health.assert_called_once_with()
+        self.guest.open.assert_not_called()
+        report = self.report()
+        self.assertEqual(report['vphoned_health_response'], health)
+        self.assertFalse(report['navigation_verified'])
+        self.assertFalse(report['initial_url_content_verified'])
+        self.assertEqual(report['stage'], 'screen_unlocked')
+
     def test_invalid_initial_url_is_rejected_before_evidence_or_requests(self):
         for url in ['javascript:1', 'https://user:secret@example.org/',
                     'https://example.org:99999/', 'https://example.org/\n']:

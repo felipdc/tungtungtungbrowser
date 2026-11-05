@@ -45,8 +45,11 @@ check native rendering at each stage before adopting an optimization.
       do not establish boot-time settings or explain the cold first-page failure.
       The optional [initial-URL readiness path](browsing-reliability.md#experimental-startup-with-an-initial-url)
       avoids the separate application-launch operation while retaining native
-      foreground and image checks. Its host failure-path tests pass; qualify
-      it on cold native starts and subsequent warm browsing before adoption.
+      foreground and image checks. Its first native run reached foreground
+      Safari in 223.2 seconds and passed three later warm local pages, but the
+      initial page showed a disconnected-network error. Retain the successful
+      guest health response and investigate browser network readiness before
+      adoption; a host proxy check does not qualify the first Safari page.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
