@@ -45,6 +45,15 @@ Use these sampled stacks to choose the next measurement. A thread captured in
 layout, keyboard or snapshot work may have spent earlier parts of its deadline
 elsewhere. The stack alone does not measure which function consumed the time.
 
+Some stackshot reports describe a termination in a top-level `reason` rather
+than a `termination` object. The summary preserves that text as `report_reason`.
+When `procName` is absent, it can read `procname` from the exact reported PID's
+`processByPid` entry; `process_source` records which field supplied the name.
+Ambiguous selected PID/name entries are errors. Other process and thread maps
+are not used to infer ownership or boot identity. An XPC timeout reason alone
+does not establish a `0x8badf00d` watchdog, and a report without a boot UUID
+remains `unknown_boot` even when its process and termination reason are known.
+
 Exit status zero means the supplied files were inspected, even when they
 contain current-boot crashes. Missing or conflicting identities remain
 unattributed. Exit status one indicates an input or output error. No result

@@ -158,6 +158,34 @@ def sampled_threads(body, frame_limit):
     return selected
 
 
+def process_identity(body):
+    """Read the named process or the exact PID entry in a stackshot map."""
+    name = body.get('procName')
+    if name is not None:
+        if not isinstance(name, str):
+            raise ValueError('Process name must be a string')
+        return name, 'procName'
+    processes = body.get('processByPid')
+    pid = body.get('pid')
+    if processes is None or pid is None:
+        return None, None
+    if not isinstance(processes, dict) or type(pid) is not int or pid < 0:
+        raise ValueError('Stackshot process map requires an object and a nonnegative PID')
+    key = str(pid)
+    if isinstance(processes, ReportObject) and key in processes.duplicate_keys:
+        raise ValueError('Duplicate selected stackshot PID')
+    if key not in processes:
+        return None, None
+    process = processes[key]
+    if (not isinstance(process, dict) or
+            isinstance(process, ReportObject) and 'procname' in process.duplicate_keys):
+        raise ValueError('Invalid or duplicate selected stackshot process name')
+    name = process.get('procname')
+    if name is not None and not isinstance(name, str):
+        raise ValueError('Stackshot process name must be a string')
+    return (name, 'processByPid') if name is not None else (None, None)
+
+
 def summarize(raw, expected_boot_uuid, *, thread_frames=0):
     if type(thread_frames) is not int or not 0 <= thread_frames <= 100:
         raise ValueError('thread_frames must be between 0 and 100')
@@ -184,9 +212,13 @@ def summarize(raw, expected_boot_uuid, *, thread_frames=0):
     # Some native panic logs repeat IDs inside their large task/thread maps.
     # They are not used here. Ambiguity in fields we actually return is an error.
     selected = {key: body.get(key) for key in
-                ('procName', 'pid', 'captureTime', 'incident', 'termination')}
+                ('procName', 'pid', 'captureTime', 'incident', 'termination', 'reason')}
     if duplicate_count(selected):
         raise ValueError('Duplicate key in selected crash details')
+    report_reason = body.get('reason')
+    if report_reason is not None and not isinstance(report_reason, str):
+        raise ValueError('Report reason must be a string')
+    process, process_source = process_identity(body)
     reasons = termination.get('reasons', [])
     if not isinstance(reasons, list) or not all(isinstance(x, str) for x in reasons):
         raise ValueError('Termination reasons must be a list of strings')
@@ -207,7 +239,8 @@ def summarize(raw, expected_boot_uuid, *, thread_frames=0):
         'attribution': attribution,
         'reported_boot_uuids': sorted(distinct),
         'duplicate_keys_in_unselected_objects': duplicate_count(body),
-        'process': body.get('procName'),
+        'process': process,
+        'process_source': process_source,
         'pid': body.get('pid'),
         'capture_time': body.get('captureTime'),
         'incident': body.get('incident'),
@@ -215,6 +248,7 @@ def summarize(raw, expected_boot_uuid, *, thread_frames=0):
         'watchdog_event': event if is_watchdog else None,
         'wall_clock_allowance_seconds': seconds,
         'termination': termination,
+        'report_reason': report_reason,
     }
     if thread_frames:
         result['sampled_threads'] = sampled_threads(body, thread_frames)

@@ -18,6 +18,53 @@ def encoded(body, header=None):
 
 
 class CrashSummaryTest(unittest.TestCase):
+    def test_stackshot_reason_and_exact_pid_do_not_establish_boot_identity(self):
+        reason = 'XPC message timeout. Writing a stackshot and terminating.'
+        result = summarize(encoded({
+            'bug_type': '288', 'pid': 42, 'incident': CURRENT, 'reason': reason,
+            'processByPid': {
+                '7': {'procname': 'UnrelatedProcess'},
+                '42': {'procname': 'ExampleAudioService', 'threadById': {}},
+            },
+        }, {'bug_type': '288', 'timestamp': '2026-01-01 00:00:00'}), CURRENT,
+            thread_frames=3)
+        self.assertEqual(result['process'], 'ExampleAudioService')
+        self.assertEqual(result['process_source'], 'processByPid')
+        self.assertEqual(result['report_reason'], reason)
+        self.assertEqual(result['attribution'], 'unknown_boot')
+        self.assertFalse(result['watchdog_termination'])
+        self.assertEqual(result['termination'], {})
+        self.assertEqual(result['sampled_threads'], [])
+
+    def test_stackshot_selected_identity_rejects_ambiguity_and_invalid_types(self):
+        for raw in (
+            b'{"pid":42,"processByPid":{"42":{},"42":{"procname":"service"}}}',
+            b'{"pid":42,"processByPid":{"42":{"procname":"a","procname":"b"}}}',
+            b'{"pid":42,"processByPid":{"42":{"procname":[]}}}',
+            b'{"pid":42,"processByPid":{"42":[]}}',
+            b'{"pid":true,"processByPid":{}}',
+            b'{"pid":42,"processByPid":[]}',
+            b'{"reason":{}}', b'{"procName":[]}',
+        ):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                summarize(raw, CURRENT)
+
+    def test_stackshot_unselected_fields_and_missing_pid_are_not_guessed(self):
+        raw = (b'{"pid":42,"processByPid":{"7":{"procname":"a","procname":"b"},'
+               b'"42":{"procname":"service","threadById":{"1":{},"1":{}}}}}')
+        result = summarize(raw, CURRENT)
+        self.assertEqual(result['process'], 'service')
+        self.assertEqual(result['duplicate_keys_in_unselected_objects'], 2)
+        for body in ({'pid': 43, 'processByPid': {'42': {'procname': 'service'}}},
+                     {'processByPid': {'42': {'procname': 'service'}}}):
+            result = summarize(encoded(body), CURRENT)
+            self.assertIsNone(result['process'])
+            self.assertIsNone(result['process_source'])
+        result = summarize(encoded({'procName': 'Explicit', 'pid': 42,
+                                    'processByPid': {'42': {'procname': 'Other'}}}), CURRENT)
+        self.assertEqual(result['process'], 'Explicit')
+        self.assertEqual(result['process_source'], 'procName')
+
     def test_optional_stacks_keep_identity_and_bound_frames_without_inferring_cause(self):
         body = {
             'bootSessionUUID': EARLIER, 'faultingThread': 2,
