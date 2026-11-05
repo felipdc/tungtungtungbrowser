@@ -219,8 +219,8 @@ its first root accessibility request with native error `-25216`. The existing
 full-tree observer had returned the same error in a separate completed request.
 The helper visited no elements; its failed RPC took 2.48 seconds, including
 0.67 seconds in the root request. No field tap, URL text or Return followed,
-and Command-L was not repeated. A successful focused field query and a latency
-improvement remain unverified. The experimental helper remains outside the
+and Command-L was not repeated. At that stage, a successful focused field query
+and a latency improvement remained unverified. The experimental helper remains outside the
 published controller backend.
 
 Offline inspection then found a branch in this firmware's attribute-copy path
@@ -230,8 +230,8 @@ identify those values as send and receive timeouts. This supports investigating
 the native messaging deadline; it does not identify the slow endpoint or prove
 that a larger budget will resolve the failure. The focused probe allowed
 0.15 seconds for its root request, while the pinned original query configures
-0.5 seconds. A future comparison should vary that root budget independently,
-retain the overall query deadline, and preserve the original failed requests.
+0.5 seconds. That evidence motivated the subsequent comparison below, varying the root
+budget while retaining the overall deadline and original failed requests.
 
 That run reached verified foreground Safari in 225.0 seconds, but its cold
 page's shared worker missed the 15-second deadline. A distinct warm navigation
@@ -241,6 +241,60 @@ expected diagnostic canvas was visible at 15 seconds; captures at 30 and
 60 seconds showed the matching saved observation identifier. The cold failure
 remains separate from the warm success. These sequential observations do not
 establish repeated cold reliability, sustained tab reuse or resource savings.
+
+### Root timeout and absent identifiers
+
+A subsequent native run compared 0.15-second and 2-second root-request budgets,
+retaining the 0.15-second budget for other attributes, eight-second scan deadline,
+20-second process alarm, exact process identity and field-owner checks.
+
+The first attempt stopped before either root query because accessibility was
+not already enabled. Calling the published controller to initialize its normal
+accessibility path then exceeded the client's 45-second response timeout. That
+request was not repeated, and its response remains unavailable. A later daemon
+inspection completed through the same native interface lock; this is evidence
+that inspection could proceed, not a recovered successful result for the
+timed-out request. The experimental helpers themselves do not enable or disable
+accessibility switches; normal controller initialization can enable them.
+
+After that inspection, the 0.15-second variant returned `-25216` on its root
+request. The 2-second variant obtained 22 elements and read the expected address
+field, then stopped on identifier attribute `5019` returning `-25212` for another
+element. Apple documents that value as
+[`AXError.noValue`](https://developer.apple.com/documentation/applicationservices/axerror/novalue),
+meaning the requested value or element does not exist. These sequential
+observations support a larger root budget; they are not a controlled timing
+comparison or proof of which endpoint caused the earlier timeout.
+
+A revised private scanner skips only an identifier read that returns exactly
+`-25212` with no value. It still scans the remaining elements to establish a
+unique match. A missing required field attribute, a non-null value paired with
+that error, a different error, a duplicate address field or a deadline failure
+still rejects the result. Twenty local contract scenarios and five path-format
+checks passed with address and undefined-behavior sanitizers before the native
+trial.
+
+Three consecutive reads of the unchanged native address field then completed:
+
+| Read | End-to-end RPC | Native scan | Elements visited | Exact address-field matches |
+| --- | ---: | ---: | ---: | ---: |
+| First | 4.18 s | 0.845 s | 22 | 1 |
+| Second | 1.00 s | 0.381 s | 22 | 1 |
+| Third | 0.85 s | 0.324 s | 22 | 1 |
+
+Each read accounted for 11 absent identifiers, retained the same kernel process
+identity and returned the expected URL, traits and frame. No additional keyboard,
+touch, text or Return input accompanied these follow-ups. The results remain
+`action_eligible: false` and `foreground_verified: false`: repeated reads of one
+unchanged field do not qualify focus transitions, navigation, foreground changes
+or the public tab-reuse path. The focused helper is not a published backend.
+
+In that run, Safari reached verified foreground in 232.5 seconds. Both workers
+on the first cold page missed their 15-second deadlines; that failure remains
+recorded. A distinct warm navigation passed workers, canvas and WebGL checks in
+18.12 seconds after a 0.73-second acknowledgment. The expected canvas was visible
+at 15 seconds, and the matching saved result was visible at 30 and 60 seconds.
+This does not establish repeated cold reliability or resource savings.
 
 ## Native time and startup ordering
 

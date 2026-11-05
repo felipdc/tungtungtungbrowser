@@ -85,10 +85,12 @@ check native rendering at each stage before adopting an optimization.
       check; slow foreground and accessibility queries remain a latency issue.
       A [focused address-field experiment](native-control-audit.md#focused-address-field-query-experiment)
       first failed native symbol binding. A follow-up verified the required
-      names and exact application-container process path, then encountered the
-      same native root-query error as the existing observer. Resolve that
-      request failure and compare successful queries while preserving foreground
-      and process ownership checks before adopting a narrower query path.
+      names and exact application-container process path. A larger root-request
+      budget and explicit handling of absent identifiers subsequently passed
+      three reads of one unchanged native address field. Qualify accessibility
+      initialization, successful control comparisons and focus/navigation
+      transitions while preserving foreground and process ownership checks
+      before adopting a narrower query path.
 - [ ] Trace warm display updates independently of navigation callbacks. A
       [foreground trial](browser-control.md#warm-navigation-observations)
       retained Safari and passed consecutive local diagnostics, but later
