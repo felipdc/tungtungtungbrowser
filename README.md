@@ -19,6 +19,13 @@ under development. The current cold-start target is roughly 300 seconds;
 repeatable startup and warm navigation take priority over reducing that time
 further. This is a development target, not a startup guarantee.
 
+Current performance is provisionally accepted for API development. The main
+priority is a complete session workflow: navigate, wait for page conditions,
+read rendered HTML, observe requests and response bodies, capture screenshots,
+use CSS/XPath actions across pages, then close and clean up. These expanded
+APIs are planned, not yet implemented; see the [API roadmap](docs/roadmap.md).
+Further runtime optimization should address failures measured in that workflow.
+
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.
 An ARM64 build booted iOS, but its initial Safari window and local-page checks

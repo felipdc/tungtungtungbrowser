@@ -5,14 +5,37 @@ provider-neutral and validate them against native Safari. Deployment details,
 credentials, external-site acceptance tests and captured content stay outside
 this repository.
 
-## Current runtime work
+## Current priority: complete browser API workflow
 
-Prioritize reliable cold startup and responsive, repeatable use of warmed
-browsers, then consistent external-page browsing and measured resource
-reductions. Roughly 300 seconds is an acceptable cold-start budget for the
-current work; reducing it further is not the main optimization target. This is
-a development target, not a supported startup guarantee. Retain failures and
-check native rendering at each stage before adopting an optimization.
+Accept the current performance provisionally. Build and verify the complete
+developer workflow before pursuing additional standalone runtime optimization:
+
+1. Create an owned browser session and attach native inspection before navigation.
+2. Navigate and wait for an explicit page condition.
+3. Read rendered HTML, keeping it distinct from the original document response.
+4. Observe requests and responses and successfully capture an application API's
+   JSON response; provide request/response waiters registered before actions.
+5. Capture the page, navigate to another external page, and record latency and
+   success or failure for both pages.
+6. Perform CSS and XPath selector actions, condition waits and bounded delays,
+   then capture the resulting page state.
+7. Close the session and release its tabs, subscriptions, transport and pending
+   waits without affecting resources it does not own.
+
+Use portable local fixtures for API contract tests and keep the real external
+acceptance workflow private. Reuse suitable existing selector/protocol libraries
+where they preserve native Safari behavior. Optimizations now need a failure or
+measured bottleneck in this API workflow; the observations below remain evidence,
+not prerequisites that must all be solved before API work starts.
+
+## Runtime baseline and recorded experiments
+
+The recorded runtime targets are reliable cold startup, responsive use of warmed
+browsers, consistent external-page browsing and lower measured resource use.
+Roughly 300 seconds remains an acceptable cold-start budget, not a supported
+startup guarantee. These open issues are provisionally accepted while the API
+workflow is built. Revisit them when that workflow identifies a failure or
+bottleneck, retaining failed outcomes and native rendering checks.
 
 - [ ] Make cold startup and Safari readiness reliable within the approximate
       startup budget. Measure warm navigation, page execution, native input and
@@ -52,8 +75,10 @@ check native rendering at each stage before adopting an optimization.
       adoption; a host proxy check does not qualify the first Safari page.
       An optional [assigned-address wait](browsing-reliability.md#experimental-wait-for-an-assigned-guest-address)
       now preserves read-only health samples and blocks input until an address
-      appears within the original deadline. Host tests passed; repeated native
-      cold-page qualification is pending, and an address alone is insufficient.
+      appears within the original deadline. Its first native trial waited 5.01
+      seconds for an address and reached foreground Safari at 226.28 seconds,
+      but still failed the cold shared worker and cold rendering checks.
+      Keep the condition optional; an address alone is insufficient.
 - [ ] Establish consistent external-page browsing across recorded runs. An
       unexpected login wall or challenge is a failed acceptance outcome.
       Investigate device/browser signals and proxy behavior without treating a
@@ -92,6 +117,11 @@ check native rendering at each stage before adopting an optimization.
       passed three warm local pages but failed its cold workers and one external
       page. Warm memory stayed at 6.36 GiB and callback latency remained variable;
       keep the mode experimental and investigate readiness separately.
+      The subsequent [assigned-address trial](browsing-reliability.md#native-validation-of-the-assigned-address-wait)
+      retained a 6.36-GiB warm peak and a late third-page image. Its successful
+      post-sequence foreground read took 55.16 seconds. Investigate that native
+      observation path separately from fast URL acknowledgements; process
+      liveness alone cannot replace foreground verification.
       A [guest CPU-count comparison](cpu-scheduling.md) reached foreground
       Safari sooner with three application CPUs, but both worker checks timed
       out. Its two-CPU control passed local rendering and touch, then hit another
@@ -217,7 +247,7 @@ check native rendering at each stage before adopting an optimization.
 - [ ] Validate repeated navigation, worker consistency, native TLS and proxy
       failure/recovery behavior.
 
-## Browser API expansion — pursue after the current runtime work
+## Browser API implementation backlog
 
 - [ ] **Original response HTML:** retrieve the main document response body
       before DOM parsing/loading completes, including URL, status, headers,
@@ -230,6 +260,13 @@ check native rendering at each stage before adopting an optimization.
 - [ ] **`waitForSelector`:** support attached, visible, hidden and detached
       states, with frame scope, configurable timeout and cancellation. Define
       navigation and stale-element behavior.
+- [ ] **CSS and XPath actions:** resolve selectors in the current document/frame,
+      verify actionability and use native input for clicks and typing. Reuse
+      existing parsing/protocol support where possible; reject stale or ambiguous
+      targets explicitly rather than silently acting on a different element.
+- [ ] **Owned sessions:** create, attach and close a session with explicit tab,
+      transport and event-subscription ownership. Verify cleanup on success,
+      timeout, navigation failure and caller cancellation.
 - [ ] **`waitForTimeout`:** provide a bounded, cancellable delay in a documented
       time unit. Keep condition-based waits available for deterministic flows.
 - [ ] **`waitForNetworkRequest`:** wait for requests by URL, method, resource

@@ -50,10 +50,12 @@ instance, when supplied by the initial response, stops startup before input.
 Expiry also stops startup without unlocking, launching or opening a URL.
 
 The option has host-side tests for ordering, absent/invalid addresses, transport
-failures, daemon restarts and late replies. Native qualification is still pending.
-The default startup behavior is unchanged, and successful address observation
-does not set either page-content verification flag. Compare complete cold-page
-outcomes before considering this condition for the default startup path.
+failures, daemon restarts and late replies. Its [first native
+trial](#native-validation-of-the-assigned-address-wait) exercised the empty-to-assigned
+address transition, but still failed cold-page checks. The default startup
+behavior is unchanged, and successful address observation does not set either
+page-content verification flag. Compare complete cold-page outcomes before
+considering this condition for the default startup path.
 
 ## Retain each stage's outcome
 
@@ -399,3 +401,66 @@ baseline files and all 54 deployed source files were verified unchanged.
 The cold and external failures, variable warm latency and unchanged warm
 memory usage leave mode 2 experimental. Runtime pins and resource limits
 remain unchanged.
+
+## Native validation of the assigned-address wait
+
+The first native run of `--wait-for-guest-ip` used a 300-second readiness
+deadline, mode 0 of the same experimental emulator, native FP with the boundary
+correction, the original allocator and the same stopped tab-cleanup parent and
+complete renderer-cache seed. Guest and container resource settings were
+unchanged. It reused the preceding trial's proxy session, which differed from
+the earlier mode 0 control. The host was rebooted. No running configuration
+was changed during measurement.
+
+The initial healthy response still had an empty address at 171.4 seconds.
+One read-only poll reported an assigned address at 176.4 seconds with the same
+daemon instance. The wait took 5.01 seconds and sent no input before that
+observation. Unlock then took 15.90 seconds; the single URL-open request took
+22.49 seconds. Foreground Safari completed at 226.28 seconds, within the
+configured budget. The original empty-address sample and request timings
+were retained.
+
+The first page still failed. Its callback arrived at 330.64 seconds from
+launch, or 138.29 seconds after navigation began. The dedicated worker replied
+in 6.65 seconds, but the shared worker exceeded its 15-second deadline. Canvas
+and WebGL passed. The subsequent capture displayed the canvas while the page
+header, observation text and saved identifier were missing. This run verifies
+that the address condition works; it does not demonstrate reliable cold-page
+readiness or isolate the cause of the rendering and worker failures.
+
+Three later navigations completed in the same Safari process:
+
+| Navigation | Acknowledgement | Complete callback | 30-second image | 60-second image |
+| --- | ---: | ---: | --- | --- |
+| First | 0.79 s | 15.46 s | Matching completed page | Matching completed page |
+| Second | 0.63 s | 14.78 s | Matching completed page | Matching completed page |
+| Third | 3.24 s | 28.96 s | Still collecting observations | Matching completed page |
+
+All three callbacks passed workers, canvas and WebGL. The third incomplete
+image remains incomplete despite the earlier callback. The post-sequence
+`apps.foreground` observation took 55.16 seconds and returned successfully;
+that read is separate from navigation acknowledgement and page execution.
+The ordinary default URL-open path did not make an extra foreground query for
+each navigation. Saved tab records grew from four to seven, using sequential
+database/WAL copies rather than an atomic display-state snapshot.
+
+Both ordinary external HTTPS pages displayed their requested content at 30
+and 60 seconds. Both manual review gates were completed before their deadlines.
+Proxy-route checks passed before and after the external sequence, retaining
+the same observed exit within this run. These successful samples do not
+qualify the failed cold page or guarantee future external-page behavior.
+
+The complete startup window averaged 2.36 CPU cores and peaked at 6.37 GiB.
+The 300-second warm window averaged 1.97 cores and peaked at 6.36 GiB; the
+240-second ordinary external-page window averaged 2.02 cores and peaked at
+6.29 GiB. A separate later browsing window averaged 2.08 cores and peaked
+at 6.48 GiB. None of these windows recorded a memory-limit event or OOM kill.
+These measurements do not establish a meaningful resource reduction or a
+smaller supported host.
+
+Native shutdown took 15.9 seconds without forced termination. Parent disks,
+renderer cache, original baseline files and all 55 deployed source files were
+verified unchanged. None of the collected new/changed crash reports matched
+the current native boot; that limited inventory does not prove a crash-free
+guest. Keep the address wait optional and investigate slow native foreground
+observations, incomplete rendering and cold worker behavior separately.
