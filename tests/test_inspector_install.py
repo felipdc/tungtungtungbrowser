@@ -59,6 +59,49 @@ class DeploymentGuest:
 
 
 class InspectorInstallTests(unittest.TestCase):
+    def test_process_launch_verifies_pid_and_boot_without_loading_a_service(self):
+        guest = ProcessGuest()
+        binary = b'native bridge fixture'
+        with tempfile.TemporaryDirectory() as directory:
+            result = installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                       Path(directory) / 'deployment', guest.health,
+                                       launch_mode='process')
+            self.assertFalse((Path(directory) / 'deployment/service.plist').exists())
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['health']['pid'], result['spawn']['pid'])
+        self.assertEqual(result['health']['boot_uuid'], result['spawn']['boot_uuid'])
+        self.assertEqual(guest.calls.count('script.eval'), 1)
+        self.assertFalse(any(name.startswith('services.') for name in guest.calls))
+        self.assertIn(json.dumps(["spawn", result['log']]), guest.source)
+
+    def test_process_spawn_failure_or_lost_reply_is_never_replayed(self):
+        for failure in ('lost_reply', 'exit', 'invalid_pid', 'invalid_boot', 'wrong_pid', 'wrong_boot'):
+            with self.subTest(failure=failure):
+                guest = ProcessGuest(failure)
+                binary = b'native bridge fixture'
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / 'deployment'
+                    with self.assertRaises((GuestError, TimeoutError)):
+                        installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                          output, guest.health, launch_mode='process')
+                    result = json.loads((output / 'deploy.json').read_text())
+                self.assertEqual(result['status'], 'failed')
+                self.assertTrue(result['process_spawn_requested'])
+                self.assertIn('failure_diagnostics', result)
+                self.assertEqual(guest.calls.count('script.eval'), 1)
+                self.assertFalse(any(name.startswith('services.') for name in guest.calls))
+
+    def test_invalid_launch_mode_does_not_create_output_or_call_guest(self):
+        guest = ProcessGuest()
+        binary = b'native bridge fixture'
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'deployment'
+            with self.assertRaises(ValueError):
+                installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                  output, guest.health, launch_mode='fallback')
+            self.assertFalse(output.exists())
+        self.assertEqual(guest.calls, [])
+
     def test_failed_health_preserves_preexec_state_and_missing_log_without_restart(self):
         class StartingGuest(DeploymentGuest):
             def health(self):
@@ -167,6 +210,40 @@ class InspectorInstallTests(unittest.TestCase):
                                   Path(directory) / 'deployment', guest.health)
         self.assertEqual(guest.calls, ['files.write', 'files.read'])
         self.assertIsNone(guest.running)
+
+
+class ProcessGuest(DeploymentGuest):
+    BOOT = 'F0000000-0000-4000-8000-000000000000'
+
+    def __init__(self, failure=None):
+        super().__init__()
+        self.failure = failure
+
+    def health(self):
+        result = super().health() | {'boot_uuid': self.BOOT}
+        if self.failure == 'wrong_pid':
+            result['pid'] += 1
+        if self.failure == 'wrong_boot':
+            result['boot_uuid'] = 'F0000000-0000-4000-8000-000000000001'
+        return result
+
+    def _rpc(self, method, **params):
+        if method != 'script.eval':
+            return super()._rpc(method, **params)
+        self.calls.append(method)
+        self.source = params['source']
+        self.running = {'pid': 123}
+        if self.failure == 'lost_reply':
+            raise TimeoutError('Administrative reply lost after dispatch')
+        spawned = {'protocol': 2, 'status': 'spawned', 'pid': 123, 'boot_uuid': self.BOOT,
+                   'port': 1343, 'spawn_error': 0}
+        if self.failure == 'invalid_pid':
+            spawned['pid'] = True
+        if self.failure == 'invalid_boot':
+            spawned['boot_uuid'] = 'not-a-boot'
+        process = {'status': 9 if self.failure == 'exit' else 0, 'signal': None,
+                   'stdout': json.dumps(spawned), 'stderr': ''}
+        return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(process)}
 
 
 if __name__ == '__main__':

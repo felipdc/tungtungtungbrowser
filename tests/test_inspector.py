@@ -271,6 +271,58 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s._inspector.commands[-1], 'Target.resume')
         self.assertFalse(s._root_pending)
 
+    async def test_page_is_not_ready_until_resume_is_acknowledged(self):
+        s = session_fixture()
+        original = s._inspector.send_socket_data
+        resume_id = None
+        async def send(session_id, app_id, page_id, message):
+            nonlocal resume_id
+            if message['method'] == 'Target.resume':
+                resume_id = message['id']
+                return
+            await original(session_id, app_id, page_id, message)
+        s._inspector.send_socket_data = send
+        task = asyncio.create_task(s._setup_target('page-a', True))
+        while resume_id is None:
+            await asyncio.sleep(0)
+        self.assertFalse(s._target_ready.is_set())
+        self.assertFalse(task.done())
+        s._receive(s._session_id, {'id': resume_id, 'result': {}})
+        await task
+        self.assertTrue(s._target_ready.is_set())
+        self.assertFalse(s._root_pending)
+
+    async def test_resume_rejection_or_timeout_fails_without_replaying(self):
+        for rejected in (True, False):
+            with self.subTest(rejected=rejected):
+                s = session_fixture(timeout=0.01)
+                original = s._inspector.send_socket_data
+                resumes = []
+                async def send(session_id, app_id, page_id, message):
+                    if message['method'] == 'Target.resume':
+                        resumes.append(message)
+                        if rejected:
+                            s._receive(session_id, {'id': message['id'],
+                                'error': {'message': 'Target is not paused'}})
+                        return
+                    await original(session_id, app_id, page_id, message)
+                s._inspector.send_socket_data = send
+                with self.assertRaises(InspectorError if rejected else TimeoutError):
+                    await s._setup_target('page-a', True)
+                self.assertEqual(len(resumes), 1)
+                self.assertFalse(s._target_ready.is_set())
+                self.assertFalse(s._root_pending)
+
+    async def test_paused_frame_is_resumed_without_adopting_it_as_the_page(self):
+        s = session_fixture()
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'frame-a', 'type': 'frame', 'isPaused': True}}})
+        await asyncio.gather(*s._tasks)
+        self.assertEqual(s._inspector.commands, ['Target.resume'])
+        self.assertEqual(s.target_id, 'page-a')
+        self.assertNotIn('frame-a', s._targets)
+        self.assertFalse(s._root_pending)
+
     async def test_large_metadata_is_evicted_under_byte_limit(self):
         s = session_fixture(max_metadata_bytes=1024)
         s._event('page-a', {'method': 'Network.responseReceived', 'params': {

@@ -353,7 +353,7 @@ class InspectorSession:
                 # Resume even if setup fails or is cancelled. The closing session
                 # also tears down the native inspection socket; no debugger is enabled.
                 async with asyncio.timeout(5):
-                    await self._send_outer('Target.resume', targetId=target)
+                    await self._root_command('Target.resume', targetId=target)
         if self.target_id == target:
             self._target_ready.set()
 
@@ -379,7 +379,7 @@ class InspectorSession:
             info = params['targetInfo']
             if info.get('type', 'page') != 'page':
                 if info.get('isPaused', False):
-                    self._spawn(self._send_outer('Target.resume', targetId=info['targetId']))
+                    self._spawn(self._root_command('Target.resume', targetId=info['targetId']))
                 return
             target = info['targetId']
             self._targets.add(target)

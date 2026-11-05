@@ -65,10 +65,39 @@ not erase the original deployment failures.
 A later repeat again failed to start a fresh service before exec, and one direct
 run followed by an explicit service start did not restore it. A separate native
 process-spawn experiment ran the verified bridge successfully without keeping a
-long-running daemon RPC open. That launch path remains private experimental
-code; the public installer still requires a verified ready service. Neither the
-one successful warm service start nor the alternate spawn is a repeatable
-cold-start solution yet.
+long-running daemon RPC open. The public installer now offers that native path
+as an explicit experimental option:
+
+```sh
+python3 scripts/install_inspector_bridge.py /absolute/external/inspector-build \
+  --cid 3 --launch-mode process --output /absolute/external/process-deployment
+```
+
+Process mode creates no launchd job. The verified executable starts one child
+with its own process group, redirects its standard streams to a new private log
+and closes unrelated inherited descriptors. The administrative call returns
+after spawning; installation succeeds only when the bridge health response
+matches both the child PID and guest boot UUID. An existing log is never replaced,
+and an uncertain spawn is recorded without another launch or an automatic kill.
+The fixed administrative expression invokes the native executable; it does not
+evaluate JavaScript in Safari. Service mode remains the default. Neither option
+is yet qualified as a repeatable cold-start solution.
+
+Close Inspector sessions before stopping a bridge. Use its verified deployment
+record and a new evidence file:
+
+```sh
+python3 scripts/stop_inspector_bridge.py \
+  /absolute/external/process-deployment/deploy.json \
+  --cid 3 --output /absolute/external/process-stop.json
+```
+
+The stop command checks the PID and boot UUID in both the health exchange and
+the stop request itself. A replacement process is rejected, including one that
+appears between those exchanges. A lost reply stays an uncertain outcome and is
+not retried. `stop_acknowledged` means the matching bridge accepted the request;
+it does not independently prove process exit. The command does not unload a
+launchd job or remove retained deployment files.
 
 The optional protocol dependency is pymobiledevice3 at commit
 `776d601cec83b894c3ad0eeee8ab4db375a46e4a`. The small adapter bypasses its Lockdown
@@ -229,13 +258,30 @@ underlying exchanges. A timeout never silently replays navigation or input.
 ## Transport and native observations
 
 Bridge protocol 2 listens on guest VSOCK port 1343 and accepts only host CID 2.
-`health` and `stop` are single-line administrative commands when no session owns
-the bridge. `open` returns one JSON identity record, then the same connection
+`health` and `stop <pid> <boot_uuid>` are single-line administrative commands when
+no session owns the bridge. The legacy unguarded `stop` remains available for
+protocol compatibility; the stop script always uses the identity guard.
+`open` returns one JSON identity record, then the same connection
 carries native length-prefixed plist messages. EOF releases both the guest TCP
 service socket and XPC handoff. There is no network listener exposed outside the
 guest and no separate WebSocket stream. An external tunnel can be supplied as
 an async `InspectorTransport(bridge_socket=...)` factory returning a connected
 socket; the repository contains no provider-specific tunnel implementation.
+
+The bridge queues its native loopback client before handing the listening socket
+to Web Inspector. Previously it waited for the XPC acknowledgement before
+connecting. Native logs showed the service exiting after its two-second
+no-client window during that handoff. Queuing the client first addresses that
+ordering problem without sending a page command. Failed handoffs record a fixed
+XPC error category or acknowledgement timeout in the bridge log; they do not
+restart the service or change inspection preferences.
+
+When WebKit reports a newly paused target, the SDK now waits for the native
+`Target.resume` acknowledgement. A rejection or missing reply fails the session
+without replaying the command. Page readiness is not signalled before that
+acknowledgement; paused frame and worker targets are resumed without adopting
+them as the inspected page. This makes resume failures observable rather than
+discarding them and later reporting only a page-condition timeout.
 
 On iOS 26.6.2, the native bridge build, verified installation, handshake, DOM
 reads, CSS/XPath queries, reload, response-body retrieval and repeated attach/

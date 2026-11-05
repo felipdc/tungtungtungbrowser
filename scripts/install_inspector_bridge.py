@@ -47,7 +47,9 @@ async def health(cid):
         await transport.close()
 
 
-def install(guest, data, digest, output, health_check):
+def install(guest, data, digest, output, health_check, *, launch_mode='service'):
+    if launch_mode not in ('service', 'process'):
+        raise ValueError('launch_mode must be service or process')
     if hashlib.sha256(data).hexdigest() != digest:
         raise ValueError('Bridge binary digest mismatch')
     output = Path(output).resolve()
@@ -63,7 +65,7 @@ def install(guest, data, digest, output, health_check):
     executable = '/private/var/root/ttt-inspector-bridge-v1-' + digest + '-' + token
     plist = '/private/var/root/' + label + '.plist'
     log = '/private/var/root/' + label + '.log'
-    report = {'status': 'installing', 'helper_sha256': digest, 'path': executable,
+    report = {'status': 'installing', 'launch_mode': launch_mode, 'helper_sha256': digest, 'path': executable,
               'label': label, 'plist': plist, 'log': log, 'calls': [],
               'inspection_preferences_changed': False}
 
@@ -104,6 +106,14 @@ def install(guest, data, digest, output, health_check):
         # the executable has initialized or opened its log. Preserve that state
         # without restarting input, replacing a process, or masking the failure.
         diagnostics = report['failure_diagnostics'] = {}
+        if launch_mode == 'process':
+            # This exact, unique log belongs to the one requested spawn. Keep
+            # uncertain launches visible; do not start or kill another process.
+            try:
+                diagnostics['log'] = rpc('files.read', path=log, limit=16384)
+            except Exception as error:
+                diagnostics['log_error'] = f'{type(error).__name__}: {error}'
+            return
         try:
             status = rpc('services.status', label=label)
             diagnostics['service'] = status
@@ -133,16 +143,44 @@ def install(guest, data, digest, output, health_check):
             report['existing_bridge'] = existing
             raise GuestError('A bridge is already running; stop its owning deployment before replacing it')
         put(executable, data, '700')
-        service = plistlib.dumps({'Label': label, 'ProgramArguments': [executable, 'serve'],
-                                 'RunAtLoad': True, 'KeepAlive': False,
-                                 'StandardOutPath': log, 'StandardErrorPath': log})
-        (output / 'service.plist').write_bytes(service)
-        put(plist, service, '600')
-        report['service_load_requested'] = True
-        loaded = rpc('services.load', paths=[plist], override=False)
-        rows = [row for row in loaded.get('services', []) if row.get('label') == label]
-        if len(rows) != 1 or not rows[0].get('running') or rows[0].get('program') != executable:
-            raise GuestError('Native bridge service identity was not verified')
+        if launch_mode == 'service':
+            service = plistlib.dumps({'Label': label, 'ProgramArguments': [executable, 'serve'],
+                                     'RunAtLoad': True, 'KeepAlive': False,
+                                     'StandardOutPath': log, 'StandardErrorPath': log})
+            (output / 'service.plist').write_bytes(service)
+            put(plist, service, '600')
+            report['service_load_requested'] = True
+            loaded = rpc('services.load', paths=[plist], override=False)
+            rows = [row for row in loaded.get('services', []) if row.get('label') == label]
+            if len(rows) != 1 or not rows[0].get('running') or rows[0].get('program') != executable:
+                raise GuestError('Native bridge service identity was not verified')
+            expected_pid = rows[0]['pid']
+        else:
+            report['process_spawn_requested'] = True
+            source = 'proc.run(' + json.dumps(executable) + ', ' + json.dumps(['spawn', log]) + ', "")'
+            answer = rpc('script.eval', source=source, timeout=30)
+            try:
+                if (not isinstance(answer, dict) or answer.get('ok') is not True
+                        or answer.get('crashed') is not False or answer.get('output') != ''
+                        or not isinstance(answer.get('result'), str) or len(answer['result']) > 65536):
+                    raise ValueError('Native launcher did not complete')
+                process = json.loads(answer['result'])
+                if (not isinstance(process, dict) or type(process.get('status')) is not int
+                        or process['status'] != 0 or process.get('signal', 0) is not None
+                        or process.get('stderr') != '' or not isinstance(process.get('stdout'), str)):
+                    raise ValueError('Native launcher exited unsuccessfully')
+                spawned = report['spawn'] = json.loads(process['stdout'])
+                if (not isinstance(spawned, dict) or type(spawned.get('protocol')) is not int
+                        or spawned['protocol'] != 2 or spawned.get('status') != 'spawned'
+                        or type(spawned.get('pid')) is not int or not 1 < spawned['pid'] <= 2147483647
+                        or type(spawned.get('port')) is not int or spawned['port'] != 1343
+                        or type(spawned.get('spawn_error')) is not int or spawned['spawn_error'] != 0
+                        or not isinstance(spawned.get('boot_uuid'), str)):
+                    raise ValueError('Invalid native spawn identity')
+                uuid.UUID(spawned['boot_uuid'])
+                expected_pid = spawned['pid']
+            except (KeyError, TypeError, ValueError) as error:
+                raise GuestError('Native bridge spawn was not verified; launch was not repeated') from error
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -152,13 +190,15 @@ def install(guest, data, digest, output, health_check):
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.25)
-        if report['health']['pid'] != rows[0]['pid']:
-            raise GuestError('Bridge health belongs to another service process')
+        if report['health']['pid'] != expected_pid:
+            raise GuestError('Bridge health belongs to another process')
+        if launch_mode == 'process' and report['health'].get('boot_uuid') != spawned['boot_uuid']:
+            raise GuestError('Bridge health belongs to another guest boot')
         report['status'] = 'complete'
         return report
     except Exception as error:
         report.update(status='failed', error=str(error))
-        if report.get('service_load_requested'):
+        if report.get('service_load_requested') or report.get('process_spawn_requested'):
             capture_failure_diagnostics()
         raise
     finally:
@@ -170,11 +210,13 @@ def main():
     parser.add_argument('build_directory', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cid', type=int, default=3)
+    parser.add_argument('--launch-mode', choices=('service', 'process'), default='service',
+                        help='Use launchd (default) or an explicitly owned process; neither retries a failed launch')
     args = parser.parse_args()
     try:
         data, digest = read_build(args.build_directory)
         result = install(Guest(cid=args.cid, timeout=30), data, digest, args.output,
-                         lambda: asyncio.run(health(args.cid)))
+                         lambda: asyncio.run(health(args.cid)), launch_mode=args.launch_mode)
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         parser.exit(1, f'Inspector installation failed: {error}. Deployment evidence is retained.\n')
     print(json.dumps(result, indent=2))
