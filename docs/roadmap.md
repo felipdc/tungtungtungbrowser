@@ -84,9 +84,11 @@ check native rendering at each stage before adopting an optimization.
       Automatic address-field focus recovery has passed a native local-page
       check; slow foreground and accessibility queries remain a latency issue.
       A [focused address-field experiment](native-control-audit.md#focused-address-field-query-experiment)
-      failed native symbol binding before reading the field. Resolve that
-      contract and compare successful queries while preserving foreground and
-      process ownership checks before adopting a narrower query path.
+      first failed native symbol binding. A follow-up verified the required
+      names and exact application-container process path, then encountered the
+      same native root-query error as the existing observer. Resolve that
+      request failure and compare successful queries while preserving foreground
+      and process ownership checks before adopting a narrower query path.
 - [ ] Trace warm display updates independently of navigation callbacks. A
       [foreground trial](browser-control.md#warm-navigation-observations)
       retained Safari and passed consecutive local diagnostics, but later

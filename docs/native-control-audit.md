@@ -189,6 +189,49 @@ accept an unidentified field, or convert a timed-out operation into repeated
 native input. Resolve native symbol availability and repeat the read-only
 comparison before considering integration.
 
+### Native loader and process-path follow-up
+
+A subsequent read-only firmware export inspection and live symbol inventory
+identified the two missing client-context names:
+
+| Earlier lookup | Name resolved in the tested native runtime |
+| --- | --- |
+| `__AXSetRequestingClient` | `_AXSetRequestingClient` |
+| `_AXOverrideRequestingClientType` | `AXOverrideRequestingClientType` |
+
+Mach-O symbol-table names include a leading underscore that is not part of the
+corresponding C name supplied to `dlsym`. The pinned upstream implementation
+makes these two lookups optional; the experimental helper required them and
+stopped. The live inventory called no accessibility functions or native input.
+This verifies the names on this build, not compatibility with other releases.
+
+The next comparison also exposed two incorrect test assumptions. An unfocused
+Safari toolbar returned a text label rather than a `URL` field; that check
+stopped before keyboard input. After one verified Command-L, the original tree
+found the field, but the helper's fixed `/Applications` executable-path guard
+rejected Safari's application-container installation. The revised diagnostic
+accepts an exact expected path from the native bundle/process records and
+compares it with the kernel path before and after its query. It still checks
+PID, start time and element ownership; matching a basename alone is insufficient.
+
+The corrected helper passed symbol loading and process identity, then failed
+its first root accessibility request with native error `-25216`. The existing
+full-tree observer had returned the same error in a separate completed request.
+The helper visited no elements; its failed RPC took 2.48 seconds, including
+0.67 seconds in the root request. No field tap, URL text or Return followed,
+and Command-L was not repeated. A successful focused field query, the meaning
+and cause of the native error, and a latency improvement remain unverified.
+The experimental helper remains outside the published controller backend.
+
+That run reached verified foreground Safari in 225.0 seconds, but its cold
+page's shared worker missed the 15-second deadline. A distinct warm navigation
+was acknowledged in 0.74 seconds, completed its callback in 17.32 seconds and
+passed both worker, canvas and WebGL checks in the same Safari process. The
+expected diagnostic canvas was visible at 15 seconds; captures at 30 and
+60 seconds showed the matching saved observation identifier. The cold failure
+remains separate from the warm success. These sequential observations do not
+establish repeated cold reliability, sustained tab reuse or resource savings.
+
 ## Native time and startup ordering
 
 Source review and live ordering checks on 2026-11-03.
