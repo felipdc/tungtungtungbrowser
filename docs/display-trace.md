@@ -124,3 +124,35 @@ is pending. The trace helps distinguish that ordering from an encode/readback
 failure or a request that queued no render. It does not, by itself, explain
 blank content, establish correct guest composition, or replace
 the paired images. Keep the failed captures when a later image matches.
+
+## Summarize a recording
+
+After disabling tracing, save a stable copy of the log outside the repository.
+The [offline analyzer](../scripts/analyze_qemu_display_trace.py) records its hash
+and writes a new JSON report without replacing earlier evidence:
+
+```sh
+python3 scripts/analyze_qemu_display_trace.py \
+  /external/trial/qemu-display.log \
+  --output /external/trial/display-summary.json
+```
+
+The report groups work by display pointer and job number, retains original line
+numbers and timestamps, and summarizes queue, encode, commit, wait, readback and
+completion delays. It counts requests that queued no render separately. Use a
+single process's recording; identities cannot be combined across restarts.
+
+`fully_observed_jobs` means the expected trace boundaries were present in order.
+It does not mean the library calls succeeded or the pixels were correct.
+Nonzero end statuses and false copy flags remain separate findings, including
+a commit or wait error followed by a successful pixel read. Jobs cut off by the
+observation window, duplicate events and inconsistent ordering remain in the
+report. Duration summaries include available boundary pairs from partial jobs;
+consult the job's issues before interpreting them.
+
+Events from different threads can reach the log in a different order from their
+timestamps. The analyzer reports those inversions and orders each job by its
+recorded time. It rejects malformed recognized events rather than silently
+dropping them. Neither a clean trace nor its timing summary establishes visual
+readiness or a performance improvement; correlate it with the original paired
+captures and equivalent workloads.
