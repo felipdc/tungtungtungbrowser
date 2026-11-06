@@ -52,31 +52,6 @@ class NativeFocusTests(unittest.TestCase):
             self.assertEqual(call.args, ('script.eval',))
             self.assertEqual(call.kwargs['source'], 'proc.run(' + json.dumps(reader.path) + ', ["pid", "301"], "")')
 
-    def test_absent_focus_can_settle_within_the_same_total_read_budget(self):
-        failed = {**native_result(), 'error': -25216, 'element': None}
-        absent = {**native_result(), 'error': -25212, 'element': None}
-        guest = Mock()
-        guest._rpc.side_effect = [answer(failed), answer(absent), answer(native_result())]
-        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN, max_read_attempts=3)
-        self.assertEqual(reader(301)['pid'], 301)
-        self.assertEqual([row['status'] for row in reader.last_read_attempts], ['failed', 'absent', 'read'])
-        self.assertEqual(guest._rpc.call_count, 3)
-        for call in guest._rpc.call_args_list:
-            self.assertEqual(call.args, ('script.eval',))
-            self.assertEqual(call.kwargs['source'], 'proc.run(' + json.dumps(reader.path) + ', ["pid", "301"], "")')
-
-    def test_absent_focus_exhaustion_and_opt_out_remain_absent(self):
-        for code in (0, -25212):
-            for attempts in (1, 2, 3):
-                with self.subTest(code=code, attempts=attempts):
-                    guest = Mock()
-                    guest._rpc.return_value = answer({**native_result(), 'error': code, 'element': None})
-                    reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN,
-                                               max_read_attempts=attempts)
-                    self.assertIsNone(reader(301))
-                    self.assertEqual(guest._rpc.call_count, attempts)
-                    self.assertEqual([row['status'] for row in reader.last_read_attempts], ['absent'] * attempts)
-
     def test_unrestored_wrong_owner_or_other_failed_read_is_never_repeated(self):
         failed = {**native_result(), 'error': -25216, 'element': None}
         for result in (

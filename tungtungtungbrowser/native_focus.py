@@ -98,11 +98,7 @@ class NativeFocusReader:
                     raise
             else:
                 record['status'] = 'absent' if field is None else 'read'
-                # Native focus can still be settling after Command-L. A valid
-                # absent result has already verified PID and restoration; use
-                # only the remaining read budget, without repeating input.
-                if field is not None or attempt + 1 == self.max_read_attempts:
-                    return field
+                return field
             finally:
                 record['seconds'] = time.monotonic() - started
             time.sleep(0.1)

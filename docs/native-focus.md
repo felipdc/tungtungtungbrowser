@@ -134,15 +134,12 @@ process checks found all four query/guard PIDs absent. The alarm exchange took
 3.16 host seconds and the forced-kill exchange 2.06 seconds; these include
 administrative execution and are not normal focus-query latency measurements.
 
-Bounded read recovery is enabled by default. A completed helper returning
-AX error `-25216` with no element, or a valid absent first responder (`0` or
-`kAXErrorNoValue` with no element), may be read again after 100 ms. Each result
-must verify the requested PID and matching before/after switch states first.
-Both cases consume the same total `max_read_attempts` budget, which defaults to
-two. A successful field returns immediately. This repeats only the query;
+One narrow read recovery is enabled by default: a completed helper returning
+AX error `-25216`, no element, the requested PID and matching before/after
+switch states may be read once more after 100 ms. This repeats only the query;
 Command-L, taps, paste and Return are not replayed. A transport timeout, failed
 process, missing state, wrong PID, un-restored switch or any other error stops
-immediately. An absent final read remains absent and prevents further input.
+immediately. Valid absent focus remains an absent result and prevents input.
 
 Set `max_read_attempts=1` in `NativeFocusReader` or `from_deployment` to disable
 read recovery; the supported limit is one to three attempts. The bounded
@@ -151,11 +148,14 @@ durations, including a failed first read when the next succeeds.
 
 A guarded native workflow returned `-25216` followed by valid absent focus after
 Command-L. Navigation stopped before sending text; subsequent owned-tab cleanup
-read the field and closed the tab successfully. A later complete fixture and
-external-page workflow used a three-read budget, but every field read succeeded
-on its first attempt. It validates normal guarded reads and cleanup, not the
-absent-to-present recovery branch. Contract tests cover that transition, the
-shared read budget, exhaustion and the one-read opt-out.
+read the field and closed the tab successfully. An experimental three-read
+budget that also re-read absent focus did not resolve the failure: another run
+still ended without a focused field. That absence-retry change was not retained
+in the SDK. Keep absent focus explicit rather than adding unsuccessful queries
+to the default path. A separate successful fixture/external-page workflow used
+first-attempt field reads throughout; it does not establish recovery from absent
+focus. All four owned tabs from this trial were closed and verified absent
+in fresh Inspector listings, preserving the original tab.
 
 The mobile-user build passed native installation and address-field readback in
 an owned-session trial. It verified both the bootstrap address and the new
