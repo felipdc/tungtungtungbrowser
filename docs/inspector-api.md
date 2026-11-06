@@ -574,3 +574,14 @@ resource savings. Both accessibility switches were independently verified off
 at the end, the owned test tab had been verified closed, and guest shutdown
 completed in 7.78 seconds with exit zero and no forced termination. Parent disks,
 parent cache and six original baseline files remained unchanged.
+
+A subsequent existing-page reload captured an HTTP 200 application JSON response
+and verified the expected item identifiers. Both native and host captures showed
+the product image, title and price without an authentication wall. A solid media
+overlay without its expected glyph remains a visual fidelity question. The
+retired-target handler tolerated 12 auxiliary-target retirements, including nine
+missing-target replies, while keeping the page session alive. This provides live
+coverage beyond the protocol fixtures. The subsequent external navigation stopped
+at a foreground-query transport timeout before keyboard input; that run does not
+establish cross-page acceptance. A later read-only foreground query succeeded in
+8.14 seconds. At the timeout, the cgroup had no memory-limit or OOM events.

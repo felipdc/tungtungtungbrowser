@@ -39,6 +39,48 @@ class NativeFocusTests(unittest.TestCase):
         guest._rpc.assert_called_once_with('script.eval', source=(
             'proc.run(' + json.dumps(reader.path) + ', ["pid", "301"], "")'), timeout=30)
 
+    def test_transient_read_is_repeated_only_after_verified_switch_restoration(self):
+        failed = {**native_result(), 'error': -25216, 'element': None}
+        guest = Mock()
+        guest._rpc.side_effect = [answer(failed), answer(native_result())]
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        self.assertEqual(reader(301)['pid'], 301)
+        self.assertEqual([r['status'] for r in reader.last_read_attempts], ['failed', 'read'])
+        self.assertEqual(reader.last_read_attempts[0]['ax_error'], -25216)
+        self.assertEqual(guest._rpc.call_count, 2)
+        for call in guest._rpc.call_args_list:
+            self.assertEqual(call.args, ('script.eval',))
+            self.assertEqual(call.kwargs['source'], 'proc.run(' + json.dumps(reader.path) + ', ["pid", "301"], "")')
+
+    def test_unrestored_wrong_owner_or_other_failed_read_is_never_repeated(self):
+        failed = {**native_result(), 'error': -25216, 'element': None}
+        for result in (
+                {**failed, 'after': {'application': 1, 'automation': 1}},
+                {**failed, 'requested_pid': 302},
+                {**failed, 'error': -25204},
+                {**failed, 'element': native_result()['element']},
+                {k: v for k, v in failed.items() if k != 'before'}):
+            with self.subTest(result=result):
+                guest = Mock()
+                guest._rpc.return_value = answer(result)
+                reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+                with self.assertRaises(GuestError):
+                    reader(301)
+                guest._rpc.assert_called_once()
+
+    def test_focus_read_exhaustion_opt_out_and_invalid_attempt_limit(self):
+        failed = {**native_result(), 'error': -25216, 'element': None}
+        for attempts in (1, 2):
+            guest = Mock()
+            guest._rpc.return_value = answer(failed)
+            reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN, max_read_attempts=attempts)
+            with self.assertRaises(GuestError):
+                reader(301)
+            self.assertEqual(guest._rpc.call_count, attempts)
+        for invalid in (0, 4, True, 1.0, None):
+            with self.assertRaises(ValueError):
+                NativeFocusReader(Mock(), sha256=SHA, deployment_id=TOKEN, max_read_attempts=invalid)
+
     def test_no_focus_is_distinct_from_query_failure_or_missing_result(self):
         guest = Mock()
         reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)

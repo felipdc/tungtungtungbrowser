@@ -7,6 +7,8 @@ typedef unsigned long Size;typedef unsigned char Boolean;typedef const void *CF;
 typedef struct {double x,y,w,h;} Rect;
 extern void *dlopen(const char *,int),*dlsym(void *,const char *);
 extern int printf(const char *,...),fflush(void *),strcmp(const char *,const char *);extern unsigned alarm(unsigned);
+extern unsigned getuid(void),geteuid(void),getgid(void),getegid(void);
+extern int setuid(unsigned),setgid(unsigned),setgroups(int,const unsigned *);
 static int (*copyAttr)(CF,CF,CF *);static void(*release)(CF);static Size(*typeID)(CF),(*stringType)(void),(*numberType)(void),(*valueType)(void);
 static Boolean(*stringUTF8)(CF,char *,long,unsigned),(*numberValue)(CF,int,void *),(*axValue)(CF,int,void *);
 static int valid_pid(const char *s) {
@@ -21,6 +23,12 @@ int main(int argc,char **argv){
  int check=argc==2&&!strcmp(argv[1],"check");
  int pid=argc==3&&!strcmp(argv[1],"pid")?valid_pid(argv[2]):0;
  if(!check&&!pid)return 2;
+ /* Safari and its accessibility preferences belong to the mobile user. Switch
+  * before loading the frameworks so this short-lived query reads and restores
+  * that user's state. Do not retain administrative supplementary groups.
+  */
+ if(geteuid()==0&&(setgroups(0,0)||setgid(501)||setuid(501)))return 6;
+ if(getuid()!=501||geteuid()!=501||getgid()!=501||getegid()!=501)return 7;
  void*cf=dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",2),*ax=dlopen("/System/Library/PrivateFrameworks/AXRuntime.framework/AXRuntime",2),*lib=dlopen("/usr/lib/libAccessibility.dylib",2);if(!cf||!ax||!lib)return 4;
  CF(*create)(int)=dlsym(ax,"_AXUIElementCreateAppElementWithPid");int(*timeout)(CF,float)=dlsym(ax,"AXUIElementSetMessagingTimeout"),(*getPid)(CF,int*)=dlsym(ax,"AXUIElementGetPid");Size(*elementType)(void)=dlsym(ax,"AXUIElementGetTypeID");
 #define LOAD(V,L,N) V=(__typeof__(V))dlsym(L,N)
@@ -31,7 +39,7 @@ int main(int argc,char **argv){
  Boolean beforeApp=app(),beforeAuto=automation();if(!beforeApp)setApp(1);if(!beforeAuto)setAuto(1);if(client)client(2);if(override)override(2);
  CF root=create(pid),focused=0;int e=-1;if(root){e=timeout(root,0.25f);if(!e)e=copyAttr(root,(CF)3002,&focused);}
  if(focused&&typeID(focused)!=elementType())e=-2;
- printf("{\"protocol\":1,\"requested_pid\":%d,\"error\":%d,\"before\":{\"application\":%d,\"automation\":%d},\"element\":",pid,e,beforeApp,beforeAuto);
+ printf("{\"protocol\":1,\"uid\":501,\"requested_pid\":%d,\"error\":%d,\"before\":{\"application\":%d,\"automation\":%d},\"element\":",pid,e,beforeApp,beforeAuto);
  if(focused&&!e&&typeID(focused)==elementType()){
   int owner=0,pe=getPid(focused,&owner),te=timeout(focused,0.25f);printf("{\"pid\":%d,\"pid_error\":%d,\"timeout_error\":%d,\"attributes\":{",owner,pe,te);
   unsigned keys[]={2001,2006,5019,2004,2003};const char*names[]={"label","value","identifier","traits","frame"};for(unsigned i=0;i<5;i++){if(i)printf(",");quoted(names[i]);printf(":");attr(focused,keys[i]);}printf("}}");

@@ -17,6 +17,13 @@ the tested native runtime, not a general compatibility guarantee for iOS.
 The native `kAXErrorNoValue` result with no element is treated as absent focus;
 it is distinct from a failed query.
 
+The helper runs as the guest's mobile user, UID/GID 501, before loading the
+accessibility frameworks. When launched by the administrative daemon as root,
+it first drops supplementary groups and changes its user and group. It refuses
+other user contexts. This keeps the focused-field query and its preference
+readback in Safari's user context. The change applies only to the short-lived
+helper process.
+
 ## Install and use
 
 Build on Linux with `clang-19`, `ld64.lld-19` and `ldid`. The build uses minimal
@@ -61,7 +68,8 @@ When the reader identifies the URL field but its editing trait is absent, the
 SDK can use that verified field's frame for one focus tap and then read it again.
 Missing or unverified focus stops the operation. Subsequent editing and URL
 readback checks use the first responder, independently of its screen position.
-A failed focus query does not trigger another reader or repeat native input.
+A failed focus query does not trigger another reader implementation or repeat
+native input.
 Missing focus, wrong ownership or a different URL prevents Return from being
 sent. A navigation acknowledgement still requires a separate page condition.
 
@@ -72,6 +80,27 @@ The Python reader requires matching before/after states. A terminated helper
 is an error and cannot prove restoration; no automatic input retry follows.
 The native messaging timeout and process alarm do not guarantee a precise
 host wall-clock duration under emulation.
+
+One narrow read recovery is enabled by default: a completed helper returning
+AX error `-25216`, no element, the requested PID and matching before/after
+switch states may be read once more after 100 ms. This repeats only the query;
+Command-L, taps, paste and Return are not replayed. A transport timeout, failed
+process, missing state, wrong PID, un-restored switch or any other error stops
+immediately. Valid absent focus also remains an absent result.
+
+Set `max_read_attempts=1` in `NativeFocusReader` or `from_deployment` to disable
+read recovery; the supported limit is one to three attempts. The bounded
+`reader.last_read_attempts` list records the most recent query's outcomes and
+durations, including a failed first read when the next succeeds.
+
+The mobile-user build passed native installation and address-field readback in
+an owned-session trial. It verified both the bootstrap address and the new
+destination before Return, with matching off/off accessibility states. An
+earlier owned attempt returned `-25216` before paste; its later cleanup read
+succeeded and the owned tab was verified closed while preserving the original
+tab. The bounded second-read path has regression coverage but was not exercised
+by the later successful native reads. That later workflow was interrupted after
+navigation, so its final owned-tab cleanup remains unverified.
 
 The query is read-only with respect to page content. It is not an implementation
 of selector clicks, scrolling, visibility checks or arbitrary DOM geometry.

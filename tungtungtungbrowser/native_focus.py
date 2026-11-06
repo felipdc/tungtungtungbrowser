@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 import re
+import time
 
 from .guest import GuestError
 
@@ -25,19 +26,24 @@ class NativeFocusReader:
     None means the native query completed and found no first responder. A failed
     query, wrong owner, malformed response, or un-restored switch is an error.
     """
-    def __init__(self, guest, *, sha256, deployment_id):
+    def __init__(self, guest, *, sha256, deployment_id, max_read_attempts=2):
+        if type(max_read_attempts) is not int or not 1 <= max_read_attempts <= 3:
+            raise ValueError('max_read_attempts must be an integer between 1 and 3')
         self.guest = guest
         self.path = helper_path(sha256, deployment_id)
+        self.max_read_attempts = max_read_attempts
+        self.last_read_attempts = []
 
     @classmethod
-    def from_deployment(cls, guest, path):
+    def from_deployment(cls, guest, path, *, max_read_attempts=2):
         path = Path(path)
         if path.stat().st_size > 128 * 1024:
             raise ValueError('Focus deployment record exceeds 128 KiB')
         report = json.loads(path.read_text())
         if report.get('status') != 'complete':
             raise ValueError('Focus helper deployment did not complete')
-        result = cls(guest, sha256=report['helper_sha256'], deployment_id=report['deployment_id'])
+        result = cls(guest, sha256=report['helper_sha256'], deployment_id=report['deployment_id'],
+                     max_read_attempts=max_read_attempts)
         if report.get('path') != result.path:
             raise ValueError('Focus helper path does not match its deployment identity')
         return result
@@ -74,12 +80,34 @@ class NativeFocusReader:
     def __call__(self, pid):
         if type(pid) is not int or not 1 < pid <= 2147483647:
             raise ValueError('Focus query requires a valid native process ID')
+        self.last_read_attempts = []
+        for attempt in range(self.max_read_attempts):
+            record = {'attempt': attempt + 1}
+            self.last_read_attempts.append(record)
+            started = time.monotonic()
+            try:
+                field = self._read_once(pid)
+            except GuestError as error:
+                record['status'] = 'failed'
+                result = getattr(error, 'native_helper_response', {})
+                record['ax_error'] = result.get('error')
+                # Only a completed read with verified restoration may be read
+                # again. A timeout, process failure or missing state cannot
+                # establish restoration. This repeats no key, tap or paste.
+                if not getattr(error, 'retryable_focus_read', False) or attempt + 1 == self.max_read_attempts:
+                    raise
+            else:
+                record['status'] = 'absent' if field is None else 'read'
+                return field
+            finally:
+                record['seconds'] = time.monotonic() - started
+            time.sleep(0.1)
+
+    def _read_once(self, pid):
         result = self._invoke(['pid', str(pid)])
         if (type(result.get('requested_pid')) is not int or result['requested_pid'] != pid
-                or type(result.get('error')) is not int or result['error'] not in (0, -25212)):
-            error = GuestError(f"Native focused-element query failed (AX error {result.get('error')!r})")
-            error.native_helper_response = result
-            raise error
+                or type(result.get('error')) is not int):
+            raise GuestError('Native focused-element response has an invalid process or error code')
         before, after = result.get('before'), result.get('after')
         if (not isinstance(before, dict) or set(before) != {'application', 'automation'}
                 or any(type(v) is not int or v not in (0, 1) for v in before.values())
@@ -90,6 +118,11 @@ class NativeFocusReader:
         if 'element' not in result:
             raise GuestError('Native focus query omitted its result')
         element = result['element']
+        if result['error'] not in (0, -25212):
+            error = GuestError(f"Native focused-element query failed (AX error {result['error']!r})")
+            error.native_helper_response = result
+            error.retryable_focus_read = result['error'] == -25216 and element is None
+            raise error
         if element is None:
             # AXRuntime can represent no first responder either as a null
             # successful value or kAXErrorNoValue. Other errors stay failures.
