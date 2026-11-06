@@ -134,17 +134,28 @@ process checks found all four query/guard PIDs absent. The alarm exchange took
 3.16 host seconds and the forced-kill exchange 2.06 seconds; these include
 administrative execution and are not normal focus-query latency measurements.
 
-One narrow read recovery is enabled by default: a completed helper returning
-AX error `-25216`, no element, the requested PID and matching before/after
-switch states may be read once more after 100 ms. This repeats only the query;
+Bounded read recovery is enabled by default. A completed helper returning
+AX error `-25216` with no element, or a valid absent first responder (`0` or
+`kAXErrorNoValue` with no element), may be read again after 100 ms. Each result
+must verify the requested PID and matching before/after switch states first.
+Both cases consume the same total `max_read_attempts` budget, which defaults to
+two. A successful field returns immediately. This repeats only the query;
 Command-L, taps, paste and Return are not replayed. A transport timeout, failed
 process, missing state, wrong PID, un-restored switch or any other error stops
-immediately. Valid absent focus also remains an absent result.
+immediately. An absent final read remains absent and prevents further input.
 
 Set `max_read_attempts=1` in `NativeFocusReader` or `from_deployment` to disable
 read recovery; the supported limit is one to three attempts. The bounded
 `reader.last_read_attempts` list records the most recent query's outcomes and
 durations, including a failed first read when the next succeeds.
+
+A guarded native workflow returned `-25216` followed by valid absent focus after
+Command-L. Navigation stopped before sending text; subsequent owned-tab cleanup
+read the field and closed the tab successfully. A later complete fixture and
+external-page workflow used a three-read budget, but every field read succeeded
+on its first attempt. It validates normal guarded reads and cleanup, not the
+absent-to-present recovery branch. Contract tests cover that transition, the
+shared read budget, exhaustion and the one-read opt-out.
 
 The mobile-user build passed native installation and address-field readback in
 an owned-session trial. It verified both the bootstrap address and the new

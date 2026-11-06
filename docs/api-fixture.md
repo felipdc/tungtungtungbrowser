@@ -56,6 +56,23 @@ click or establish touch behavior. WebKit can retain a document's fragment in
 the reported network URL; the document matcher above accepts that native form
 as well as a fragment-free response URL.
 
+Wait for the control you will act on after navigating to another page:
+
+```python
+await session.goto(destination)
+await session.wait_for_selector("body a", timeout=30)
+rendered_html = await session.content()
+await session.focus("body a")
+```
+
+An HTTP response or an existing paragraph does not establish that a page-owned
+script has inserted a later link. A native external-page trial reached HTTP 200
+and a paragraph condition, then returned no XPath link match and rejected focus
+because the link was not present yet. The owned tab still closed successfully.
+Keep that failed action in the results and use the actual target condition;
+a fixed delay does not establish readiness. `focus()` itself remains an
+immediate action with strict single-target lookup, not an implicit waiter.
+
 | Control or condition | Expected observation |
 | --- | --- |
 | `#load-data` | A real click sends an XHR to the relative `api-fixture-data.json` URL. Register request and response waiters first. The JSON contains `item.id == "fixture-item"` and `error == null`. |
