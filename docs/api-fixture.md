@@ -28,6 +28,34 @@ document. After navigation, wait for `#state[data-ready="true"]`, then read
 contains `Rendered document ready`. `#delayed-marker` is inserted later and can
 exercise an attached-state waiter without using a fixed sleep.
 
+Append `?auto=1` to exercise network capture before native selector clicks are
+available. In this mode the page itself sends its ordinary fixture XHR after
+initializing the DOM. The default page still waits for a button click. Once an
+owned session has attached to the fixture, register waiters before reloading;
+the initial bootstrap response predates attachment and cannot be recovered by
+registering a waiter afterward:
+
+```python
+# session is attached to api-workflow.html?auto=1.
+document_url = session.url.split("#", 1)[0]
+async with session.expect_response(lambda r: r.url.split("#", 1)[0] == document_url) as document, \
+        session.expect_request("*api-fixture-data.json") as request, \
+        session.expect_response("*api-fixture-data.json") as response:
+    await session.reload()
+
+payload = await response.value.json()
+assert response.value.status == 200 and payload["item"]["id"] == "fixture-item"
+await session.wait_for_selector('#state[data-response="200"]')
+original_html = await document.value.text()
+rendered_html = await session.content()
+```
+
+This mode validates observation of page-owned XHR and the difference between
+document-response HTML and the resulting DOM. It does not exercise a native
+click or establish touch behavior. WebKit can retain a document's fragment in
+the reported network URL; the document matcher above accepts that native form
+as well as a fragment-free response URL.
+
 | Control or condition | Expected observation |
 | --- | --- |
 | `#load-data` | A real click sends an XHR to the relative `api-fixture-data.json` URL. Register request and response waiters first. The JSON contains `item.id == "fixture-item"` and `error == null`. |
@@ -45,6 +73,31 @@ results outside the repository. The fixture provides test conditions; it does
 not add selector-click support to the SDK by itself.
 
 ## Native observations
+
+The opt-in automatic-XHR fixture completed a later warm sequence through the
+public API: owned-session creation, reload with document/request/response waiters,
+JSON validation, original and rendered HTML, a DOM condition, XPath focus,
+paired screenshots, navigation to an external HTTPS page, CSS focus and verified
+owned-tab cleanup. The original tab was preserved. The sequence took 65.7 seconds:
+
+| Operation | Observed duration |
+| --- | --- |
+| Create and attach the owned session | 15.19 s |
+| Fixture reload acknowledgement | 0.031 s |
+| Read completed fixture JSON | 0.167 s |
+| Read rendered / original fixture HTML | 0.036 / 0.012 s |
+| Native navigation acknowledgement for the external page | 19.76 s |
+| External committed-URL / DOM-condition waits after the response | 2.60 / 2.80 s |
+| Read rendered / original external HTML | 0.092 / 0.017 s |
+| Verified owned-tab cleanup | 9.14 s |
+
+Both native and host images showed the expected page content. Toolbar details
+and the focused control's outline differed between capture paths; this is not
+pixel-perfect rendering qualification. Native captures took 4.68 and 3.35 seconds,
+while each host capture took about 0.13 seconds. This small warm sequence does
+not establish repeated startup reliability, commercial-site acceptance, generic
+selector clicks or reduced memory use. An earlier attempt retained its failed
+fragment-sensitive document matcher even though the XHR returned successfully.
 
 One native fixture session completed original-response retrieval, rendered HTML,
 the delayed DOM condition, request/response waiters, XHR JSON capture, two

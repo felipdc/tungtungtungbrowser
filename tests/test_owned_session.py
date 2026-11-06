@@ -114,6 +114,61 @@ def fixture(**options):
 
 
 class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lost_listing_refreshes_read_without_reopening_or_reclosing_tab(self):
+        session, native, guest = fixture()
+        send = native._forward_get_listing
+        missed = set()
+        async def listing(app_id):
+            phase = 'after_close' if 'close' in native.events else 'after_open' if 'open' in native.events else 'before'
+            if phase != 'before' and phase not in missed:
+                missed.add(phase)
+                return
+            await send(app_id)
+        native._forward_get_listing = listing
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native), \
+                patch('tungtungtungbrowser.inspector._LISTING_REFRESH_SECONDS', 0.01):
+            async with session:
+                self.assertTrue(session.tab_cleanup['owned'])
+        self.assertEqual(session.listing_refreshes, 2)
+        self.assertEqual(native.events, ['open', 'attach', 'detach', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+        self.assertFalse(native.subscribers)
+        self.assertFalse(session._listing_queues)
+
+    async def test_listing_disconnect_wakes_pending_read_and_blocks_cleanup_read(self):
+        session, native, guest = fixture()
+        session._inspector = native
+        sent = asyncio.Event()
+        async def listing(app_id):
+            sent.set()
+        native._forward_get_listing = listing
+        read = asyncio.create_task(session._fresh_pages(native.app.id_))
+        await sent.wait()
+        session._disconnected(ConnectionResetError('native stream reset'))
+        with self.assertRaisesRegex(InspectorError, 'native stream reset'):
+            await asyncio.wait_for(read, 0.1)
+        with self.assertRaisesRegex(InspectorError, 'native stream reset'):
+            await session._fresh_pages(native.app.id_)
+        self.assertFalse(native.subscribers)
+        self.assertFalse(session._listing_queues)
+        self.assertEqual(session.listing_refreshes, 0)
+        self.assertFalse(guest.calls)
+
+    async def test_unanswered_listings_keep_total_deadline_and_release_subscription(self):
+        session, native, guest = fixture()
+        session._inspector = native
+        session.timeout = 0.035
+        native._forward_get_listing = AsyncMock()
+        with patch('tungtungtungbrowser.inspector._LISTING_REFRESH_SECONDS', 0.01):
+            with self.assertRaises(TimeoutError):
+                await session._fresh_pages(native.app.id_)
+        self.assertGreater(session.listing_refreshes, 0)
+        self.assertLessEqual(native._forward_get_listing.await_count, 4)
+        self.assertFalse(native.subscribers)
+        self.assertFalse(session._listing_queues)
+        self.assertFalse(guest.calls)
+
     async def test_blank_session_attaches_before_first_navigation_without_bootstrap_request(self):
         session, native, guest = fixture(new_tab=True)
         with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):

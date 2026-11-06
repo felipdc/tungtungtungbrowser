@@ -121,6 +121,24 @@ Run the controller on the VM host. Set `TTT_PAGE_URL` to the exact URL of an
 already open Safari tab. If `url` is omitted, exactly one inspectable Safari tab
 must exist. Another Inspector connection must not already own that tab.
 
+Tab listings are requested after subscribing for updates. If no matching listing
+arrives within two seconds, the SDK refreshes that read within the original
+session timeout. `listing_refreshes` counts these extra read requests. Creation,
+navigation and close inputs are not repeated. A disconnected Inspector stream
+wakes pending listing reads immediately, including during cleanup; ordinary
+session closure still allows the live listing stream to verify tab cleanup.
+
+This addresses a native observation where a tab opened and fetched its document,
+but the listing read consumed a 90-second deadline. A separate cleanup read then
+identified the new tab. Cleanup subsequently failed at native focused-field
+readback, so refreshing listings alone does not qualify that full workflow.
+A later warm fixture session exercised one refresh while creating its owned tab
+in 27.8 seconds and verified that tab closed in 11.4 seconds. Its document
+response waiter still failed because the test excluded the fragment retained in
+WebKit's reported URL. After correcting that matcher, a separate fixture and
+external-page sequence completed in 65.7 seconds with verified cleanup. These
+are retained individual outcomes, not a repeated-startup qualification.
+
 Short-lived child frames can disappear before their native resume acknowledgement
 arrives. The SDK skips a resume for an already destroyed non-page target and
 tolerates the native missing-target reply only after it has observed that exact

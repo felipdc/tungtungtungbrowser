@@ -81,6 +81,14 @@ is an error and cannot prove restoration; no automatic input retry follows.
 The native messaging timeout and process alarm do not guarantee a precise
 host wall-clock duration under emulation.
 
+A later cold-guest trial's first focused-field query exceeded the administrative
+30-second deadline. An independent mobile-user read afterward found both
+switches enabled. There was no independent sample immediately before that query;
+the trial restored the isolated baseline's off/off state and verified it with a
+separate read. Retain this as a failed query and a restoration limitation.
+Successful normal returns do not qualify restoration after process termination.
+Do not assume that retrying a query will repair settings left by a killed helper.
+
 One narrow read recovery is enabled by default: a completed helper returning
 AX error `-25216`, no element, the requested PID and matching before/after
 switch states may be read once more after 100 ms. This repeats only the query;
@@ -98,9 +106,14 @@ an owned-session trial. It verified both the bootstrap address and the new
 destination before Return, with matching off/off accessibility states. An
 earlier owned attempt returned `-25216` before paste; its later cleanup read
 succeeded and the owned tab was verified closed while preserving the original
-tab. The bounded second-read path has regression coverage but was not exercised
-by the later successful native reads. That later workflow was interrupted after
-navigation, so its final owned-tab cleanup remains unverified.
+tab. That later workflow was interrupted after navigation, so its final
+owned-tab cleanup remains unverified. A subsequent cleanup exercised the bounded
+second-read path: the first completed read returned `-25216` in 4.24 seconds and
+the second returned the verified address in 2.28 seconds. Both reported matching
+off/off states, and only one Command-L and one close command were sent. A later
+independent listing confirmed the owned tab absent and the original preserved;
+a separate state read again found both switches off. This does not qualify
+recovery from a killed or timed-out helper.
 
 The query is read-only with respect to page content. It is not an implementation
 of selector clicks, scrolling, visibility checks or arbitrary DOM geometry.

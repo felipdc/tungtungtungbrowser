@@ -13,6 +13,8 @@ from .guest import web_url
 from .browser import _expected_address, _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
 
+_LISTING_REFRESH_SECONDS = 2
+
 
 class DocumentChangedError(InspectorError):
     """The page changed during a read; only condition waiters poll a fresh document."""
@@ -204,6 +206,9 @@ class InspectorSession:
         self._dom_lock = asyncio.Lock()
         self._native_lock = asyncio.Lock()
         self._native_tasks = set()
+        self._listing_queues = set()
+        self._connection_error = None
+        self.listing_refreshes = 0
         self.cleanup_errors = []
         self._closed = False
         self._failure = None
@@ -229,6 +234,15 @@ class InspectorSession:
             response._finished.set()
         self._target_ready.set()
 
+    def _disconnected(self, error=None):
+        self._connection_error = 'Native Inspector connection closed' + (
+            f': {type(error).__name__}: {error}' if error is not None else '')
+        self._fail(self._connection_error)
+        # Listing subscribers belong to the protocol library and otherwise
+        # receive no terminal notification. Wake reads, including cleanup, now.
+        for queue in self._listing_queues:
+            queue.put_nowait(None)
+
     async def __aenter__(self):
         if self._inspector is not None or self._closed:
             raise InspectorError('Inspector session is single-use')
@@ -237,8 +251,7 @@ class InspectorSession:
                 service = await self.transport.open()
                 service.max_frame_size = 32 * 1024**2
                 self._inspector = _direct_inspector(service, self._receive,
-                    lambda error=None: self._fail('Native Inspector connection closed' +
-                        (f': {type(error).__name__}: {error}' if error is not None else '')))
+                    self._disconnected)
                 await self._inspector.connect()
                 await self._inspector._get_connected_applications()
                 if self.new_tab or self.new_tab_url is not None:
@@ -287,17 +300,36 @@ class InspectorSession:
 
     async def _fresh_pages(self, app_id):
         """Await a listing requested after subscription; normalize wire dict keys."""
+        if self._connection_error:
+            raise InspectorError(self._connection_error)
         queue = self._inspector.subscribe_listings()
+        self._listing_queues.add(queue)
         try:
             async with asyncio.timeout(self.timeout):
                 await self._inspector._forward_get_listing(app_id)
-                while await queue.get() != app_id:
-                    pass
+                while True:
+                    try:
+                        # A request during a tab transition can go unanswered.
+                        # Refresh this read within the original total deadline;
+                        # never repeat the tab-open, navigation or close input.
+                        async with asyncio.timeout(_LISTING_REFRESH_SECONDS):
+                            while await queue.get() != app_id:
+                                if self._connection_error:
+                                    raise InspectorError(self._connection_error)
+                        break
+                    except TimeoutError:
+                        if self._connection_error:
+                            raise InspectorError(self._connection_error)
+                        self.listing_refreshes += 1
+                        await self._inspector._forward_get_listing(app_id)
+                if self._connection_error:
+                    raise InspectorError(self._connection_error)
             if app_id not in self._inspector.connected_application:
                 raise InspectorError('Safari application disappeared while listing its tabs')
             return {page.id_: page for page in self._inspector.application_pages.get(app_id, {}).values()
                     if page.type_.value in ('WIRTypeWebPage', 'WIRTypeWeb')}
         finally:
+            self._listing_queues.discard(queue)
             self._inspector.unsubscribe_listings(queue)
 
     async def _create_tab(self):
