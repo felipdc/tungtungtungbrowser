@@ -75,7 +75,7 @@ immediate action with strict single-target lookup, not an implicit waiter.
 
 | Control or condition | Expected observation |
 | --- | --- |
-| `#load-data` | A real click sends an XHR to the relative `api-fixture-data.json` URL. Register request and response waiters first. The JSON contains `item.id == "fixture-item"` and `error == null`. |
+| `#load-data` | A real click sends an XHR to the relative `api-fixture-data.json` URL. Its nested `#load-label` span tests DOM ancestry; a center contact targets that span and bubbles to the button. Register request and response waiters first. The JSON contains `item.id == "fixture-item"` and `error == null`. |
 | `#state[data-response="200"]` | The page received and rendered the JSON response. This is distinct from observing the network response in Inspector. |
 | `#record-click` | Sets `#state[data-clicked="true"]`. It can be selected with CSS or XPath `//button[@id='record-click']`. |
 | `#next-page` | Navigates to `api-workflow.html?page=2`; the next DOM contains `Second document ready`. |
@@ -87,7 +87,10 @@ An event's `isTrusted` value alone does not prove correct touch semantics or
 physical-device equivalence. Inspect the event sequence, resulting DOM and
 screenshot together. Keep native action failures, timing records and captured
 results outside the repository. The fixture provides test conditions; it does
-not add selector-click support to the SDK by itself.
+not establish an action implementation by itself. The SDK's experimental
+[`click()` operation](selector-clicks.md) uses this fixture for native validation.
+Controls precede the event and response logs so growing diagnostic text does not
+move those controls out of the viewport during a multi-action test.
 
 ## Native observations
 

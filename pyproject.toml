@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 inspector = ["pymobiledevice3 @ git+https://github.com/doronz88/pymobiledevice3.git@776d601cec83b894c3ad0eeee8ab4db375a46e4a"]
+pointer = ["Pillow>=10"]
 
 [project.urls]
 Repository = "https://github.com/felipdc/tungtungtungbrowser"

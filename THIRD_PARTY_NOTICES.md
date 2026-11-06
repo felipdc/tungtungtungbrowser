@@ -7,6 +7,7 @@ No emulator, renderer, proxy executable, firmware or prepared VM is committed.
 | Component | Relationship | License source |
 | --- | --- | --- |
 | pymobiledevice3 | Optional Python Inspector protocol dependency, installed separately at commit `776d601cec83b894c3ad0eeee8ab4db375a46e4a`; no upstream source is vendored | GPL-3.0; [pinned upstream license](https://github.com/doronz88/pymobiledevice3/blob/776d601cec83b894c3ad0eeee8ab4db375a46e4a/LICENSE) |
+| Pillow | Optional Python dependency for native selector-highlight image analysis; installed separately, no source vendored | MIT-CMU; [upstream license](https://github.com/python-pillow/Pillow/blob/main/LICENSE) |
 | vphone-linux | Downloaded runtime glue; USB and setup patches modify its files | MIT; copyright 2026 Yahia, retained in [LICENSES/MIT-vphone-linux.txt](LICENSES/MIT-vphone-linux.txt) |
 | qemu-vphone `a13_gxf.c` | `patches/qemu-sprr-user-mask.patch` modifies this file | AGPL-3.0-or-later; copyright 2023–2026 Visual Ehrmanntraut and Christian Inci. [License text](LICENSES/AGPL-3.0-or-later.txt) and [target source](https://github.com/YahiaAngelo/qemu-vphone/blob/4da65a96e039413faff00ed52e3d956bf931bfd9/hw/arm/apple-silicon/a13_gxf.c) |
 | Combined QEMU runtime | Built separately and mounted into the container | Mixed upstream GPL/AGPL licenses; consult the pinned checkout's `LICENSE` and `COPYING*` |

@@ -1,9 +1,9 @@
 # Experimental native Inspector API
 
-`InspectorSession` adds rendered HTML, CSS/XPath lookup and focus, condition waits and
+`InspectorSession` adds rendered HTML, CSS/XPath lookup, focus and experimental clicks, condition waits and
 request/response observation to the native `Browser` controller. It attaches to
 one existing Safari tab or creates and owns a new bootstrap tab. This is an experimental API, not a complete Playwright
-or WebDriver replacement. Selector clicks, frame-scoped locators, visibility
+or WebDriver replacement. Automatic scrolling, frame-scoped locators, visibility
 waits, request modification and reliable repeated navigation remain unfinished.
 
 The controller uses the guest's Web Inspector service and WebKit DOM/Network
@@ -301,6 +301,7 @@ readback remain required before any URL is typed.
 | `content()` | Native serialization of the current document; raises if the document changes during the read. It is not the original response HTML. |
 | `query_selector(selector, strategy='css')` | First native DOM node ID or `None`. `strategy='xpath'` wraps the expression to avoid the native search protocol's additional CSS/text matches and releases the temporary search. Node IDs can change on another document read, even without navigation; do not retain them for later actions. |
 | `focus(selector, strategy='css')` | Resolves exactly one node, rejects absent/disabled/hidden/ignored targets, calls native `DOM.focus` once and verifies focused state. XPath is also supported. This may scroll and dispatch ordinary focus events; it does not establish native keyboard ownership or clickability. |
+| `click(selector, strategy='css', timeout=30)` | Experimental visible-target native touch with strict CSS/XPath resolution, temporary Inspector highlight geometry and native element selection. Requires the `pointer` extra and calibrated native touch helper. No automatic scrolling or input retry; see [qualification and limits](selector-clicks.md). |
 | `wait_for_selector(selector, strategy='css', state='attached', timeout=30)` | Polls a fresh document for attached/detached state, including a process replacement. Visibility is not inferred. |
 | `wait_for_url(pattern, timeout=30)` | Waits for a committed document URL matching a case-sensitive glob. Redirect expectations remain explicit. |
 | `wait_for_timeout(milliseconds)` | Cancellable delay, from 0 to 300,000 milliseconds. Other timeouts use seconds. |
@@ -530,7 +531,9 @@ An experimental mobile-user native probe could map DOM focus to a visible web
 accessibility element and its screen point. However, the native accessibility
 hit test also accepted a deliberately covered fixture button. It therefore does
 not establish pointer actionability, and no selector tap was sent from this
-experiment. The probe is not part of the public SDK. Generic selector clicks,
+experiment. The probe is not part of the public SDK. A later
+[native element-selection path](selector-clicks.md) now supports experimental
+visible-target CSS/XPath clicks. Broad action qualification,
 background-tab identity checks and coverage/occlusion checks remain open.
 
 

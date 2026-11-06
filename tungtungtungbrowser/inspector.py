@@ -14,6 +14,7 @@ from .browser import _expected_address, _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
 
 _LISTING_REFRESH_SECONDS = 2
+_POINTER_SETTLE_SECONDS = 0.5
 
 
 class DocumentChangedError(InspectorError):
@@ -206,6 +207,8 @@ class InspectorSession:
         self._dom_lock = asyncio.Lock()
         self._native_lock = asyncio.Lock()
         self._native_tasks = set()
+        self._pointer_actions = set()
+        self._pointer_state = None
         self._listing_queues = set()
         self._connection_error = None
         self.listing_refreshes = 0
@@ -220,6 +223,10 @@ class InspectorSession:
 
     def _fail(self, message):
         self._failure = message
+        if self._pointer_state is not None:
+            future = self._pointer_state.get('selection')
+            if future is not None and not future.done():
+                future.set_exception(InspectorError(message))
         for _, future in self._pending.values():
             if not future.done():
                 future.set_exception(InspectorError(message))
@@ -449,8 +456,18 @@ class InspectorSession:
             self.retired_target_resumes += 1
 
     def _receive(self, destination, message):
-        if destination != self._session_id or self._closed:
+        if destination != self._session_id:
             return
+        if self._closed:
+            # A close joins pointer cleanup before detaching. Accept only its
+            # pending replies during that interval, never new page events.
+            if self._pointer_state is None:
+                return
+            if 'id' not in message:
+                if message.get('method') != 'Target.dispatchMessageFromTarget':
+                    return
+                if 'id' not in json.loads(message['params']['message']):
+                    return
         if 'id' in message:
             root = self._root_pending.get(message['id'])
             if root is not None and not root.done():
@@ -507,6 +524,15 @@ class InspectorSession:
 
     def _event(self, target, event):
         method, p = event.get('method'), event.get('params', {})
+        pointer = self._pointer_state
+        if pointer is not None and target == pointer['target']:
+            pointer['ancestry'].event(method, p)
+            future = pointer.get('selection')
+            if future is not None and not future.done():
+                if method == 'Inspector.inspect':
+                    future.set_result(p)
+                elif method == 'DOM.documentUpdated':
+                    future.set_exception(DocumentChangedError('Document changed during native element selection'))
         if len(self.events) == self.events.maxlen:
             self.dropped_events += 1
         # Diagnostic event names only; bodies and credentials aren't logged.
@@ -588,8 +614,9 @@ class InspectorSession:
             elif not future.cancelled():
                 future.exception()
 
-    async def _command(self, method, *, target=None, **params):
-        self._check()
+    async def _command(self, method, *, target=None, _cleanup=False, **params):
+        if not _cleanup:
+            self._check()
         if target is None:
             async with asyncio.timeout(self.timeout):
                 while self.target_id not in self._targets:
@@ -639,8 +666,12 @@ class InspectorSession:
                 self._check()
                 await asyncio.sleep(0.05)
         target, generation = self.target_id, self.document_generation
+        if self._pointer_state is not None:
+            self._pointer_state['target'] = target
         document = await self._command('DOM.getDocument', target=target)
         self._same_document(target, generation)
+        if self._pointer_state is not None:
+            self._pointer_state['ancestry'].add([document['root']])
         return target, generation, document
 
     async def query_selector(self, selector, *, strategy='css'):
@@ -728,6 +759,135 @@ class InspectorSession:
                     return node
                 await asyncio.sleep(interval)
 
+    async def click(self, selector, *, strategy='css', timeout=30):
+        """Experimentally tap a unique, visible CSS/XPath target with native input.
+
+        Two temporary Inspector highlights locate a screen point. The native
+        element picker checks its DOM identity before a separate real contact.
+        Requires the pointer extra and the calibrated portrait touch helper.
+        Does not scroll, retry input, or assert the page's resulting behavior.
+        """
+        from .browser import SAFARI, Screenshot
+        from .pointer import NodeAncestry, PointerGeometryError, highlight_colors, highlight_point
+        try:
+            import PIL  # noqa: F401 -- fail before changing Inspector state
+        except ImportError as error:
+            raise InspectorError('Selector clicks require pip install .[pointer]') from error
+        if self.browser is None or getattr(self.browser.guest, 'touch_helper_sha256', None) is None:
+            raise InspectorError('Selector clicks require a Browser with the calibrated native touch helper')
+        async with asyncio.timeout(_timeout(timeout)), self._native_lock, self._dom_lock:
+            self._check()
+            task = asyncio.current_task()
+            self._pointer_actions.add(task)
+            state = {'target': self.target_id, 'ancestry': NodeAncestry(), 'selection': None}
+            self._pointer_state = state
+            highlight_requested = mode_requested = False
+            target = None
+            try:
+                target, generation, node = await self._resolve_selector(selector, strategy=strategy, strict=True)
+                if node is None:
+                    raise InspectorError('Selector did not match a node; input not sent')
+                properties = (await self._command('DOM.getAccessibilityPropertiesForNode',
+                                                  target=target, nodeId=node))['properties']
+                if (properties.get('nodeId') != node or properties.get('exists') is not True
+                        or any(properties.get(k) is True for k in ('disabled', 'hidden', 'ignored'))):
+                    raise InspectorError('Selector is absent, disabled, hidden or ignored; input not sent')
+                foreground = await self._run_native(self.browser.guest.call, 'apps.foreground')
+                if (not isinstance(foreground, dict) or foreground.get('verified') is not True
+                        or foreground.get('bundle_id') != SAFARI
+                        or type(foreground.get('pid')) is not int or foreground['pid'] != self._app.pid):
+                    raise InspectorError('Inspected Safari process is not in the foreground; input not sent')
+                self._same_document(target, generation)
+                colors, images = highlight_colors(), []
+                for color in colors:
+                    highlight_requested = True
+                    await self._command('DOM.highlightNode', target=target, nodeId=node,
+                                        highlightConfig={'contentColor': dict(zip(('r', 'g', 'b', 'a'), (*color, 1)))})
+                    await asyncio.sleep(_POINTER_SETTLE_SECONDS)
+                    image = await self._run_native(self.browser.guest.call, 'screen.screenshot')
+                    images.append(Screenshot.from_native(image))
+                    self._same_document(target, generation)
+                try:
+                    point = highlight_point(images, colors)
+                except PointerGeometryError as error:
+                    raise InspectorError(str(error)) from error
+                if (point['screen_width'], point['screen_height'], point['coordinate_scale']) != (393, 852, 3):
+                    raise InspectorError('Highlight geometry does not match the calibrated touch display')
+                await self._command('DOM.hideHighlight', target=target)
+                highlight_requested = False
+                await self._command('Inspector.enable', target=target)
+                mode_requested = True
+                await self._command('DOM.setInspectModeEnabled', target=target, enabled=True, highlightConfig={})
+                await asyncio.sleep(_POINTER_SETTLE_SECONDS)
+                self._same_document(target, generation)
+                state['selection'] = asyncio.get_running_loop().create_future()
+                await self._run_native(self.browser.tap, point['x'], point['y'])
+                selection = await state['selection']
+                self._same_document(target, generation)
+                obj = selection.get('object', {})
+                if (obj.get('subtype') != 'node' or not isinstance(obj.get('objectId'), str)
+                        or not 1 <= len(obj['objectId']) <= 4096):
+                    raise InspectorError('Native element selection did not identify a DOM node; click not sent')
+                hit = (await self._command('DOM.requestNode', target=target, objectId=obj['objectId']))['nodeId']
+                self._same_document(target, generation)
+                await self._command('DOM.setInspectModeEnabled', target=target, enabled=False)
+                mode_requested = False
+                if type(hit) is not int or not state['ancestry'].contains(node, hit):
+                    raise InspectorError('Another element covers the selector at the native point; click not sent')
+                # Selection can dispatch browser-side events. Recheck availability
+                # before the real contact; it never authorizes an input retry.
+                properties = (await self._command('DOM.getAccessibilityPropertiesForNode',
+                                                  target=target, nodeId=node))['properties']
+                self._same_document(target, generation)
+                if (properties.get('nodeId') != node or properties.get('exists') is not True
+                        or any(properties.get(k) is True for k in ('disabled', 'hidden', 'ignored'))):
+                    raise InspectorError('Selector became unavailable during native selection; click not sent')
+                await self._run_native(self.browser.tap, point['x'], point['y'])
+                return {'method': 'native_selector_touch', 'node_id': node, 'hit_node_id': hit,
+                        'strategy': strategy, 'x': point['x'], 'y': point['y'],
+                        'selection_touch_dispatched': True, 'click_dispatched': True,
+                        'page_result_verified': False}
+            finally:
+                # Restore native UI modes even on timeout, caller cancellation,
+                # or concurrent close. These requests send no further contact.
+                async def restore():
+                    failures = []
+                    operations = []
+                    if mode_requested:
+                        operations.append(('DOM.setInspectModeEnabled', {'enabled': False}))
+                    if highlight_requested:
+                        operations.append(('DOM.hideHighlight', {}))
+                    for method, params in operations:
+                        try:
+                            async with asyncio.timeout(5):
+                                await self._command(method, target=target, _cleanup=True, **params)
+                        except Exception as error:
+                            failures.append(f'{method}: {type(error).__name__}: {error}')
+                    if failures:
+                        self.cleanup_errors.extend(failures)
+                        self._fail('Native pointer mode restoration was not acknowledged; close this session')
+                        raise InspectorError(self._failure)
+                cleanup = asyncio.create_task(restore())
+                cancellation = None
+                try:
+                    while True:
+                        try:
+                            await asyncio.shield(cleanup)
+                            break
+                        except asyncio.CancelledError as error:
+                            cancellation = error
+                    if cancellation is not None:
+                        raise cancellation
+                finally:
+                    future = state.get('selection')
+                    if future is not None:
+                        if not future.done():
+                            future.cancel()
+                        elif not future.cancelled():
+                            future.exception()
+                    self._pointer_state = None
+                    self._pointer_actions.discard(task)
+
     async def wait_for_url(self, pattern, *, timeout=30):
         """Wait for a committed document URL matching a glob; redirects stay explicit."""
         if not isinstance(pattern, str) or not pattern:
@@ -792,25 +952,34 @@ class InspectorSession:
 
     async def _native(self, operation, *args, **kwargs):
         async with self._native_lock:
-            self._check()
-            task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
-            self._native_tasks.add(task)
-            try:
-                return await asyncio.shield(task)
-            except asyncio.CancelledError:
-                # A native input already sent cannot be recalled. Finish that
-                # bounded exchange before cleanup; never let a worker outlive
-                # the session or silently replay its action.
-                with contextlib.suppress(Exception):
-                    await asyncio.shield(task)
-                raise
-            finally:
-                if task.done():
-                    self._native_tasks.discard(task)
-                else:
-                    # A second cancellation can interrupt the cancellation wait.
-                    # Keep ownership until the worker finishes or close joins it.
-                    task.add_done_callback(self._native_tasks.discard)
+            return await self._run_native(operation, *args, **kwargs)
+
+    async def _run_native(self, operation, *args, **kwargs):
+        """Run with the caller holding _native_lock, including multi-step actions."""
+        self._check()
+        task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        self._native_tasks.add(task)
+        cancellation = None
+        try:
+            while True:
+                try:
+                    result = await asyncio.shield(task)
+                    break
+                except asyncio.CancelledError as error:
+                    if task.cancelled():
+                        raise
+                    cancellation = error
+                except Exception:
+                    if cancellation is not None:
+                        raise cancellation
+                    raise
+            if cancellation is not None:
+                raise cancellation
+            return result
+        finally:
+            # Never release the native action lock with a still-running input,
+            # including when a caller cancels its wait more than once.
+            self._native_tasks.discard(task)
 
     async def screenshot(self, path=None, *, overwrite=False):
         if self.browser is None:
@@ -872,6 +1041,10 @@ class InspectorSession:
                 await asyncio.sleep(0.05)
 
     async def _close(self):
+        actions = list(self._pointer_actions)
+        for action in actions:
+            action.cancel()
+        await asyncio.gather(*actions, return_exceptions=True)
         await asyncio.gather(*self._native_tasks, return_exceptions=True)
         tasks = list(self._tasks)
         for task in tasks:

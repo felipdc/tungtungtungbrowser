@@ -207,8 +207,11 @@ system accessibility and automation switches enabled.
 
 The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
 attached/detached selector waits, verified CSS/XPath DOM focus and native
-request/response observation, including response bodies. It has a separate native bridge build and installer. Request
-modification, streaming HTML, selector clicks and full lifecycle coverage remain
+request/response observation, including response bodies. Experimental
+[CSS/XPath clicks](docs/selector-clicks.md) combine native Inspector selection
+with a calibrated touch helper and require the optional `pointer` dependency.
+Inspection has a separate native bridge build and installer. Request
+modification, streaming HTML, automatic scrolling and full lifecycle coverage remain
 on the [API roadmap](docs/roadmap.md#browser-api-implementation-backlog).
 
 ## Proxy, resources and diagnostics
