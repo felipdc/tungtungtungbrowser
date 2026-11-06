@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import base64
+import errno
 import hashlib
 import json
 from pathlib import Path
@@ -38,7 +39,15 @@ def read_build(directory):
 
 async def health(cid):
     transport = InspectorTransport(cid=cid, timeout=5)
-    sock = await asyncio.wait_for(vsock_connection(cid, 1343), 5)
+    try:
+        sock = await asyncio.wait_for(vsock_connection(cid, 1343), 5)
+    except ConnectionResetError as error:
+        # Linux virtio-vsock reports a peer's RST during connection setup as
+        # ECONNRESET, including when the guest port has no listener. No control
+        # request has been sent. Normalize only this connect-stage rejection;
+        # a reset after connection must not authorize another deployment.
+        raise ConnectionRefusedError(errno.ECONNREFUSED,
+            'Guest rejected the VSOCK connection before establishment') from error
     try:
         transport.reader, transport.writer = await asyncio.open_connection(sock=sock, limit=1024)
         return await transport._control('health', 'ready')

@@ -53,6 +53,16 @@ A missing log is recorded as a diagnostic error and does not replace the origina
 installation failure. These reads require matching service label and executable
 identity. The installer does not automatically restart a failed service.
 
+The direct Linux VSOCK health probe accepts a connection-setup reset as a
+rejected connection before sending any control request. Linux's
+[virtio-vsock connecting-state handler](https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/f91a3aa6bce480fe6e08df540129f4a923222419/net/vmw_vsock/virtio_transport_common.c)
+reports a peer reset as `ECONNRESET`, including for a guest port without a
+listener. This permits the initial deployment and read-only readiness polling
+after its one launch request. A reset after connection, malformed health reply,
+timeout or other connection error still fails; it cannot authorize replacement
+or repeat the launch. The native listener must bind its port and return the
+expected deployment identity before installation succeeds.
+
 In a subsequent cold-guest trial, even a fresh deployment reported a running PID
 but never opened the bridge port. A diagnostic build behaved the same way.
 Launchd reported `state = xpcproxy`, `execs = 0` and `initialized = 0`, and neither
@@ -120,8 +130,11 @@ different protocol error, or a transport timeout still fails the session; no
 resume command is replayed.
 
 This case was observed during a native page reload and reproduced in protocol
-tests. The subsequent native runs failed at the service handoff before reaching
-the changed code, so native qualification of this fix remains outstanding.
+tests. A later native reload captured a successful application JSON response and
+kept the session alive through twelve retired auxiliary targets. Nine returned
+the specific missing-target error; three disappeared before resume was sent.
+That qualifies this case in one reload, without establishing sustained session
+reliability.
 
 ```python
 import asyncio

@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from tungtungtungbrowser.guest import GuestError
 
@@ -14,6 +15,39 @@ SPEC = importlib.util.spec_from_file_location('install_inspector_bridge',
     Path(__file__).resolve().parents[1] / 'scripts/install_inspector_bridge.py')
 installer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(installer)
+
+
+class InspectorHealthTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connect_reset_is_a_refusal_before_any_control_request(self):
+        reset = ConnectionResetError(104, 'Connection reset by peer')
+        with patch.object(installer, 'vsock_connection', AsyncMock(side_effect=reset)), \
+                patch.object(installer.InspectorTransport, '_control', AsyncMock()) as control:
+            with self.assertRaises(ConnectionRefusedError) as caught:
+                await installer.health(3)
+        self.assertIs(caught.exception.__cause__, reset)
+        control.assert_not_awaited()
+
+    async def test_connected_reset_is_not_an_absent_listener(self):
+        reset = ConnectionResetError(104, 'Reset while reading health')
+        transport = installer.InspectorTransport(cid=3)
+        with patch.object(installer, 'InspectorTransport', return_value=transport), \
+                patch.object(installer, 'vsock_connection', AsyncMock(return_value=object())), \
+                patch.object(installer.asyncio, 'open_connection', AsyncMock(return_value=(object(), object()))), \
+                patch.object(transport, '_control', AsyncMock(side_effect=reset)), \
+                patch.object(transport, 'close', AsyncMock()) as close:
+            with self.assertRaises(ConnectionResetError) as caught:
+                await installer.health(3)
+        self.assertIs(caught.exception, reset)
+        close.assert_awaited_once()
+
+    async def test_other_connect_failures_remain_errors(self):
+        for error in (TimeoutError('connect timed out'), PermissionError('denied'),
+                      OSError(101, 'network unreachable')):
+            with self.subTest(error=error), \
+                    patch.object(installer, 'vsock_connection', AsyncMock(side_effect=error)):
+                with self.assertRaises(type(error)) as caught:
+                    await installer.health(3)
+                self.assertIs(caught.exception, error)
 
 
 class DeploymentGuest:
