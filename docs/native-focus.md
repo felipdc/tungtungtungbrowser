@@ -130,8 +130,8 @@ as the production build. One terminated the query with `SIGKILL` after the guard
 enabled the switches; another stalled the query with a two-second alarm. Both
 terminated on the expected signal. A separate mobile-user reader found the
 original off/off state after each fault, in the same guest boot. Independent
-process checks found all four query/guard PIDs absent. The alarm exchange took
-3.16 host seconds and the forced-kill exchange 2.06 seconds; these include
+process checks found all four query/guard PIDs absent. The final-build alarm
+exchange took 3.21 host seconds and the forced-kill exchange 1.39 seconds; these include
 administrative execution and are not normal focus-query latency measurements.
 
 One narrow read recovery is enabled by default: a completed helper returning
@@ -156,6 +156,15 @@ to the default path. A separate successful fixture/external-page workflow used
 first-attempt field reads throughout; it does not establish recovery from absent
 focus. All four owned tabs from this trial were closed and verified absent
 in fresh Inspector listings, preserving the original tab.
+
+That boot produced one complete fixture-to-external-page sequence in 102.1
+seconds, two navigation failures on absent focus, and one rejected focus action
+before a dynamic link appeared. This is not sustained workflow reliability.
+The guest's cold readiness attempt had already failed at the screen-unlock
+response deadline after 300.3 seconds, before these helper tests began.
+Peak container memory reached 6.50 GiB and recorded 11,449 memory-limit events,
+with no OOM kills. The longer workload and extra diagnostics prevent attributing
+that pressure to a single change. No resource reduction is established.
 
 The mobile-user build passed native installation and address-field readback in
 an owned-session trial. It verified both the bootstrap address and the new
