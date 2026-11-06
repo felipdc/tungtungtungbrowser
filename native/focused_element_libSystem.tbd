@@ -5,5 +5,9 @@ install-name: '/usr/lib/libSystem.B.dylib'
 exports:
   - targets: [ arm64-ios ]
     symbols: [ _dlopen, _dlsym, _printf, _fflush, _strcmp, _alarm, _bzero,
-               _getuid, _geteuid, _getgid, _getegid, _setuid, _setgid, _setgroups ]
+               _pipe, _close, _poll, _read, _write, _open, _flock, _fcntl, _setsid,
+               _waitpid, _clock_gettime, _signal, _sigprocmask, _posix_spawn,
+               _posix_spawn_file_actions_init, _posix_spawn_file_actions_destroy,
+               _posix_spawn_file_actions_adddup2, _posix_spawn_file_actions_addclose,
+               _posix_spawn_file_actions_addopen, _getuid, _geteuid, _getgid, _getegid, _setuid, _setgid, _setgroups ]
 ...

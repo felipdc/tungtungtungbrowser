@@ -27,7 +27,7 @@ def read_build(directory):
         raise ValueError('Build manifest exceeds 16 KiB')
     build = json.loads(text)
     sources = {name: hashlib.sha256((ROOT / 'native' / name).read_bytes()).hexdigest()
-               for name in ('focused_element.c', 'focused_element_libSystem.tbd', 'focused_element_entitlements.plist')}
+               for name in ('focused_element.c', 'focus_guard.h', 'focused_element_libSystem.tbd', 'focused_element_entitlements.plist')}
     if (not isinstance(build, dict) or type(build.get('protocol')) is not int
             or build['protocol'] != 1 or build.get('binary') != 'focused-element' or build.get('sources') != sources):
         raise ValueError('Build manifest does not match this checkout; rebuild the helper')

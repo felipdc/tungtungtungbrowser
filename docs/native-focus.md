@@ -58,8 +58,11 @@ browser.goto("https://your-page.example/", reuse_tab=True)
 Use this same `browser` with `InspectorSession(browser=browser)` for page
 conditions, HTML and network observation. Configure any separately required
 native touch helper on `guest` as described in the [native touch helper guide](native-touch-helper.md).
-The focus helper itself has no resident process or listening port. A retained
-deployment can be checked again after a guest reboot.
+The focus helper has no listening port. Each query starts a short-lived guard
+process that owns temporary preference changes and exits after restoration.
+A retained deployment can be checked again after a guest reboot. Rebuild and
+install a new helper to get the guard; an older deployment does not acquire it
+by updating the Python package alone.
 
 ## Navigation behavior and limits
 
@@ -74,20 +77,62 @@ Missing focus, wrong ownership or a different URL prevents Return from being
 sent. A navigation acknowledgement still requires a separate page condition.
 
 Like the existing native accessibility queries, this helper may temporarily
-enable the system accessibility and automation switches. It records their
-original values, restores only switches it enabled, and reports both states.
-The Python reader requires matching before/after states. A terminated helper
-is an error and cannot prove restoration; no automatic input retry follows.
-The native messaging timeout and process alarm do not guarantee a precise
-host wall-clock duration under emulation.
+enable the system accessibility and automation switches. A separate guard saves
+the mobile user's original values, enables the required switches, and restores
+only switches it enabled. The querying process never writes those preferences.
+The Python reader requires matching before/after states, and a normal helper
+return additionally requires the guard's restoration acknowledgment and clean
+exit. A terminated query is still an error; no automatic input retry follows.
+
+The guard uses a pipe to detect completion or query-process death. It creates a
+separate process session before changing settings, so terminating the caller's
+process group does not terminate restoration. Missing completion, pipe EOF,
+invalid completion and a 22-second guard deadline all lead to restoration.
+No framework code runs in a signal handler or in a child produced by `fork()`.
+A nonblocking per-user lock covers the original-state read through restoration;
+an overlapping guarded query fails without saving another query's temporary
+settings as its own baseline. The empty lock file remains in the mobile user's
+Library directory; the OS releases the lock when the guard closes or exits.
+
+This guard cannot restore settings if it is itself forcibly killed, the guest
+stops, or the native preference service cannot complete restoration. A failed
+or missing guard acknowledgment does not qualify restoration. Do not run older
+unguarded helpers concurrently with the new one. The native messaging timeout,
+query alarm and guard deadline do not guarantee a precise host wall-clock
+duration under emulation.
+
+The administrative launcher was observed to pass a blocked signal mask that
+included `SIGALRM`. The earlier helper's `alarm()` therefore did not terminate
+a deliberately stalled query. The helper now clears its inherited signal mask
+and restores default alarm and child-exit dispositions before starting either
+process. This changes only helper processes. A Linux regression test starts the
+helper with an explicitly blocked and ignored alarm to exercise that boundary.
 
 A later cold-guest trial's first focused-field query exceeded the administrative
 30-second deadline. An independent mobile-user read afterward found both
 switches enabled. There was no independent sample immediately before that query;
 the trial restored the isolated baseline's off/off state and verified it with a
-separate read. Retain this as a failed query and a restoration limitation.
-Successful normal returns do not qualify restoration after process termination.
+separate read. That failure motivated the separate guard. Retain the original
+failure; successful normal returns do not qualify restoration after termination.
 Do not assume that retrying a query will repair settings left by a killed helper.
+
+Linux process tests compile the production guard with file-backed preference
+callbacks. They cover all four original switch combinations, successful reaping,
+query termination by SIGALRM/SIGKILL, an inherited blocked/ignored alarm,
+caller process-group termination, the guard
+deadline, overlapping queries, EOF, invalid completion and failed restoration.
+These tests establish the process lifecycle, not iOS preference behavior; native
+qualification must independently read settings after the fault and exercise
+normal address-field reads and owned-tab cleanup.
+
+An iOS 26.6.2 fault trial used private test variants with the same guard source
+as the production build. One terminated the query with `SIGKILL` after the guard
+enabled the switches; another stalled the query with a two-second alarm. Both
+terminated on the expected signal. A separate mobile-user reader found the
+original off/off state after each fault, in the same guest boot. Independent
+process checks found all four query/guard PIDs absent. The alarm exchange took
+3.16 host seconds and the forced-kill exchange 2.06 seconds; these include
+administrative execution and are not normal focus-query latency measurements.
 
 One narrow read recovery is enabled by default: a completed helper returning
 AX error `-25216`, no element, the requested PID and matching before/after

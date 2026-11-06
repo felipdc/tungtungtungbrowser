@@ -3,6 +3,8 @@
  * The mapping was verified from AXElement.firstResponder on iOS 26.6.2.
  * This process sends no UI input and never executes in a page.
  */
+#include "focus_guard.h"
+
 typedef unsigned long Size;typedef unsigned char Boolean;typedef const void *CF;
 typedef struct {double x,y,w,h;} Rect;
 extern void *dlopen(const char *,int),*dlsym(void *,const char *);
@@ -19,24 +21,38 @@ static int valid_pid(const char *s) {
 static void quoted(const char*s){printf("\"");for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32)printf("\\u%04x",c);else printf("%c",c);}printf("\"");}
 static void attr(CF e,unsigned key){CF v=0;int err=copyAttr(e,(CF)(Size)key,&v);printf("{\"error\":%d,\"value\":",err);if(!v)printf("null");else if(typeID(v)==stringType()){char b[8192]={0};if(stringUTF8(v,b,sizeof(b),0x08000100))quoted(b);else printf("null");}else if(typeID(v)==numberType()){long long n=0;if(numberValue(v,4,&n))printf("%lld",n);else printf("null");}else if(typeID(v)==valueType()){Rect r={0};if(axValue(v,3,&r)&&__builtin_isfinite(r.x)&&__builtin_isfinite(r.y)&&__builtin_isfinite(r.w)&&__builtin_isfinite(r.h))printf("{\"x\":%.6f,\"y\":%.6f,\"width\":%.6f,\"height\":%.6f}",r.x,r.y,r.w,r.h);else printf("null");}else printf("null");printf("}");if(v)release(v);}
 int main(int argc,char **argv){
- alarm(20);
+ if(!focus_guard_reset_signals())return 13;
+ int guard_mode=argc==2&&!strcmp(argv[1],"guard");
+ if(!guard_mode)alarm(20);
+ signal(SIGPIPE,SIG_IGN);
  int check=argc==2&&!strcmp(argv[1],"check");
  int pid=argc==3&&!strcmp(argv[1],"pid")?valid_pid(argv[2]):0;
- if(!check&&!pid)return 2;
+ if(!check&&!pid&&!guard_mode)return 2;
+ struct FocusGuard guard={0,-1,-1};
+ /* Spawn while still privileged: the immutable executable is root-owned.
+  * Both processes drop to mobile before loading preference frameworks. */
+ if(pid&&!focus_guard_spawn(argv[0],&guard))return 8;
  /* Safari and its accessibility preferences belong to the mobile user. Switch
   * before loading the frameworks so this short-lived query reads and restores
   * that user's state. Do not retain administrative supplementary groups.
   */
  if(geteuid()==0&&(setgroups(0,0)||setgid(501)||setuid(501)))return 6;
  if(getuid()!=501||geteuid()!=501||getgid()!=501||getegid()!=501)return 7;
- void*cf=dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",2),*ax=dlopen("/System/Library/PrivateFrameworks/AXRuntime.framework/AXRuntime",2),*lib=dlopen("/usr/lib/libAccessibility.dylib",2);if(!cf||!ax||!lib)return 4;
+ void*lib=dlopen("/usr/lib/libAccessibility.dylib",2);if(!lib)return 4;
+ Boolean(*app)(void)=dlsym(lib,"_AXSApplicationAccessibilityEnabled"),(*automation)(void)=dlsym(lib,"_AXSAutomationEnabled");void(*setApp)(Boolean)=dlsym(lib,"_AXSApplicationAccessibilitySetEnabled"),(*setAuto)(Boolean)=dlsym(lib,"_AXSSetAutomationEnabled");
+ if(!app||!automation||!setApp||!setAuto)return 5;
+ if(guard_mode)return focus_guard_run("/private/var/mobile/Library/ttt-native-focus.lock",app,automation,setApp,setAuto);
+ void*cf=dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",2),*ax=dlopen("/System/Library/PrivateFrameworks/AXRuntime.framework/AXRuntime",2);if(!cf||!ax)return 4;
  CF(*create)(int)=dlsym(ax,"_AXUIElementCreateAppElementWithPid");int(*timeout)(CF,float)=dlsym(ax,"AXUIElementSetMessagingTimeout"),(*getPid)(CF,int*)=dlsym(ax,"AXUIElementGetPid");Size(*elementType)(void)=dlsym(ax,"AXUIElementGetTypeID");
 #define LOAD(V,L,N) V=(__typeof__(V))dlsym(L,N)
  LOAD(copyAttr,ax,"AXUIElementCopyAttributeValue");LOAD(release,cf,"CFRelease");LOAD(typeID,cf,"CFGetTypeID");LOAD(stringType,cf,"CFStringGetTypeID");LOAD(numberType,cf,"CFNumberGetTypeID");LOAD(valueType,ax,"AXValueGetTypeID");LOAD(stringUTF8,cf,"CFStringGetCString");LOAD(numberValue,cf,"CFNumberGetValue");LOAD(axValue,ax,"AXValueGetValue");
- Boolean(*app)(void)=dlsym(lib,"_AXSApplicationAccessibilityEnabled"),(*automation)(void)=dlsym(lib,"_AXSAutomationEnabled");void(*setApp)(Boolean)=dlsym(lib,"_AXSApplicationAccessibilitySetEnabled"),(*setAuto)(Boolean)=dlsym(lib,"_AXSSetAutomationEnabled");void(*client)(unsigned)=dlsym(ax,"__AXSetRequestingClient");unsigned long long(*override)(unsigned long long)=dlsym(ax,"_AXOverrideRequestingClientType");
+ void(*client)(unsigned)=dlsym(ax,"__AXSetRequestingClient");unsigned long long(*override)(unsigned long long)=dlsym(ax,"_AXOverrideRequestingClientType");
  if(!create||!timeout||!getPid||!elementType||!copyAttr||!release||!typeID||!stringType||!numberType||!valueType||!stringUTF8||!numberValue||!axValue||!app||!automation||!setApp||!setAuto)return 5;
  if(check){printf("{\"protocol\":1,\"status\":\"ready\",\"ui_input_sent\":false,\"ax_queried\":false}\n");fflush(0);return 0;}
- Boolean beforeApp=app(),beforeAuto=automation();if(!beforeApp)setApp(1);if(!beforeAuto)setAuto(1);if(client)client(2);if(override)override(2);
+ struct FocusGuardState initial={0},restored={0};
+ if(!focus_guard_begin(&guard,&initial))return 9;
+ Boolean beforeApp=initial.before_app,beforeAuto=initial.before_auto;
+ if(client)client(2);if(override)override(2);
  CF root=create(pid),focused=0;int e=-1;if(root){e=timeout(root,0.25f);if(!e)e=copyAttr(root,(CF)3002,&focused);}
  if(focused&&typeID(focused)!=elementType())e=-2;
  printf("{\"protocol\":1,\"uid\":501,\"requested_pid\":%d,\"error\":%d,\"before\":{\"application\":%d,\"automation\":%d},\"element\":",pid,e,beforeApp,beforeAuto);
@@ -44,5 +60,10 @@ int main(int argc,char **argv){
   int owner=0,pe=getPid(focused,&owner),te=timeout(focused,0.25f);printf("{\"pid\":%d,\"pid_error\":%d,\"timeout_error\":%d,\"attributes\":{",owner,pe,te);
   unsigned keys[]={2001,2006,5019,2004,2003};const char*names[]={"label","value","identifier","traits","frame"};for(unsigned i=0;i<5;i++){if(i)printf(",");quoted(names[i]);printf(":");attr(focused,keys[i]);}printf("}}");
  }else printf("null");
- if(focused)release(focused);if(root)release(root);if(!beforeAuto)setAuto(0);if(!beforeApp)setApp(0);printf(",\"after\":{\"application\":%d,\"automation\":%d}}\n",app(),automation());fflush(0);return 0;
+ if(focused)release(focused);if(root)release(root);
+ int complete=focus_guard_finish(&guard,&restored);
+ complete=complete&&restored.before_app==beforeApp&&restored.before_auto==beforeAuto
+   &&restored.after_app==beforeApp&&restored.after_auto==beforeAuto;
+ printf(",\"after\":{\"application\":%d,\"automation\":%d},\"guard_restored\":%s}\n",restored.after_app,restored.after_auto,complete?"true":"false");
+ fflush(0);return complete?0:12;
 }
