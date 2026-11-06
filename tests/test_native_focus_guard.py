@@ -16,9 +16,13 @@ class NativeFocusGuardTests(unittest.TestCase):
     def setUpClass(cls):
         cls.build = tempfile.TemporaryDirectory()
         cls.binary = Path(cls.build.name) / 'focus-guard'
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O2',
-                        str(Path(__file__).with_name('native_focus_guard_harness.c')),
-                        '-o', str(cls.binary)], check=True, capture_output=True)
+        result = subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O2',
+                                 '-D_FORTIFY_SOURCE=3',
+                                 str(Path(__file__).with_name('native_focus_guard_harness.c')),
+                                 '-o', str(cls.binary)], capture_output=True, text=True)
+        if result.returncode:
+            cls.build.cleanup()
+            raise RuntimeError('Native focus guard harness failed to compile:\n' + result.stderr)
 
     @classmethod
     def tearDownClass(cls):

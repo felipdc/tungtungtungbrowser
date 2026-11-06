@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
         char command;
         if (read(0, &command, 1) != 1) return 5;
     } else if (!strcmp(argv[1], "invalid")) {
-        (void)write(guard.input, "X", 1);
+        if (write(guard.input, "X", 1) != 1) return 6;
         close(guard.input);
         (void)waitpid(guard.pid, 0, 0);
         return 6;

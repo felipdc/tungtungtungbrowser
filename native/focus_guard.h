@@ -130,7 +130,7 @@ static int focus_guard_run(const char *lock_path, unsigned char (*app)(void),
     int lock = open(lock_path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
     if (lock < 0 || flock(lock, LOCK_EX | LOCK_NB)) {
         if (lock >= 0) close(lock);
-        (void)write(1, &state, sizeof(state)); return 10;
+        return write(1, &state, sizeof(state)) == sizeof(state) ? 10 : 12;
     }
     state.before_app = !!app(); state.before_auto = !!automation();
     if (!state.before_app) set_app(1);
@@ -145,9 +145,9 @@ static int focus_guard_run(const char *lock_path, unsigned char (*app)(void),
     state.after_app = !!app(); state.after_auto = !!automation();
     state.status = state.after_app != state.before_app || state.after_auto != state.before_auto ? 3
         : completed ? 0 : 4;
-    (void)write(1, &state, sizeof(state));
+    int sent = write(1, &state, sizeof(state)) == sizeof(state);
     close(lock);
-    return state.status ? 11 : 0;
+    return !sent ? 12 : state.status ? 11 : 0;
 }
 
 static int focus_guard_begin(struct FocusGuard *guard, struct FocusGuardState *state) {
