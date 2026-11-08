@@ -19,6 +19,11 @@ from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser.inspector_transport import InspectorTransport, vsock_connection
 
 SOURCES = ('inspector_bridge.c', 'inspector_bridge_libSystem.tbd', 'inspector_bridge_entitlements.plist')
+SCRIPT_TIMEOUT_SECONDS = 30
+# The daemon stops and reaps a timed-out script before returning its error.
+# An equal HTTP deadline can discard that terminal reply and leave the launch
+# outcome uncertain. Allow bounded time for cleanup and delivery; never replay.
+RPC_TIMEOUT_SECONDS = SCRIPT_TIMEOUT_SECONDS + 15
 
 
 def read_build(directory):
@@ -167,7 +172,7 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
         else:
             report['process_spawn_requested'] = True
             source = 'proc.run(' + json.dumps(executable) + ', ' + json.dumps(['spawn', log]) + ', "")'
-            answer = rpc('script.eval', source=source, timeout=30)
+            answer = rpc('script.eval', source=source, timeout=SCRIPT_TIMEOUT_SECONDS)
             try:
                 if (not isinstance(answer, dict) or answer.get('ok') is not True
                         or answer.get('crashed') is not False or answer.get('output') != ''
@@ -224,7 +229,7 @@ def main():
     args = parser.parse_args()
     try:
         data, digest = read_build(args.build_directory)
-        result = install(Guest(cid=args.cid, timeout=30), data, digest, args.output,
+        result = install(Guest(cid=args.cid, timeout=RPC_TIMEOUT_SECONDS), data, digest, args.output,
                          lambda: asyncio.run(health(args.cid)), launch_mode=args.launch_mode)
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         parser.exit(1, f'Inspector installation failed: {error}. Deployment evidence is retained.\n')

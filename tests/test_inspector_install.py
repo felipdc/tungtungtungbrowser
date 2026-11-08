@@ -93,6 +93,54 @@ class DeploymentGuest:
 
 
 class InspectorInstallTests(unittest.TestCase):
+    def test_cli_allows_daemon_timeout_reply_and_preserves_it_without_relaunch(self):
+        class DeadlineGuest(ProcessGuest):
+            def __init__(self, *, cid, timeout):
+                super().__init__()
+                self.cid = cid
+                self.http_timeout = timeout
+
+            def _rpc(self, method, **params):
+                if method != 'script.eval':
+                    return super()._rpc(method, **params)
+                self.calls.append(method)
+                # The daemon's terminal error follows its script deadline and
+                # process cleanup. An equal HTTP timeout loses that response.
+                if self.http_timeout <= params['timeout'] + 1:
+                    raise TimeoutError('HTTP deadline expired before daemon cleanup')
+                raise GuestError('vphoned HTTP status 400: The script did not finish '
+                                 'within 30 seconds and was stopped')
+
+        binary = b'native bridge fixture'
+        guests = []
+
+        def make_guest(**kwargs):
+            guest = DeadlineGuest(**kwargs)
+            guests.append(guest)
+            return guest
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'deployment'
+            argv = ['install_inspector_bridge.py', directory, '--output', str(output),
+                    '--cid', '7', '--launch-mode', 'process']
+            with patch.object(installer.sys, 'argv', argv), \
+                    patch.object(installer, 'read_build', return_value=(
+                        binary, hashlib.sha256(binary).hexdigest())), \
+                    patch.object(installer, 'Guest', side_effect=make_guest), \
+                    patch.object(installer, 'health', AsyncMock(side_effect=ConnectionRefusedError)), \
+                    patch.object(installer.argparse.ArgumentParser, 'exit', side_effect=SystemExit) as exit:
+                with self.assertRaises(SystemExit):
+                    installer.main()
+            report = json.loads((output / 'deploy.json').read_text())
+        self.assertEqual(len(guests), 1)
+        self.assertEqual(guests[0].cid, 7)
+        self.assertEqual(guests[0].calls.count('script.eval'), 1)
+        self.assertEqual(report['status'], 'failed')
+        self.assertIn('within 30 seconds and was stopped', report['error'])
+        self.assertIn(report['error'], exit.call_args.args[1])
+        self.assertTrue(report['process_spawn_requested'])
+        self.assertIn('failure_diagnostics', report)
+
     def test_process_launch_verifies_pid_and_boot_without_loading_a_service(self):
         guest = ProcessGuest()
         binary = b'native bridge fixture'

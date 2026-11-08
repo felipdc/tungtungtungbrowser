@@ -93,6 +93,13 @@ The fixed administrative expression invokes the native executable; it does not
 evaluate JavaScript in Safari. Service mode remains the default. Neither option
 is yet qualified as a repeatable cold-start solution.
 
+The launch script has a 30-second execution limit. The installer allows 45
+seconds for each daemon HTTP exchange so the daemon can stop and reap a timed-out
+script and deliver its terminal error. Previously both limits were 30 seconds;
+a native trial lost the reply at that boundary. This additional reply budget
+does not extend the script limit or retry a launch. An HTTP timeout still leaves
+the launch outcome uncertain and is retained in the deployment record.
+
 Close Inspector sessions before stopping a bridge. Use its verified deployment
 record and a new evidence file:
 
