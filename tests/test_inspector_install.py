@@ -107,6 +107,7 @@ class InspectorInstallTests(unittest.TestCase):
                 if method != 'script.eval':
                     return super()._rpc(method, **params)
                 self.calls.append(method)
+                self.script_timeout = params['timeout']
                 # The daemon's terminal error follows its script deadline and
                 # process cleanup. An equal HTTP timeout loses that response.
                 if self.http_timeout <= params['timeout'] + 1:
@@ -138,7 +139,10 @@ class InspectorInstallTests(unittest.TestCase):
         self.assertEqual(guests[0].cid, 7)
         self.assertEqual(guests[0].calls.count('script.eval'), 1)
         self.assertEqual(report['status'], 'failed')
-        self.assertIn('within 30 seconds and was stopped', report['error'])
+        self.assertEqual(guests[0].script_timeout, 120)
+        self.assertEqual(guests[0].http_timeout, 135)
+        self.assertEqual(report['launch_budget_seconds'], 120)
+        self.assertIn('within 120 seconds and was stopped', report['error'])
         self.assertIn(report['error'], exit.call_args.args[1])
         self.assertTrue(report['process_spawn_requested'])
         self.assertIn('failure_diagnostics', report)
@@ -224,6 +228,7 @@ class InspectorInstallTests(unittest.TestCase):
         errors = (GuestTransportError('receive_headers', TimeoutError('lost response')),
                   TimeoutError('caller timed out'), GuestError(str(GuestHTTPError(400, installer.SCRIPT_TIMEOUT_MESSAGE))),
                   GuestHTTPError(500, installer.SCRIPT_TIMEOUT_MESSAGE),
+                  GuestHTTPError(400, 'The script did not finish within 30 seconds and was stopped'),
                   GuestHTTPError(400, 'A different native failure'))
         for error in errors:
             with self.subTest(error=type(error).__name__):

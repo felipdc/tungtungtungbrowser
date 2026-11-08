@@ -19,7 +19,10 @@ from tungtungtungbrowser.guest import Guest, GuestError, GuestHTTPError
 from tungtungtungbrowser.inspector_transport import InspectorTransport, vsock_connection
 
 SOURCES = ('inspector_bridge.c', 'inspector_bridge_libSystem.tbd', 'inspector_bridge_entitlements.plist')
-SCRIPT_TIMEOUT_SECONDS = 30
+SCRIPT_TIMEOUT_SECONDS = 120
+# Cold initialization of the administrative session can exceed 30 seconds
+# before the native executable reaches its owned spawn. Keep one bounded launch
+# rather than cancelling that initialization and relying on a later warm one.
 # The daemon stops and reaps a timed-out script before returning its error.
 # An equal HTTP deadline can discard that terminal reply and leave the launch
 # outcome uncertain. Allow bounded time for cleanup and delivery; never replay.
@@ -83,6 +86,8 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
     report = {'status': 'installing', 'launch_mode': launch_mode, 'helper_sha256': digest, 'path': executable,
               'label': label, 'plist': plist, 'log': log, 'calls': [],
               'inspection_preferences_changed': False}
+    if launch_mode == 'process':
+        report['launch_budget_seconds'] = SCRIPT_TIMEOUT_SECONDS
     launch_error = None
 
     def save():

@@ -93,15 +93,18 @@ The fixed administrative expression invokes the native executable; it does not
 evaluate JavaScript in Safari. Service mode remains the default. Neither option
 is yet qualified as a repeatable cold-start solution.
 
-The launch script has a 30-second execution limit. The installer allows 45
-seconds for each daemon HTTP exchange so the daemon can stop and reap a timed-out
-script and deliver its terminal error. Previously both limits were 30 seconds;
-a native trial lost the reply at that boundary. This additional reply budget
-does not extend the script limit or retry a launch. An HTTP timeout still leaves
-the launch outcome uncertain and is retained in the deployment record.
+The launch script has a 120-second execution limit, recorded as
+`launch_budget_seconds` in process deployment evidence. Cold launch attempts
+previously reached the 30-second limit before creating their exclusive child
+log. The larger bounded budget allows that one attempt to finish initialization;
+it does not add another launch. The installer allows 135 seconds for each daemon
+HTTP exchange, including time to stop and reap a timed-out script and deliver
+its terminal error. An HTTP timeout still leaves the launch outcome uncertain
+and is retained in the deployment record.
 
 In process mode, a complete HTTP 400 reply stating that the launch script reached
-its execution limit and was stopped permits read-only reconciliation. The child
+the configured execution limit and was stopped permits read-only reconciliation.
+A timeout response for a different limit is ineligible. The child
 may already be listening independently of that launcher. The installer verifies
 the uniquely installed executable bytes again, reads one complete listener record
 from that spawn's exclusive log, and checks its PID and boot UUID against live
@@ -1028,3 +1031,53 @@ recorded 3,261 memory-limit events, with no OOM kills or CPU quota throttling;
 limit events also preceded the successful warm fixture captures, so they do
 not establish the rendering cause. The guest stopped cleanly in 8.28 seconds,
 parent disks/cache were unchanged, and no experimental state was promoted.
+
+### Targeted launch deadline and first focus (2026-11-08, trial 127)
+
+This batch retained one warm device and ran only targeted cases. Cold readiness
+took 232.03 seconds. With the 120-second launch budget, the initial bridge's
+administrative call completed in 24.15 seconds and its child PID and boot UUID
+matched health. That sample would also have fit the old budget; it does not
+establish that the larger limit fixed natural cold startup.
+
+A controlled comparison added a fixed 35-second delay before the native spawn.
+The old 30-second budget returned its terminal timeout, with no exclusive child
+log or listener. A separate process-inventory request then timed out; that
+failure was retained and the comparison stopped before the candidate launch.
+A smaller read-only native process scan completed in 3.00 seconds, checked
+270 processes without lookup failures and found no bridge.
+After checking the absent log and listener again, the unfinished candidate case
+completed one launch in 35.76 seconds under the 120-second budget, with matching
+child identity and health. The original failures remain unchanged. This checks
+deadline behavior with a deliberate delay, not cold-start latency or reliability.
+
+The private preparation-read experiment also failed its first cold focus case.
+Its pre-Command-L query completed, but subsequent focus reads returned a
+transient error and then no element. Navigation stopped before selection,
+paste or Return. The failure capture showed Safari's suggestions UI without
+the address toolbar. Cleanup later verified the editing URL field and closed
+only the owned tab. The preparation experiment was not adopted; successful
+preparation alone does not establish that native address-bar input is ready.
+
+The unchanged warm focus control then opened a session in 43.34 seconds and
+completed two native fixture navigations in 22.70 and 22.11 seconds, followed
+by exact URL and DOM checks. Native JPEG, host PNG and page snapshots visibly
+showed the fixture; the host image retained toolbar compositing artifacts.
+Cleanup took 11.24 seconds and closed only the owned tab. This checks warm
+browser use with the new bridge budget; cold focus remains unresolved.
+
+A short external-page case also produced visible native, host and page
+captures. The native and host images were byte-identical before and after
+Inspector socket attachment. Exact URL and DOM checks passed, and cleanup
+closed the owned tab in 12.00 seconds. An earlier diagnostic assertion omitted
+the SDK's ownership URL fragment; it failed before capture and closed its tab,
+and that failed record was retained. No full product workflow ran in this guest;
+the original product tab inherited from the parent remained present. The
+passing capture case narrows the earlier black-screen failure but does not
+establish its cause or a rendering fix.
+
+All four owned tabs were closed. The independent final audit found both
+accessibility switches off and no focus helpers. The container reached its
+10-GiB limit with 1,228 memory-limit events, no OOM kills and no CPU quota
+throttling. The guest stopped cleanly in 16.84 seconds; parent disks and cache
+were unchanged, and no experimental state was promoted.
