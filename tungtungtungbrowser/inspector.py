@@ -232,6 +232,7 @@ class InspectorSession:
         self._closed = False
         self._failure = None
         self.document_generation = 0
+        self._document_address = None
 
     def _check(self):
         if self._closed or self._failure:
@@ -432,14 +433,28 @@ class InspectorSession:
             raise InspectorError('Native URL open did not preserve existing tabs')
         return True
 
-    async def _unique_tab_url(self):
-        pages = await self._fresh_pages(self._app.id_)
+    def _tab_address(self, pages, document_url=None):
+        """Bind an inspected document address to this listed tab, without URL aliases.
+
+        Native listings can retain a redirect's source URL. Cleanup may use the
+        last confirmed document only while its target, generation and listing
+        address still match. The native active address must match independently.
+        """
         page = pages.get(self._page.id_)
         if page is None:
             raise InspectorError('The inspected tab is no longer listed')
-        url = _expected_address(page.web_url)
-        if sum(_native_address_key(candidate.web_url) == _native_address_key(url)
-               for candidate in pages.values()) != 1:
+        connection = page.web_connection_id
+        if connection and connection not in (self._inspector.connection_id, self._session_id):
+            raise InspectorError('The inspected tab is held by another Inspector connection')
+        listed_url = _expected_address(page.web_url)
+        if document_url is None:
+            previous = self._document_address
+            if previous is not None and previous[:3] == (self.target_id, self.document_generation, listed_url):
+                document_url = previous[3]
+        url = _expected_address(document_url) if document_url is not None else listed_url
+        addresses = {_native_address_key(listed_url), _native_address_key(url)}
+        if any(candidate.id_ != self._page.id_ and _native_address_key(candidate.web_url) in addresses
+               for candidate in pages.values()):
             raise InspectorError('Multiple Safari tabs have this URL; native tab identity is ambiguous')
         return url
 
@@ -566,6 +581,9 @@ class InspectorSession:
         self.events.append({'method': method, 'target_id': target, 'monotonic': time.monotonic()})
         if method == 'DOM.documentUpdated' and target == self.target_id:
             self.document_generation += 1
+        if (method == 'Page.frameNavigated' and target == self.target_id
+                and not p.get('frame', {}).get('parentId')):
+            self._document_address = None
         key = (target, p.get('requestId'))
         if method == 'Network.requestWillBeSent':
             request = p['request']
@@ -688,6 +706,7 @@ class InspectorSession:
             raise DocumentChangedError('Document changed during the read')
 
     async def _document(self):
+        self._document_address = None
         async with asyncio.timeout(self.timeout):
             while self.target_id not in self._targets:
                 self._check()
@@ -697,6 +716,16 @@ class InspectorSession:
             self._pointer_state['target'] = target
         document = await self._command('DOM.getDocument', target=target)
         self._same_document(target, generation)
+        # Preserve the native relationship, not a hostname equivalence rule.
+        # This is useful after inspection teardown, when a redirect's source
+        # can still be listed. An unconfirmed/invalid document never seeds it.
+        try:
+            listed_url = _expected_address(self._page.web_url)
+            document_url = _expected_address(document['root'].get('documentURL'))
+        except (AttributeError, ValueError, TypeError):
+            pass
+        else:
+            self._document_address = (target, generation, listed_url, document_url)
         if self._pointer_state is not None:
             self._pointer_state['ancestry'].add([document['root']])
         return target, generation, document
@@ -959,23 +988,24 @@ class InspectorSession:
         if self.browser is None:
             raise InspectorError('Native navigation requires a Browser instance')
         web_url(url)
-        expected_url = await self._unique_tab_url()
-        async with self._dom_lock:
+        async with self._native_lock, self._dom_lock:
+            self._check()
+            pages = await self._fresh_pages(self._app.id_)
             target, generation, document = await self._document()
-        if document['root'].get('documentURL') != expected_url:
-            raise DocumentChangedError('Tab listing and inspected document URL disagree')
-        def navigate():
-            with self.browser._lock:
-                self._same_document(target, generation)
-                # Browser.goto verifies foreground and PID after unlock. A second
-                # earlier RunningBoard query adds latency without strengthening
-                # that same guard immediately before address-field input.
-                result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
-                                           expected_pid=self._app.pid)
-                if result.get('method') != 'native_address_bar':
-                    raise InspectorError('Native navigation opened a different tab; inspected tab readiness is unknown')
-                return result
-        return await self._native(navigate)
+            document_url = document['root'].get('documentURL')
+            if not isinstance(document_url, str) or not document_url:
+                raise InspectorError('Inspected document URL is unavailable')
+            expected_url = self._tab_address(pages, document_url)
+            def navigate():
+                with self.browser._lock:
+                    self._same_document(target, generation)
+                    # Browser.goto verifies foreground and PID after unlock.
+                    result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
+                                               expected_pid=self._app.pid)
+                    if result.get('method') != 'native_address_bar':
+                        raise InspectorError('Native navigation opened a different tab; inspected tab readiness is unknown')
+                    return result
+            return await self._run_native(navigate)
 
     async def _native(self, operation, *args, **kwargs):
         async with self._native_lock:
@@ -1088,10 +1118,7 @@ class InspectorSession:
         # listing can still name our own connection after teardown was sent.
         # We own both that inspection and this tab; closing the tab is valid.
         self.tab_cleanup['own_inspection_still_listed'] = bool(connection)
-        expected_url = _expected_address(pages[self._page.id_].web_url)
-        if sum(_native_address_key(page.web_url) == _native_address_key(expected_url)
-               for page in pages.values()) != 1:
-            raise InspectorError('Multiple Safari tabs have this URL; owned tab cannot be safely closed')
+        expected_url = self._tab_address(pages)
         other_ids = set(pages) - {self._page.id_}
         self.tab_cleanup['status'] = 'close_started'
         await asyncio.to_thread(self.browser.close_tab, expected_url=expected_url, expected_pid=self._app.pid)

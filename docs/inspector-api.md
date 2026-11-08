@@ -291,6 +291,10 @@ assert not page.cleanup_errors
 Navigation checks a fresh tab listing and the inspected document URL, then the
 native editing address field before replacing its text. Duplicate URLs, a changed
 Safari PID, a different active tab or an unverified address field cause failure.
+Safari's listing can retain a redirect's source address. Navigation uses the
+fresh inspected document address in that case, and rejects another listed tab
+matching either the source or the destination. This does not make different
+hostnames interchangeable.
 Safari can omit the HTTP(S) scheme or a bare root URL's trailing slash from its
 editing field. Only those omissions are accepted: the entire host, port, path,
 query and fragment must otherwise match exactly. A slash is never removed from
@@ -310,6 +314,11 @@ connection; if the body already raised, that original exception is preserved wit
 a cleanup note. Concurrent close calls share one cleanup task. Cancellation joins
 an already dispatched operation; it does not replay input. An uncertain creation
 without proven tab ownership is reported as `unknown` and no tab is closed.
+Cleanup can use the last confirmed document address when its native target,
+document generation and listed address still match. A failed document read or
+observed main-frame navigation discards that record. If no valid record remains,
+the listed address must match the native field; cleanup can therefore fail after
+an unread redirect. Read a URL or document condition after navigation.
 
 This owns one tab and its inspection resources, not a separate browser profile.
 Cookies and other site data are shared with the running Safari instance. These
@@ -858,3 +867,54 @@ and no CPU quota throttling. These counters do not identify the failures' cause.
 The final audit found both accessibility switches off and no focus helpers.
 Shutdown completed cleanly in 16.69 seconds; parent disks and cache were unchanged.
 No experimental guest state was promoted.
+
+### Document-bound redirect handling (2026-11-08, trial 124)
+
+Navigation now uses the fresh inspected document address when a native tab
+listing retains a redirect's source. Both addresses must remain unique across
+listed tabs, and the foreground PID and native editing field must still match.
+Cleanup can retain that document association across inspection teardown only
+while its target, generation and listed address remain valid. Failed document
+reads and observed main-frame navigation discard it. Native actions remain
+serialized through cancellation and are never replayed. Regression cases cover
+redirects, duplicate source/destination addresses, stale records, foreign
+inspection, missing document addresses and cancellation; all 472 tests passed.
+
+A fresh isolated CPU-only boot retained the preceding 3-GiB/two-CPU guest and
+10-GiB/four-CPU container configuration. Cold readiness completed in 225.5
+seconds. The bridge launcher then returned a terminal 30-second script timeout,
+although its unique log reported a listener. Separate binary readback and
+log/health PID-and-boot checks verified that existing bridge. The failed
+installation record was preserved, and no launch was repeated.
+
+The first owned session opened in 92.8 seconds but its navigation failed after
+two native focus queries returned AX error -25216. No destination was pasted;
+cleanup closed the tab in 11.0 seconds and preserved the original. A fresh warm
+session took 162.2 seconds to open, then completed two redirects, return
+navigation and cleanup in 359.6 seconds overall. Its native and page captures
+showed the expected document content. The tab listings caught up with the
+destination on both visits, so this run did not reproduce the stale-listing edge.
+
+The subsequent complete product workflow took 350.3 seconds, including a
+19.1-second session opening, validated product JSON and rendered HTML,
+capture-time product URL/title checks, a second external page, native CSS link
+navigation, fixture CSS/XPath clicks and JSON, a 1.001-second expected timeout,
+a successful read afterward, and 12.8-second owned-tab cleanup. Seven native
+page snapshots returned; reviewed native and page captures showed the product
+and the fixture's completed click state. The product page snapshot included the
+site's cookie banner. No login/traffic redirect or black device body appeared
+in this workflow. The listing also caught up after its external link redirect;
+the mismatched-address regression remains covered locally, not reproduced here.
+
+These observations support the revised address checks and one complete warm
+workflow. They do not resolve intermittent launcher/focus failures, long session
+initialization, or the rendering failures retained from earlier trials.
+The host display briefly retained the preceding page after the native screenshot
+had updated, then showed the destination after a five-second passive wait; these
+capture paths are not synchronized. Final memory peak reached the 10-GiB limit
+with 1,399 limit events, no OOM kills and no CPU quota throttling. The final audit
+found both accessibility switches off and no focus helpers. All three owned tabs
+were closed, the guest stopped cleanly in 16.44 seconds, and parent disks/cache
+were unchanged. Archive-only finalization resumed after an already-exited
+resource monitor made the initial archiver stop; no browser or stop actions were
+repeated. No experimental guest state was promoted.

@@ -31,6 +31,7 @@ class TabFixture(NativeProtocolFixture):
         self.detach_connection = ''
         self.open_mode = 'new'
         self.close_mode = 'close'
+        self.document_url = None
         self.connect = AsyncMock()
         self.close = AsyncMock()
         self._get_connected_applications = AsyncMock()
@@ -100,7 +101,8 @@ class TabFixture(NativeProtocolFixture):
 
     async def send_socket_data(self, *args):
         self.results['DOM.getDocument'] = {'root': {
-            'nodeId': 1, 'documentURL': self.pages.get('2', self.pages['1']).web_url}}
+            'nodeId': 1, 'documentURL': (self.document_url if self.document_url is not None
+                                      else self.pages.get('2', self.pages['1']).web_url)}}
         await super().send_socket_data(*args)
 
 
@@ -314,6 +316,139 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.tab_cleanup['status'], 'closed')
         self.assertEqual(set(native.pages), {'1'})
         self.assertEqual(native.events.count('close'), 1)
+
+    async def test_redirected_document_can_navigate_with_stale_listing(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                native.pages['2'].web_url = 'https://fixture.invalid/redirect'
+                native.document_url = guest.address_value = 'https://www.fixture.invalid/final'
+                await session.goto('https://next.invalid/')
+                self.assertEqual(native.pages['2'].web_url, 'https://next.invalid/')
+                native.document_url = None
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(guest.calls.count(('input.key', {'name': 'return'})), 1)
+
+    async def test_redirected_document_read_allows_owned_cleanup_after_detach(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                native.pages['2'].web_url = 'https://fixture.invalid/redirect'
+                native.document_url = guest.address_value = 'https://www.fixture.invalid/final'
+                self.assertEqual(await session.wait_for_url('*'), native.document_url)
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+        self.assertEqual(native.events[-2:], ['detach', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+
+    async def test_redirect_source_and_destination_duplicates_block_navigation_and_close(self):
+        for duplicate in ('https://fixture.invalid/redirect', 'https://www.fixture.invalid/final'):
+            with self.subTest(duplicate=duplicate):
+                session, native, guest = fixture()
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    await session.__aenter__()
+                    native.pages['2'].web_url = 'https://fixture.invalid/redirect'
+                    native.document_url = guest.address_value = 'https://www.fixture.invalid/final'
+                    native.pages['1'].web_url = duplicate
+                    before = list(guest.calls)
+                    with self.assertRaisesRegex(InspectorError, 'ambiguous'):
+                        await session.goto('https://next.invalid/')
+                    with self.assertRaisesRegex(InspectorError, 'cleanup did not complete'):
+                        await session.close()
+                self.assertEqual(before, guest.calls)
+                self.assertEqual(set(native.pages), {'1', '2'})
+
+    async def test_redirect_does_not_make_a_different_active_address_equivalent(self):
+        for active in ('https://fixture.invalid/redirect', 'https://other.invalid/'):
+            with self.subTest(active=active):
+                session, native, guest = fixture()
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    await session.__aenter__()
+                    native.pages['2'].web_url = 'https://fixture.invalid/redirect'
+                    native.document_url = 'https://www.fixture.invalid/final'
+                    guest.address_value = active
+                    with self.assertRaisesRegex(Exception, 'expected URL'):
+                        await session.goto('https://next.invalid/')
+                    with self.assertRaises(InspectorError):
+                        await session.close()
+                self.assertNotIn('input.paste', [method for method, _ in guest.calls])
+                self.assertNotIn('close', native.events)
+
+    async def test_cleanup_discards_unconfirmed_or_invalidated_redirect_addresses(self):
+        for invalidate in ('unread', 'target', 'generation', 'listing', 'navigation', 'failed_read'):
+            with self.subTest(invalidate=invalidate):
+                session, native, guest = fixture()
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    await session.__aenter__()
+                    native.pages['2'].web_url = 'https://fixture.invalid/redirect'
+                    native.document_url = guest.address_value = 'https://www.fixture.invalid/final'
+                    if invalidate != 'unread':
+                        await session.wait_for_url('*')
+                    if invalidate == 'target':
+                        session.target_id = 'replacement'
+                    elif invalidate == 'generation':
+                        session._event(session.target_id, {'method': 'DOM.documentUpdated'})
+                    elif invalidate == 'listing':
+                        native.pages['2'].web_url = 'https://fixture.invalid/changed'
+                    elif invalidate == 'navigation':
+                        session._event(session.target_id, {'method': 'Page.frameNavigated', 'params': {
+                            'frame': {'id': 'main', 'url': 'https://fixture.invalid/changed'}}})
+                    elif invalidate == 'failed_read':
+                        with patch.object(session, '_command', side_effect=InspectorError('read failed')):
+                            with self.assertRaisesRegex(InspectorError, 'read failed'):
+                                await session.query_selector('body')
+                    with self.assertRaises(InspectorError):
+                        await session.close()
+                self.assertNotIn('close', native.events)
+                self.assertEqual(set(native.pages), {'1', '2'})
+
+    async def test_navigation_requires_a_document_address_and_our_inspection(self):
+        for unavailable in ('missing', 'empty', 'foreign'):
+            with self.subTest(unavailable=unavailable):
+                session, native, guest = fixture()
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    await session.__aenter__()
+                    if unavailable == 'foreign':
+                        native.pages['2'].web_connection_id = 'another-client'
+                    root = {'nodeId': 1}
+                    if unavailable != 'missing':
+                        root['documentURL'] = '' if unavailable == 'empty' else native.pages['2'].web_url
+                    before = list(guest.calls)
+                    with patch.object(session, '_document', return_value=(session.target_id, 0, {'root': root})):
+                        with self.assertRaises(InspectorError):
+                            await session.goto('https://next.invalid/')
+                    self.assertEqual(before, guest.calls)
+                    native.pages['2'].web_connection_id = 'our-connection'
+                    await session.close()
+
+    async def test_cancelled_navigation_keeps_native_lock_until_worker_finishes(self):
+        session, native, guest = fixture()
+        started, release = threading.Event(), threading.Event()
+        original = session.browser.goto
+        def blocked_navigation(*args, **kwargs):
+            started.set()
+            if not release.wait(2):
+                raise AssertionError('test did not release navigation')
+            return original(*args, **kwargs)
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                session.browser.goto = blocked_navigation
+                first = asyncio.create_task(session.goto('https://next.invalid/'))
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                second = asyncio.create_task(session.goto('https://last.invalid/'))
+                first.cancel()
+                await asyncio.sleep(0)
+                first.cancel()
+                await asyncio.sleep(0)
+                self.assertFalse(first.done())
+                self.assertFalse(second.done())
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await first
+                await second
+                self.assertEqual(native.pages['2'].web_url, 'https://last.invalid/')
+        self.assertEqual(guest.calls.count(('input.key', {'name': 'return'})), 2)
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
 
     async def test_unicode_alias_tabs_reject_ambiguous_navigation_and_cleanup(self):
         session, native, guest = fixture()
