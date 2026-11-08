@@ -12,10 +12,39 @@ import contextlib
 import io
 
 from tungtungtungbrowser.cli import capture, capture_logs, main
-from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, SCREEN_NOTIFICATIONS
+from tungtungtungbrowser.guest import Guest, GuestError, GuestHTTPError, GuestTransportError, SCREEN_NOTIFICATIONS
 
 
 class GuestTransportTest(unittest.TestCase):
+    def test_complete_http_error_retains_status_and_bounded_detail_without_retry(self):
+        for error in ('native deadline', {'message': 'native deadline'}, {'message': 3}, 'x' * 3000):
+            with self.subTest(error_type=type(error)):
+                connection = Mock()
+                response = connection.getresponse.return_value
+                response.status, response.length = 400, 0
+                response.read.return_value = json.dumps({'error': error}).encode()
+                guest = Guest(connection_factory=lambda: connection)
+                with self.assertRaises(GuestHTTPError) as caught:
+                    guest._rpc('script.eval', source='fixed native launcher', timeout=30)
+                self.assertIsInstance(caught.exception, GuestError)
+                self.assertEqual(caught.exception.status, 400)
+                detail = error.get('message') if isinstance(error, dict) else error
+                self.assertEqual(caught.exception.detail, detail[:2000] if isinstance(detail, str) else None)
+                connection.request.assert_called_once()
+                connection.close.assert_called_once()
+
+    def test_truncated_http_error_is_not_a_complete_daemon_reply(self):
+        connection = Mock()
+        response = connection.getresponse.return_value
+        response.status, response.length = 400, 10
+        response.read.return_value = b'{"error":"native deadline"}'
+        with self.assertRaises(GuestTransportError) as caught:
+            Guest(connection_factory=lambda: connection)._rpc('script.eval', source='fixed native launcher')
+        self.assertNotIsInstance(caught.exception, GuestHTTPError)
+        self.assertEqual(caught.exception.phase, 'read_body')
+        connection.request.assert_called_once()
+        connection.close.assert_called_once()
+
     def test_tap_timeout_does_not_repeat_or_fall_back_after_sending(self):
         connection = Mock()
         connection.getresponse.side_effect = TimeoutError('timed out')

@@ -12,6 +12,15 @@ class GuestError(RuntimeError):
     pass
 
 
+class GuestHTTPError(GuestError):
+    """A complete HTTP error response, distinct from an interrupted exchange."""
+    def __init__(self, status, detail=None):
+        self.status = status
+        self.detail = detail[:2000] if isinstance(detail, str) else None
+        suffix = f': {self.detail}' if self.detail is not None else ''
+        super().__init__(f'vphoned HTTP status {status}{suffix}')
+
+
 class GuestTransportError(GuestError):
     """A failed exchange; later phases leave the native action's outcome unknown."""
     def __init__(self, phase, cause):
@@ -125,8 +134,7 @@ class Guest:
                 detail = value.get("error")
                 if isinstance(detail, dict):
                     detail = detail.get("message")
-                suffix = f": {detail[:2000]}" if isinstance(detail, str) else ""
-                raise GuestError(f"vphoned HTTP status {response.status}{suffix}")
+                raise GuestHTTPError(response.status, detail)
             return value
         except (OSError, http.client.HTTPException) as exc:
             raise GuestTransportError(phase, exc) from exc

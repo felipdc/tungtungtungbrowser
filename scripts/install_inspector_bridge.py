@@ -15,7 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser.guest import Guest, GuestError, GuestHTTPError
 from tungtungtungbrowser.inspector_transport import InspectorTransport, vsock_connection
 
 SOURCES = ('inspector_bridge.c', 'inspector_bridge_libSystem.tbd', 'inspector_bridge_entitlements.plist')
@@ -24,6 +24,7 @@ SCRIPT_TIMEOUT_SECONDS = 30
 # An equal HTTP deadline can discard that terminal reply and leave the launch
 # outcome uncertain. Allow bounded time for cleanup and delivery; never replay.
 RPC_TIMEOUT_SECONDS = SCRIPT_TIMEOUT_SECONDS + 15
+SCRIPT_TIMEOUT_MESSAGE = f'The script did not finish within {SCRIPT_TIMEOUT_SECONDS} seconds and was stopped'
 
 
 def read_build(directory):
@@ -82,6 +83,7 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
     report = {'status': 'installing', 'launch_mode': launch_mode, 'helper_sha256': digest, 'path': executable,
               'label': label, 'plist': plist, 'log': log, 'calls': [],
               'inspection_preferences_changed': False}
+    launch_error = None
 
     def save():
         (output / 'deploy.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -147,6 +149,40 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
             except Exception as error:
                 diagnostics[name + '_error'] = f'{type(error).__name__}: {error}'
 
+    def reconcile_listener():
+        # The terminal daemon reply ends the launcher, but its independent child
+        # may already be listening. Only read this deployment's unique files;
+        # the native spawn opens its log with O_EXCL | O_NOFOLLOW.
+        evidence = report['reconciliation'] = {'status': 'checking', 'launch_repeated': False}
+        save()
+        binary = rpc('files.read', path=executable, binary=True, limit=len(data))
+        if (binary.get('path') != executable or binary.get('encoding') != 'base64'
+                or binary.get('truncated') is not False or binary.get('size') != len(data)
+                or base64.b64decode(binary['content'], validate=True) != data):
+            raise GuestError('Bridge executable changed before launch reconciliation')
+        evidence['executable_sha256'] = digest
+        result = evidence['log'] = rpc('files.read', path=log, limit=16384)
+        save()
+        content = result.get('content')
+        if (result.get('path') != log or result.get('encoding') != 'utf8'
+                or result.get('truncated') is not False or not isinstance(content, str)
+                or not 1 <= len(content.encode('utf-8')) <= 16384
+                or result.get('size') != len(content.encode('utf-8'))):
+            raise GuestError('Bridge spawn log is incomplete or belongs to another path')
+        listener = json.loads(content)
+        if (not isinstance(listener, dict)
+                or set(listener) != {'protocol', 'status', 'pid', 'boot_uuid', 'port'}
+                or type(listener['protocol']) is not int or listener['protocol'] != 2
+                or listener['status'] != 'listening'
+                or type(listener['pid']) is not int or not 1 < listener['pid'] <= 2147483647
+                or type(listener['port']) is not int or listener['port'] != 1343
+                or not isinstance(listener['boot_uuid'], str)
+                or str(uuid.UUID(listener['boot_uuid'])).lower() != listener['boot_uuid'].lower()):
+            raise GuestError('Bridge spawn log has no valid listener identity')
+        evidence.update(status='listener_verified', listener=listener)
+        save()
+        return listener
+
     save()
     try:
         try:
@@ -172,29 +208,20 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
         else:
             report['process_spawn_requested'] = True
             source = 'proc.run(' + json.dumps(executable) + ', ' + json.dumps(['spawn', log]) + ', "")'
-            answer = rpc('script.eval', source=source, timeout=SCRIPT_TIMEOUT_SECONDS)
             try:
-                if (not isinstance(answer, dict) or answer.get('ok') is not True
-                        or answer.get('crashed') is not False or answer.get('output') != ''
-                        or not isinstance(answer.get('result'), str) or len(answer['result']) > 65536):
-                    raise ValueError('Native launcher did not complete')
-                process = json.loads(answer['result'])
-                if (not isinstance(process, dict) or type(process.get('status')) is not int
-                        or process['status'] != 0 or process.get('signal', 0) is not None
-                        or process.get('stderr') != '' or not isinstance(process.get('stdout'), str)):
-                    raise ValueError('Native launcher exited unsuccessfully')
-                spawned = report['spawn'] = json.loads(process['stdout'])
-                if (not isinstance(spawned, dict) or type(spawned.get('protocol')) is not int
-                        or spawned['protocol'] != 2 or spawned.get('status') != 'spawned'
-                        or type(spawned.get('pid')) is not int or not 1 < spawned['pid'] <= 2147483647
-                        or type(spawned.get('port')) is not int or spawned['port'] != 1343
-                        or type(spawned.get('spawn_error')) is not int or spawned['spawn_error'] != 0
-                        or not isinstance(spawned.get('boot_uuid'), str)):
-                    raise ValueError('Invalid native spawn identity')
-                uuid.UUID(spawned['boot_uuid'])
-                expected_pid = spawned['pid']
-            except (KeyError, TypeError, ValueError) as error:
-                raise GuestError('Native bridge spawn was not verified; launch was not repeated') from error
+                answer = rpc('script.eval', source=source, timeout=SCRIPT_TIMEOUT_SECONDS)
+            except GuestHTTPError as error:
+                if error.status != 400 or error.detail != SCRIPT_TIMEOUT_MESSAGE:
+                    raise
+                launch_error = error
+                report['launch_error'] = str(error)
+                listener = reconcile_listener()
+                expected_pid, expected_boot = listener['pid'], listener['boot_uuid']
+            else:
+                try:
+                    expected_pid, expected_boot = _spawn_identity(answer, report)
+                except (KeyError, TypeError, ValueError) as error:
+                    raise GuestError('Native bridge spawn was not verified; launch was not repeated') from error
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -206,17 +233,46 @@ def install(guest, data, digest, output, health_check, *, launch_mode='service')
                 time.sleep(0.25)
         if report['health']['pid'] != expected_pid:
             raise GuestError('Bridge health belongs to another process')
-        if launch_mode == 'process' and report['health'].get('boot_uuid') != spawned['boot_uuid']:
+        if launch_mode == 'process' and report['health'].get('boot_uuid') != expected_boot:
             raise GuestError('Bridge health belongs to another guest boot')
+        if launch_error is not None:
+            report['reconciliation']['status'] = 'verified'
         report['status'] = 'complete'
         return report
     except Exception as error:
-        report.update(status='failed', error=str(error))
+        primary_error = launch_error if launch_error is not None else error
+        report.update(status='failed', error=str(primary_error))
+        if launch_error is not None:
+            report['reconciliation'].update(status='failed', error=f'{type(error).__name__}: {error}')
         if report.get('service_load_requested') or report.get('process_spawn_requested'):
             capture_failure_diagnostics()
+        if primary_error is not error:
+            raise primary_error from error
         raise
     finally:
         save()
+
+
+def _spawn_identity(answer, report):
+    if (not isinstance(answer, dict) or answer.get('ok') is not True
+            or answer.get('crashed') is not False or answer.get('output') != ''
+            or not isinstance(answer.get('result'), str) or len(answer['result']) > 65536):
+        raise ValueError('Native launcher did not complete')
+    process = json.loads(answer['result'])
+    if (not isinstance(process, dict) or type(process.get('status')) is not int
+            or process['status'] != 0 or process.get('signal', 0) is not None
+            or process.get('stderr') != '' or not isinstance(process.get('stdout'), str)):
+        raise ValueError('Native launcher exited unsuccessfully')
+    spawned = report['spawn'] = json.loads(process['stdout'])
+    if (not isinstance(spawned, dict) or type(spawned.get('protocol')) is not int
+            or spawned['protocol'] != 2 or spawned.get('status') != 'spawned'
+            or type(spawned.get('pid')) is not int or not 1 < spawned['pid'] <= 2147483647
+            or type(spawned.get('port')) is not int or spawned['port'] != 1343
+            or type(spawned.get('spawn_error')) is not int or spawned['spawn_error'] != 0
+            or not isinstance(spawned.get('boot_uuid'), str)):
+        raise ValueError('Invalid native spawn identity')
+    uuid.UUID(spawned['boot_uuid'])
+    return spawned['pid'], spawned['boot_uuid']
 
 
 def main():

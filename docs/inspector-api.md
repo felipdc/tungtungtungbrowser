@@ -100,6 +100,20 @@ a native trial lost the reply at that boundary. This additional reply budget
 does not extend the script limit or retry a launch. An HTTP timeout still leaves
 the launch outcome uncertain and is retained in the deployment record.
 
+In process mode, a complete HTTP 400 reply stating that the launch script reached
+its execution limit and was stopped permits read-only reconciliation. The child
+may already be listening independently of that launcher. The installer verifies
+the uniquely installed executable bytes again, reads one complete listener record
+from that spawn's exclusive log, and checks its PID and boot UUID against live
+bridge health. A verified result completes deployment without another spawn or
+service action. `launch_error` and the original failed RPC remain in `deploy.json`,
+and `reconciliation` records the separate evidence; no spawn acknowledgement is
+invented. Missing, truncated, malformed or mismatched evidence retains the original
+launcher error and records why reconciliation failed. Transport timeouts and
+other errors do not enter this path. `GuestHTTPError` exposes the received HTTP
+status and bounded error detail while remaining a `GuestError`; this distinction
+does not make arbitrary failed operations safe to repeat.
+
 Close Inspector sessions before stopping a bridge. Use its verified deployment
 record and a new evidence file:
 
@@ -918,3 +932,50 @@ were closed, the guest stopped cleanly in 16.44 seconds, and parent disks/cache
 were unchanged. Archive-only finalization resumed after an already-exited
 resource monitor made the initial archiver stop; no browser or stop actions were
 repeated. No experimental guest state was promoted.
+
+### Terminal launcher reconciliation (2026-11-08, trial 125)
+
+The process installer now distinguishes a received daemon timeout response from
+an interrupted HTTP exchange. Only the exact terminal script-limit response
+permits the read-only binary, exclusive-log and live-identity checks described
+above. It preserves the original error and never repeats the spawn. Tests cover
+incomplete or changed files, malformed and multiple listener records, replaced
+PID/boot identities, unreachable health and ineligible errors. All 478 tests
+passed.
+
+A fresh isolated CPU-only boot used the same experimental 3-GiB/two-CPU guest
+and 10-GiB/four-CPU container. Cold readiness completed in 223.7 seconds, and
+normal process installation succeeded. The first browser session then exhausted
+three Inspector handoff attempts in 52.2 seconds: an interrupted connection,
+an opened stream with an initial EOF, and another interrupted connection. No
+tab or browser action had been created or sent.
+
+After the verified bridge was stopped, a private administrative fault launched
+one native child and deliberately held that caller past its 30-second script
+limit. A native file marker verified that the spawn had returned before the
+limit. The daemon's real HTTP 400 response arrived after 33.1 seconds; no error
+response was fabricated. The candidate installer verified the surviving child's
+exact executable, complete listener log and live PID/boot identity, completing
+deployment without another spawn. The failed RPC and separate reconciliation
+evidence were retained, with no invented spawn acknowledgement.
+
+The next session passed the handoff but failed a 60-second foreground-query
+transport deadline before tab creation. A separate warm attempt opened an owned
+fixture tab in 17.0 seconds and read its DOM. Product navigation then stopped
+before paste: the two guarded focus reads returned `-25216` and absent focus
+(`-25212`). The failure's URL, HTML and native/host images were retained; the
+native image showed the address-entry suggestions rather than product content.
+Cleanup closed that owned tab in 11.5 seconds and preserved the original tab.
+
+This trial validates reconciliation of one surviving native child after a
+terminal launcher timeout. It does not establish a complete product workflow:
+all three attempts failed, and initial handoff, foreground and focus reliability
+remain open. A saved product page visible in an earlier failure capture belonged
+to the original tab and is not evidence of a successful requested navigation.
+
+Final memory peak was 9.64 GiB, with no memory-limit events, OOM kills or CPU
+quota throttling. The failures therefore also occurred without recorded cgroup
+memory pressure. All three focus queries restored the original off/off state;
+the independent final audit found both switches off and no focus helpers.
+The guest stopped cleanly in 7.58 seconds, parent disks/cache were unchanged,
+and no experimental guest state was promoted.

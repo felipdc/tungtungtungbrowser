@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from tungtungtungbrowser.guest import GuestError
+from tungtungtungbrowser.guest import GuestError, GuestHTTPError, GuestTransportError
 
 
 SPEC = importlib.util.spec_from_file_location('install_inspector_bridge',
@@ -73,8 +73,11 @@ class DeploymentGuest:
             return {'bytes': len(data)}
         if method == 'files.read':
             data = self.files[params['path']]
-            return {'truncated': False, 'size': len(data),
-                    'content': base64.b64encode(b'corrupt' if self.corrupt_read else data).decode()}
+            contents = b'corrupt' if self.corrupt_read else data
+            binary = params.get('binary', False)
+            return {'truncated': False, 'size': len(data), 'path': params['path'],
+                    'encoding': 'base64' if binary else 'utf8',
+                    'content': base64.b64encode(contents).decode() if binary else contents.decode()}
         if method == 'files.chmod':
             return {}
         if method == 'files.rename':
@@ -108,8 +111,7 @@ class InspectorInstallTests(unittest.TestCase):
                 # process cleanup. An equal HTTP timeout loses that response.
                 if self.http_timeout <= params['timeout'] + 1:
                     raise TimeoutError('HTTP deadline expired before daemon cleanup')
-                raise GuestError('vphoned HTTP status 400: The script did not finish '
-                                 'within 30 seconds and was stopped')
+                raise GuestHTTPError(400, installer.SCRIPT_TIMEOUT_MESSAGE)
 
         binary = b'native bridge fixture'
         guests = []
@@ -155,6 +157,89 @@ class InspectorInstallTests(unittest.TestCase):
         self.assertEqual(guest.calls.count('script.eval'), 1)
         self.assertFalse(any(name.startswith('services.') for name in guest.calls))
         self.assertIn(json.dumps(["spawn", result['log']]), guest.source)
+
+    def test_terminal_launcher_timeout_reconciles_the_existing_child_without_another_spawn(self):
+        guest = TerminalLaunchGuest()
+        binary = b'native bridge fixture'
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'deployment'
+            result = installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                       output, guest.health, launch_mode='process')
+            self.assertEqual(result, json.loads((output / 'deploy.json').read_text()))
+            self.assertFalse((output / 'service.plist').exists())
+        self.assertEqual(result['status'], 'complete')
+        self.assertNotIn('spawn', result)  # No acknowledgement was received.
+        self.assertEqual(result['launch_error'], str(guest.launch_error))
+        self.assertEqual(result['reconciliation']['status'], 'verified')
+        self.assertFalse(result['reconciliation']['launch_repeated'])
+        self.assertEqual(result['health']['pid'], result['reconciliation']['listener']['pid'])
+        self.assertEqual(result['health']['boot_uuid'], result['reconciliation']['listener']['boot_uuid'])
+        self.assertEqual(guest.calls.count('script.eval'), 1)
+        self.assertEqual(guest.calls.count('files.write'), 1)
+        self.assertEqual(guest.health_calls, 2)
+        self.assertFalse(any(name.startswith('services.') for name in guest.calls))
+
+    def test_reconciliation_rejects_incomplete_or_changed_files_and_preserves_launcher_error(self):
+        failures = ('missing_log', 'truncated_log', 'wrong_log_path', 'wrong_encoding',
+                    'wrong_log_size', 'invalid_json', 'multiple_records', 'invalid_pid',
+                    'invalid_boot', 'wrong_port', 'wrong_status', 'changed_binary',
+                    'wrong_binary_path', 'truncated_binary')
+        for failure in failures:
+            with self.subTest(failure=failure):
+                guest = TerminalLaunchGuest(failure)
+                binary = b'native bridge fixture'
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / 'deployment'
+                    with self.assertRaises(GuestHTTPError) as caught:
+                        installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                          output, guest.health, launch_mode='process')
+                    report = json.loads((output / 'deploy.json').read_text())
+                self.assertIs(caught.exception, guest.launch_error)
+                self.assertIsNotNone(caught.exception.__cause__)
+                self.assertEqual(report['status'], 'failed')
+                self.assertEqual(report['error'], str(guest.launch_error))
+                self.assertEqual(report['reconciliation']['status'], 'failed')
+                self.assertEqual(guest.health_calls, 1)  # Initial absent-listener probe only.
+                self.assertEqual(guest.calls.count('script.eval'), 1)
+                self.assertEqual(guest.calls.count('files.write'), 1)
+
+    def test_reconciliation_rejects_a_replaced_or_unreachable_listener(self):
+        for failure in ('wrong_pid', 'wrong_boot', 'health_timeout'):
+            with self.subTest(failure=failure):
+                guest = TerminalLaunchGuest(failure)
+                binary = b'native bridge fixture'
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / 'deployment'
+                    with self.assertRaises(GuestHTTPError) as caught:
+                        installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                          output, guest.health, launch_mode='process')
+                    report = json.loads((output / 'deploy.json').read_text())
+                self.assertIs(caught.exception, guest.launch_error)
+                self.assertEqual(report['reconciliation']['status'], 'failed')
+                self.assertEqual(report['error'], str(guest.launch_error))
+                self.assertEqual(guest.health_calls, 2)
+                self.assertEqual(guest.calls.count('script.eval'), 1)
+
+    def test_only_the_received_terminal_script_timeout_permits_reconciliation(self):
+        errors = (GuestTransportError('receive_headers', TimeoutError('lost response')),
+                  TimeoutError('caller timed out'), GuestError(str(GuestHTTPError(400, installer.SCRIPT_TIMEOUT_MESSAGE))),
+                  GuestHTTPError(500, installer.SCRIPT_TIMEOUT_MESSAGE),
+                  GuestHTTPError(400, 'A different native failure'))
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                guest = TerminalLaunchGuest(launch_error=error)
+                binary = b'native bridge fixture'
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / 'deployment'
+                    with self.assertRaises(type(error)) as caught:
+                        installer.install(guest, binary, hashlib.sha256(binary).hexdigest(),
+                                          output, guest.health, launch_mode='process')
+                    report = json.loads((output / 'deploy.json').read_text())
+                self.assertIs(caught.exception, error)
+                self.assertNotIn('reconciliation', report)
+                self.assertEqual(report['status'], 'failed')
+                self.assertEqual(guest.health_calls, 1)
+                self.assertEqual(guest.calls.count('script.eval'), 1)
 
     def test_process_spawn_failure_or_lost_reply_is_never_replayed(self):
         for failure in ('lost_reply', 'exit', 'invalid_pid', 'invalid_boot', 'wrong_pid', 'wrong_boot'):
@@ -326,6 +411,64 @@ class ProcessGuest(DeploymentGuest):
         process = {'status': 9 if self.failure == 'exit' else 0, 'signal': None,
                    'stdout': json.dumps(spawned), 'stderr': ''}
         return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(process)}
+
+
+class TerminalLaunchGuest(ProcessGuest):
+    """A real child and exclusive log can outlive a failed launcher response."""
+    def __init__(self, failure=None, *, launch_error=None):
+        super().__init__(failure)
+        self.launch_error = launch_error or GuestHTTPError(400, installer.SCRIPT_TIMEOUT_MESSAGE)
+        self.health_calls = 0
+        self.launched = False
+
+    def health(self):
+        self.health_calls += 1
+        if self.launched and self.failure == 'health_timeout':
+            raise TimeoutError('Listener health timed out')
+        return super().health()
+
+    def _rpc(self, method, **params):
+        if method == 'script.eval':
+            # Execute the modeled native spawn once, then lose only its result.
+            super()._rpc(method, **params)
+            self.launched = True
+            decoder = json.JSONDecoder()
+            executable, end = decoder.raw_decode(params['source'][len('proc.run('):])
+            arguments = decoder.raw_decode(params['source'][len('proc.run(') + end + 2:])[0]
+            self.log = arguments[1]
+            listener = {'protocol': 2, 'status': 'listening', 'pid': 123,
+                        'boot_uuid': self.BOOT, 'port': 1343}
+            for failure, key, value in [('invalid_pid', 'pid', True), ('invalid_boot', 'boot_uuid', 'invalid'),
+                                        ('wrong_port', 'port', 1344), ('wrong_status', 'status', 'spawned')]:
+                if self.failure == failure:
+                    listener[key] = value
+            content = json.dumps(listener) + '\n'
+            if self.failure == 'invalid_json':
+                content = '{unfinished'
+            if self.failure == 'multiple_records':
+                content += content
+            if self.failure != 'missing_log':
+                self.files[self.log] = content.encode()
+            if self.failure == 'changed_binary':
+                self.files[executable] = b'changed'
+            raise self.launch_error
+        result = super()._rpc(method, **params)
+        if method == 'files.read' and self.launched:
+            is_log = params['path'] == self.log
+            if is_log:
+                if self.failure == 'truncated_log':
+                    result['truncated'] = True
+                elif self.failure == 'wrong_log_path':
+                    result['path'] = '/another/launch.log'
+                elif self.failure == 'wrong_encoding':
+                    result['encoding'] = 'base64'
+                elif self.failure == 'wrong_log_size':
+                    result['size'] += 1
+            elif self.failure == 'wrong_binary_path':
+                result['path'] = '/another/executable'
+            elif self.failure == 'truncated_binary':
+                result['truncated'] = True
+        return result
 
 
 if __name__ == '__main__':
