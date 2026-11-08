@@ -809,3 +809,52 @@ events; these counters do not establish the later failures' cause. All four
 owned test tabs were verified closed, both accessibility switches were off,
 and no focus helpers remained. Shutdown completed cleanly in 7.98 seconds;
 parent disks and cache were unchanged. The resource profile remains experimental.
+
+### Native page capture API trial
+
+The `snapshot_rect` implementation completed a native workflow in 388.88 seconds
+on a disposable 3-GiB, two-CPU guest with a 10-GiB container limit. Session
+creation took 20.07 seconds, product navigation 23.88 seconds, second-site
+navigation 44.88 seconds and owned-tab cleanup 11.29 seconds. The run verified
+the application JSON identifiers, rendered and original HTML, an external link
+click, fixture CSS/XPath clicks and JSON, a 1.00-second absent-selector timeout,
+and a subsequent successful read. Seven page snapshots took 0.38–6.07 seconds
+each and returned 1179 × 1950 PNGs for the requested 393 × 650 CSS rectangle.
+The initial product image was incomplete; the later settled page and device
+images showed its photo, title and price. Reviewed destination and fixture
+images showed the expected content and updated click state.
+
+The next identical sequence failed acceptance. It initially received valid
+product JSON and matched the product heading, but then redirected to a
+login/traffic error page. The snapshot metadata recorded that later URL, and
+the image showed the error page. Device captures were black on that page and
+the next external document, including after passive waits and page snapshots.
+A successful earlier response or DOM condition therefore does not establish
+the later capture's expected content. Page capture did not repair device
+composition or make this repeated workflow reliable.
+
+That repeat subsequently rejected navigation because the native tab listing's
+hostname omitted `www.` while the inspected document included it. Cleanup also
+rejected the expected-address mismatch before sending a close command. A
+separate recovery verified the owned page ID, current inspected document URL,
+native active address and other tab's distinct URL before closing it, then
+verified the owned ID absent. Hostname differences were not treated as generally
+equivalent. All four owned tabs were ultimately verified closed.
+
+Earlier failures from this boot remain recorded: cold readiness exceeded its
+300-second deadline; the first session exhausted three interrupted handoffs;
+the next navigation's foreground query timed out before URL input; and its
+cleanup required separate recovery after an absent-focus result. One additional
+private harness failure compared the current capture URL with the session's
+unchanged initial selection URL; the corrected check reads the current document.
+Nineteen traced focus queries all verified restoration of the original off/off
+accessibility state, including one AX error and one absent-focus result. In the
+complete workflow, two successful fixture contacts measured 197.93 and 131.25 ms,
+agreeing with the page's trusted pointer events; the earlier word-selection
+failure was not reproduced or explained.
+
+Final memory peak reached the 10-GiB limit with 1,966 limit events, no OOM kills
+and no CPU quota throttling. These counters do not identify the failures' cause.
+The final audit found both accessibility switches off and no focus helpers.
+Shutdown completed cleanly in 16.69 seconds; parent disks and cache were unchanged.
+No experimental guest state was promoted.
