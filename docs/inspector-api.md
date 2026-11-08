@@ -979,3 +979,52 @@ memory pressure. All three focus queries restored the original off/off state;
 the independent final audit found both switches off and no focus helpers.
 The guest stopped cleanly in 7.58 seconds, parent disks/cache were unchanged,
 and no experimental guest state was promoted.
+
+### Targeted warm validation (2026-11-08, trial 126)
+
+This batch kept one device warm and checked startup and focus before running
+one milestone workflow. Cold readiness took 215.90 seconds. Initial bridge
+installation failed with a terminal launcher timeout and no exclusive child
+log. A separate diagnostic found no bridge process or listener; a distinct
+fresh deployment then succeeded. The first failure remains part of the record.
+
+A native URL-field enumeration experiment completed with restored switches but
+found no field after Command-L. It was discarded. A preparation read before
+Command-L passed a short warm fixture case, but unchanged production code also
+passed the same case: session creation, two native address-bar navigations,
+exact URLs, DOM conditions, visually reviewed native and page captures, and
+owned-tab cleanup. The preparation change was not adopted. The unchanged warm
+control opened its session in 18.75 seconds; native navigation acknowledgements
+took 21.21 and 22.57 seconds, and cleanup took 9.79 seconds. These samples do not
+establish a cold-focus improvement or a performance comparison.
+
+The subsequent milestone used unchanged runtime code. In 364.97 seconds it
+completed product request/response observation and validated JSON, committed
+URLs, rendered HTML, page snapshots, second-page navigation and response-body
+reads, a native external-link click, CSS/XPath fixture clicks, expected selector
+timeout recovery, and owned-tab cleanup. Session creation took 17.74 seconds;
+product and second-page navigation acknowledgements took 23.20 and 44.37 seconds.
+All page snapshots were visually reviewed. Cleanup took 11.71 seconds and
+preserved the original tab.
+
+Full-screen rendering still failed: native JPEG and host PNG captures showed
+black page content while WebKit page snapshots showed the documents. Passive
+waiting and taking a page snapshot did not repair those screen captures. This
+is a successful warm API sequence with a retained rendering failure, not a
+complete reliability qualification. Cold launcher and first-focus failures
+remain unresolved.
+
+A short follow-up opened a fresh external tab, waited 15 seconds, and captured
+it before attaching its Inspector socket. Both native and host captures were
+already black and remained black after attachment, while DOM checks and the
+page snapshot passed. The owned tab was closed and a fresh listing contained
+only the original tab. This places the observed failure before that tab's
+attachment; earlier inspected navigations had already occurred in the same
+guest, so their possible persistent effects and the rendering cause remain open.
+
+The final audit found both accessibility switches off and no focus helpers.
+All five owned tabs were closed. The container reached its 10-GiB limit and
+recorded 3,261 memory-limit events, with no OOM kills or CPU quota throttling;
+limit events also preceded the successful warm fixture captures, so they do
+not establish the rendering cause. The guest stopped cleanly in 8.28 seconds,
+parent disks/cache were unchanged, and no experimental state was promoted.

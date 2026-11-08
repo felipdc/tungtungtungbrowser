@@ -18,6 +18,13 @@ transport failures and evidence preservation. Live browser validation must
 record the native screenshot and requested URL. A daemon health response or an
 accepted open request alone is not successful page rendering.
 
+While iterating, validate each fix with the smallest native case that exercises
+its failure and cleanup. Keep the device warm throughout a batch, prioritizing
+session startup and native focus. Reserve full browser workflows for milestones
+after the targeted checks pass; the source-release checks above still apply.
+Preserve failed attempts and compare unchanged behavior when warming could
+explain a candidate's success. A warm pass does not qualify cold startup.
+
 For resource changes, record guest and container limits, whole-cgroup peak
 memory, CPU usage and OOM events during a real browser workload. Separate cold
 boot, warm application launch and in-memory resume timings. Keep the original
