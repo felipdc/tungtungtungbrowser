@@ -1078,6 +1078,9 @@ establish its cause or a rendering fix.
 
 All four owned tabs were closed. The independent final audit found both
 accessibility switches off and no focus helpers. The container reached its
-10-GiB limit with 1,228 memory-limit events, no OOM kills and no CPU quota
-throttling. The guest stopped cleanly in 16.84 seconds; parent disks and cache
-were unchanged, and no experimental state was promoted.
+10-GiB limit with 1,228 memory-limit events before shutdown and 1,240 by the
+last shutdown sample, with no OOM kills or CPU quota throttling. The cold
+focus failure preceded the first limit event, while the later visible fixture
+and external captures followed limit events. These samples do not establish
+the rendering cause. The guest stopped cleanly in 16.84 seconds; parent disks
+and cache were unchanged, and no experimental state was promoted.
