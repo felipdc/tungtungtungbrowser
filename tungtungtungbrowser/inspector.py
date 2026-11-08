@@ -12,6 +12,7 @@ import uuid
 from .guest import web_url
 from .browser import _expected_address, _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
+from .page_capture import MAX_PAGE_IMAGE_BYTES, PageScreenshot, decode_page_png
 
 _LISTING_REFRESH_SECONDS = 2
 _POINTER_SETTLE_SECONDS = 0.5
@@ -1008,9 +1009,48 @@ class InspectorSession:
             self._native_tasks.discard(task)
 
     async def screenshot(self, path=None, *, overwrite=False):
+        """Capture the device through the supplied Browser."""
         if self.browser is None:
             raise InspectorError('Native capture requires a Browser instance')
         return await self._native(self.browser.screenshot, path, overwrite=overwrite)
+
+    async def snapshot_rect(self, path=None, *, width, height, x=0, y=0,
+                            coordinate_system='viewport', timeout=30,
+                            max_bytes=MAX_PAGE_IMAGE_BYTES, overwrite=False):
+        """Capture a native WebKit page rectangle in CSS pixels, excluding browser UI.
+
+        The caller supplies the rectangle; device dimensions are not page viewport
+        dimensions. A page snapshot does not verify the device's composition.
+        Navigation, timeout or invalid image data fails without retry or file output.
+        """
+        if (any(type(v) is not int for v in (x, y, width, height))
+                or min(x, y) < 0 or not 1 <= width <= 4096 or not 1 <= height <= 4096
+                or width * height > 4_000_000 or max(x + width, y + height) > 2147483647):
+            raise ValueError('Snapshot requires nonnegative integer coordinates and a 1–4096 rectangle of at most 4 million CSS pixels')
+        if coordinate_system not in ('viewport', 'page'):
+            raise ValueError('coordinate_system must be viewport or page')
+        if type(max_bytes) is not int or not 1 <= max_bytes <= MAX_PAGE_IMAGE_BYTES:
+            raise ValueError('max_bytes must be between 1 and 16 MiB')
+        deadline = asyncio.get_running_loop().time() + _timeout(timeout)
+        async with asyncio.timeout_at(deadline), self._native_lock, self._dom_lock:
+            self._check()
+            target, generation, document = await self._document()
+            url = document['root'].get('documentURL')
+            if not isinstance(url, str):
+                raise InspectorError('Inspected document URL is unavailable')
+            reply = await self._command('Page.snapshotRect', target=target, x=x, y=y,
+                width=width, height=height, coordinateSystem=coordinate_system.title())
+            self._same_document(target, generation)
+            data, pixel_width, pixel_height = decode_page_png(
+                reply.get('dataURL') if isinstance(reply, dict) else None, max_bytes)
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError('Page snapshot timed out during image validation')
+            self._check()
+            result = PageScreenshot(data, pixel_width, pixel_height, (x, y, width, height),
+                                    coordinate_system, url, target, generation)
+            if path is not None:
+                result.save(path, overwrite=overwrite)
+            return result
 
     async def close(self):
         if self._close_task is None:

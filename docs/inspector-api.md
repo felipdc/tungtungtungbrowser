@@ -335,6 +335,34 @@ readback remain required before any URL is typed.
 | `reload()` | One native WebKit reload request. Completion does not mean the page is ready. |
 | `goto(url)` | Verifies that the inspected tab has a unique URL and that the native active editing field contains that exact URL, then uses the supplied `Browser`'s address-bar path. Requires an address-field reader such as [NativeFocusReader](native-focus.md); no flat UI-tree fallback is used. Native input is not retried. Follow it with a URL/selector condition. Initial focus and foreground verification can still fail. |
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
+| `snapshot_rect(path=None, width=..., height=..., x=0, y=0, coordinate_system='viewport', timeout=30)` | Native `Page.snapshotRect` PNG of the inspected page, excluding browser UI. Requires an explicit rectangle in CSS pixels; `coordinate_system='page'` uses page coordinates. Returns a `PageScreenshot` with image dimensions, requested rectangle, document URL, target and generation. No `Browser` is required. |
+
+For an explicit page rectangle, use:
+
+```python
+image = await page.snapshot_rect('/absolute/private/page.png', width=393, height=650)
+print(image.metadata())
+```
+
+Choose the rectangle for the page being inspected. Guest screen dimensions include
+browser UI and do not establish the page viewport size. The PNG's returned pixel
+dimensions can differ from the requested CSS dimensions; they are not native touch
+coordinates. `snapshot_rect` supports the native protocol's `Viewport` and `Page`
+coordinate systems through the lowercase option values above. It does not scroll
+or infer full-page bounds.
+
+The capture checks document identity around the native request. Navigation,
+connection loss, timeout, malformed PNG or a size-limit violation fails without
+retry or file output. The timeout includes waiting for session locks. Rectangles
+are limited to 4 million CSS pixels, with each dimension at most 4096; returned
+images are limited to 32 million pixels and 16 MiB. `max_bytes` may lower the byte
+limit. RGB/RGBA PNG framing, checksums and bounded pixel data are validated before
+saving. Existing files are preserved unless `overwrite=True` is explicit.
+
+Page images and device captures measure different output. In a native diagnostic,
+WebKit painted the correct page while device JPEG and host PNG captures remained
+black before and after that snapshot. Use `screenshot` to inspect device composition
+and browser UI; a successful `snapshot_rect` does not verify or repair either.
 
 DOM serialization and selector operations serialize their document reads within
 one session: native `DOM.getDocument` can invalidate earlier node IDs even when
