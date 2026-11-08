@@ -707,3 +707,35 @@ OOM kills. These cumulative counters do not establish the cause of earlier
 failures. Both accessibility switches were off at final audit, no focus helpers
 remained, and native shutdown completed in 16.69 seconds without forced
 termination. Parent disks and renderer cache were unchanged.
+
+### Larger resource profile trial
+
+A disposable 3-GiB, four-CPU guest with a 10-GiB container limit reached
+foreground Safari in 175.39 seconds; that capture still showed a white startup
+view, not a rendered page. Its first bridge process logged that it
+was listening, but the health connection timed out; a later check found the
+process absent and the port refusing connections. The exit cause was not
+established. A separate deployment succeeded. Session initialization then
+missed its 180-second page-target readiness deadline, and cleanup's focus helper
+terminated at its alarm. A separate cleanup connection also timed out before
+any browser input. With a 60-second transport deadline, another connection
+verified the same owned tab and closed it in 14.69 seconds, preserving the
+original tab. These later results do not erase the initial failures.
+
+A warm attempt used that 60-second transport deadline and a five-second native
+input-settle interval. Session creation took 20.51 seconds and native product
+navigation 25.55 seconds. The observed HTTP 200 JSON carried an application
+error instead of the required product data. Native JPEG and host PNG captures
+both showed black page content, although the rendered DOM contained the product
+title. The cause of the application error was not established. The workflow
+stopped before its second-site navigation; owned-tab cleanup completed in 21.63
+seconds. The initial-EOF recovery branch was not encountered in these native
+samples and retains protocol-fixture coverage only.
+
+The final cgroup peak reached 10 GiB, with 146 memory-limit events and no OOM
+kills. Initialization and warm-workflow failures preceded those limit events. Both
+accessibility switches were independently verified off, no focus helpers
+remained, and shutdown completed cleanly in 8.08 seconds. Parent disks and cache
+were unchanged. The larger resource profile and longer waits did not qualify
+the full workflow; multiple configuration changes also prevent attributing the
+observed differences to one change.
