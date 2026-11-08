@@ -466,13 +466,16 @@ disable the service's deadline, and is not sufficient to qualify reliability.
 
 `InspectorTransport` allows at most three connection attempts, separated by
 250 ms. During bridge handoff it retries only when the bridge explicitly reports
-`open_failed` with `handoff_error: connection_interrupted`. That response follows
-closure of the native stream and cancellation of its XPC connection, before any
+`open_failed` with `handoff_error: connection_interrupted` or
+`handoff_error: acknowledgment_timeout`. Both complete replies follow closure
+of the native stream and cancellation of its XPC connection, before any
 Inspector plist frame or browser action is relayed. Each subsequent reply must
-match the first bridge PID and guest boot UUID. Handoff timeouts, EOF, malformed
-replies, identity changes, other errors and older bridges without an error
-category fail immediately. Each handoff sequence retains its single transport
-`timeout`.
+match the first bridge PID and guest boot UUID. A missing or timed-out transport
+reply, EOF, malformed replies, identity changes, other errors and older bridges
+without an error category fail immediately. The terminal acknowledgment-timeout
+rejection remains in `handoff_attempts`; it shares the existing attempt limit
+with interrupted handoffs and initial-EOF recovery. Each handoff sequence keeps
+one transport deadline across its attempts.
 
 Session initialization also handles one narrowly identified disconnect: after
 registering its Inspector identifier, the native stream can end before returning
@@ -1084,3 +1087,52 @@ focus failure preceded the first limit event, while the later visible fixture
 and external captures followed limit events. These samples do not establish
 the rendering cause. The guest stopped cleanly in 16.84 seconds; parent disks
 and cache were unchanged, and no experimental state was promoted.
+
+### Targeted terminal handoff recovery and native focus (2026-11-08, trial 128)
+
+One device remained warm throughout this targeted batch; no full workflow ran.
+Cold readiness took 248.57 seconds and the initial bridge launch took 11.28
+seconds. The first session failed before browser input or tab creation: a
+native connection interruption was followed by a complete
+`acknowledgment_timeout` rejection. Both failures remain recorded. The new
+transport behavior permits that terminal rejection to consume the existing
+three-attempt recovery budget, after the native stream and XPC connection
+have been closed. It does not retry a missing reply or transport timeout.
+
+A controlled native comparison suppressed callbacks for the first two
+handoffs of a private bridge build, exercising its actual acknowledgment
+deadline and cleanup path. The unchanged transport stopped after the first
+complete rejection in 25.42 seconds. On the same bridge and guest, the
+candidate retained a second rejection and opened its next connection in
+0.50 seconds. Session creation, including the forced rejection, took 46.55
+seconds. Exact fixture URL, DOM condition and rendered HTML checks passed;
+native JPEG and page snapshot visibly showed the fixture. Cleanup took
+11.32 seconds, closed the owned tab and preserved the original tab. This
+qualifies recovery from a completed native rejection under an artificial
+fault; it does not establish repeatable natural cold startup. The fault
+injection remains private and is absent from the production bridge.
+
+A separate private focus experiment failed its first native address-field
+scan with AX -25216 before sending a tap, selection, paste or Return. Its
+cleanup failed native focus checks after Command-L and before Command-W.
+Later read-only diagnostics found a unique native URL element containing
+the exact owned address, but no first responder. A separate recovery checked
+the fresh page listing, foreground identity and native field bounds, then
+sent one calibrated tap. Fresh native first-responder evidence verified
+editing focus and the exact owned address before the first Command-W; the
+owned tab closed and the original tab remained. An earlier recovery harness
+failed an asynchronous metadata assertion before input and was retained.
+This warm recovery does not override the first-scan or original cleanup
+failures. The focus experiment remains private and unqualified.
+
+All 480 source tests passed, including mixed native rejection categories,
+attempt exhaustion, identity changes, owner closure and silent-reply timeout
+boundaries. Compilation and source-boundary checks also passed.
+
+Both owned tabs were closed. The final native audit found both accessibility
+switches off and no focus helpers. The guest stopped cleanly in 16.64 seconds;
+parent disks and cache were unchanged, with no experimental state promoted.
+The container reached its 10-GiB limit, recording 2,300 limit events before
+shutdown and 2,330 by the last sample, with no OOM kills or CPU quota throttling.
+The first focus failure preceded those events; the later visible fixture
+capture followed them. These observations do not establish a rendering cause.

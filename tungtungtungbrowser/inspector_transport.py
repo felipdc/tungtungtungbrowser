@@ -139,8 +139,12 @@ class InspectorTransport:
                         # The bridge explicitly closed its native stream and
                         # cancelled the failed XPC handoff before this reply.
                         # No native plist frame or browser action has been sent.
-                        # Unknown/legacy failures and timeouts are not retried.
-                        if error.reason != 'connection_interrupted' or attempt + 1 == self.max_open_attempts:
+                        # An explicit acknowledgment_timeout is terminal too:
+                        # the native stream was closed and its XPC connection
+                        # cancelled before the bridge sent this complete reply.
+                        # A missing reply or transport timeout proves neither.
+                        if (error.reason not in ('connection_interrupted', 'acknowledgment_timeout')
+                                or attempt + 1 == self.max_open_attempts):
                             raise
                         await self._close_socket()
                         await asyncio.sleep(0.25)

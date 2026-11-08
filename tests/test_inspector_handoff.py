@@ -12,6 +12,7 @@ from tungtungtungbrowser.inspector_transport import InspectorError, InspectorTra
 IDENTITY = {'protocol': 2, 'pid': 42, 'boot_uuid': '11223344-5566-7788-9900-aabbccddeeff'}
 OPENED = IDENTITY | {'status': 'opened', 'port': 1343}
 INTERRUPTED = IDENTITY | {'status': 'open_failed', 'port': 0, 'handoff_error': 'connection_interrupted'}
+ACK_TIMEOUT = INTERRUPTED | {'handoff_error': 'acknowledgment_timeout'}
 
 
 class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
@@ -86,12 +87,12 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 2)
 
     async def test_exhaustion_and_opt_out_preserve_failure(self):
-        for attempts in (1, 3):
-            with self.subTest(attempts=attempts):
+        for rejection, attempts in ((r, n) for r in (INTERRUPTED, ACK_TIMEOUT) for n in (1, 3)):
+            with self.subTest(reason=rejection['handoff_error'], attempts=attempts):
                 before = len(self.connections)
-                self.replies.extend([INTERRUPTED] * attempts)
+                self.replies.extend([rejection] * attempts)
                 transport = self.transport(max_open_attempts=attempts)
-                with self.assertRaisesRegex(InspectorError, 'connection_interrupted'):
+                with self.assertRaisesRegex(InspectorError, rejection['handoff_error']):
                     await transport.open()
                 self.assertEqual(len(self.connections) - before, attempts)
                 self.assertEqual(len(transport.handoff_attempts), attempts)
@@ -99,8 +100,30 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(transport.writer)
         self.assertFalse(self.services)
 
-    async def test_legacy_unknown_timeout_and_other_rejections_are_not_retried(self):
-        for reason in (None, 'unknown', 'acknowledgment_timeout', 'connection_invalid',
+    async def test_terminal_ack_timeout_closes_owner_and_recovers_without_plist_frames(self):
+        self.replies = [ACK_TIMEOUT, OPENED]
+        transport = self.transport()
+        await transport.open()
+        self.assertEqual(transport.handoff_attempts[0]['reason'], 'acknowledgment_timeout')
+        self.assertEqual([r['status'] for r in transport.handoff_attempts], ['rejected', 'opened'])
+        self.assertEqual(len(self.services), 1)
+        await transport.close()
+        await asyncio.gather(*self.handlers)
+        self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 2)
+
+    async def test_interruption_and_terminal_ack_timeout_share_one_attempt_budget(self):
+        self.replies = [INTERRUPTED, ACK_TIMEOUT, OPENED]
+        transport = self.transport()
+        await transport.open()
+        self.assertEqual([r.get('reason') for r in transport.handoff_attempts],
+                         ['connection_interrupted', 'acknowledgment_timeout', None])
+        self.assertEqual(len(self.services), 1)
+        await transport.close()
+        await asyncio.gather(*self.handlers)
+        self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 3)
+
+    async def test_legacy_unknown_and_other_rejections_are_not_retried(self):
+        for reason in (None, 'unknown', 'connection_invalid',
                        'termination_imminent', 'initialization_failed', 'unexpected_xpc_event'):
             with self.subTest(reason=reason):
                 reply = INTERRUPTED.copy()
@@ -116,9 +139,10 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.services)
 
     async def test_identity_change_on_second_attempt_is_fatal(self):
-        for changed in ({'pid': 43}, {'boot_uuid': 'aabbccdd-5566-7788-9900-aabbccddeeff'}):
-            with self.subTest(changed=changed):
-                self.replies.extend([INTERRUPTED, OPENED | changed])
+        changes = ({'pid': 43}, {'boot_uuid': 'aabbccdd-5566-7788-9900-aabbccddeeff'})
+        for rejection, changed in ((r, c) for r in (INTERRUPTED, ACK_TIMEOUT) for c in changes):
+            with self.subTest(reason=rejection['handoff_error'], changed=changed):
+                self.replies.extend([rejection, OPENED | changed])
                 transport = self.transport()
                 with self.assertRaisesRegex(InspectorError, 'Invalid native Inspector handoff'):
                     await transport.open()
@@ -126,7 +150,7 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.services)
 
     async def test_deadline_bounds_the_entire_sequence_and_silent_reply_is_not_retried(self):
-        for reply in (INTERRUPTED, None):
+        for reply in (INTERRUPTED, ACK_TIMEOUT, None):
             with self.subTest(reply=reply):
                 self.replies.append(reply)
                 transport = self.transport(timeout=0.05)
