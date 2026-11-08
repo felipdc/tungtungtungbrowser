@@ -54,6 +54,7 @@ class InspectorTransport:
         self.identity = None
         self.failure = None
         self.closed = False
+        self._open_requested = False
 
     async def _control(self, command, expected):
         async with asyncio.timeout(self.timeout):
@@ -89,12 +90,39 @@ class InspectorTransport:
             return value
 
     async def open(self):
-        if self.writer is not None or self.closed:
+        if self._open_requested or self.closed:
             raise InspectorError('Inspector transport is single-use')
+        self._open_requested = True
+        return await self._open_stream()
+
+    async def _recover_initial_eof(self):
+        """Replace a terminated stream before the initial identifier reply.
+
+        Only InspectorSession's initial receive path calls this. No app listing,
+        tab action or page command has been sent. The existing attempt budget
+        and bridge identity apply to replacement streams too.
+        """
+        if self.closed or self.service is None or not self.handoff_attempts:
+            raise InspectorError('No initial Inspector stream can be recovered')
+        self.handoff_attempts[-1]['initial_reply_status'] = 'eof'
+        if len(self.handoff_attempts) >= self.max_open_attempts:
+            return None
+        try:
+            await self._close_service()
+            await self._close_socket()
+            if self.failure is not None:
+                raise InspectorError('Initial Inspector stream could not be closed') from self.failure
+            await asyncio.sleep(0.25)
+            return await self._open_stream()
+        except BaseException:
+            await self.close()
+            raise
+
+    async def _open_stream(self):
         from pymobiledevice3.service_connection import ServiceConnection
         try:
             async with asyncio.timeout(self.timeout):
-                for attempt in range(self.max_open_attempts):
+                for attempt in range(len(self.handoff_attempts), self.max_open_attempts):
                     record = {'attempt': attempt + 1}
                     self.handoff_attempts.append(record)
                     started = asyncio.get_running_loop().time()
@@ -137,13 +165,16 @@ class InspectorTransport:
         if self.closed:
             return
         self.closed = True
+        await self._close_service()
+        await self._close_socket()
+
+    async def _close_service(self):
         if self.service is not None:
             try:
                 await asyncio.wait_for(self.service.close(), 3)
             except Exception as error:
                 self.failure = error
             self.service = None
-        await self._close_socket()
 
     async def _close_socket(self):
         if self.writer is not None:

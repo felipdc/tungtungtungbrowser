@@ -158,3 +158,60 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         for attempts in (0, 4, True, 1.0, None):
             with self.assertRaises(ValueError):
                 self.transport(max_open_attempts=attempts)
+
+    async def test_initial_eof_shares_budget_and_closes_old_stream_before_recovery(self):
+        self.replies = [OPENED, INTERRUPTED, OPENED]
+        transport = self.transport()
+        first = await transport.open()
+        second = await transport._recover_initial_eof()
+        self.assertIsNot(first, second)
+        self.assertTrue(first.writer.is_closing())
+        self.assertEqual(len(self.connections), 3)
+        self.assertEqual(transport.handoff_attempts[0]['initial_reply_status'], 'eof')
+        self.assertEqual([r['status'] for r in transport.handoff_attempts], ['opened', 'rejected', 'opened'])
+        self.assertIsNone(await transport._recover_initial_eof())
+        self.assertEqual(len(self.connections), 3)
+        with self.assertRaisesRegex(InspectorError, 'single-use'):
+            await transport.open()
+        await transport.close()
+
+    async def test_initial_eof_opt_out_and_bridge_identity_change(self):
+        self.replies = [OPENED]
+        transport = self.transport(max_open_attempts=1)
+        await transport.open()
+        self.assertIsNone(await transport._recover_initial_eof())
+        self.assertEqual(len(self.connections), 1)
+        await transport.close()
+        for changed in ({'pid': 43}, {'boot_uuid': 'aabbccdd-5566-7788-9900-aabbccddeeff'}):
+            self.replies.extend([OPENED, OPENED | changed])
+            transport = self.transport()
+            await transport.open()
+            with self.assertRaisesRegex(InspectorError, 'Invalid native Inspector handoff'):
+                await transport._recover_initial_eof()
+            self.assertTrue(transport.closed)
+            self.assertEqual(len(transport.handoff_attempts), 2)
+
+    async def test_initial_eof_cleanup_failure_prevents_replacement(self):
+        self.replies = [OPENED]
+        transport = self.transport()
+        service = await transport.open()
+        async def failed_close():
+            raise OSError('close failed')
+        service.close = failed_close
+        with self.assertRaisesRegex(InspectorError, 'could not be closed'):
+            await transport._recover_initial_eof()
+        self.assertTrue(transport.closed)
+        self.assertTrue(service.writer.is_closing())
+        self.assertEqual(len(self.connections), 1)
+
+    async def test_initial_eof_cancellation_during_backoff_never_reconnects(self):
+        self.replies = [OPENED]
+        transport = self.transport()
+        await transport.open()
+        task = asyncio.create_task(transport._recover_initial_eof())
+        await asyncio.wait_for(self.first_closed.wait(), 1)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(transport.closed)
+        self.assertEqual(len(self.connections), 1)

@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from tungtungtungbrowser import Browser, InspectorError, InspectorSession
+from tungtungtungbrowser.inspector import _InitialInspectorEOF
 from test_browser import NativeFixture
 from test_inspector import NativeProtocolFixture
 
@@ -114,6 +115,61 @@ def fixture(**options):
 
 
 class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initial_eof_recovers_before_opening_one_owned_tab(self):
+        session, native, guest = fixture()
+        failed = SimpleNamespace(connect=AsyncMock(side_effect=_InitialInspectorEOF('initial EOF')))
+        session.transport._recover_initial_eof = AsyncMock(return_value=SimpleNamespace())
+        with patch('tungtungtungbrowser.inspector._direct_inspector', side_effect=[failed, native]):
+            async with session:
+                self.assertTrue(session.tab_cleanup['owned'])
+        session.transport.open.assert_awaited_once()
+        session.transport._recover_initial_eof.assert_awaited_once()
+        self.assertEqual(native.events, ['open', 'attach', 'detach', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+
+    async def test_exhausted_initial_eof_and_later_failures_never_replay(self):
+        session, native, guest = fixture()
+        native.connect.side_effect = _InitialInspectorEOF('initial EOF')
+        session.transport._recover_initial_eof = AsyncMock(return_value=None)
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(_InitialInspectorEOF, 'initial EOF'):
+                await session.__aenter__()
+        self.assertFalse(guest.calls)
+        session.transport.close.assert_awaited_once()
+        for error in (TimeoutError(), ValueError('malformed first reply')):
+            session, native, guest = fixture()
+            native.connect.side_effect = error
+            session.transport._recover_initial_eof = AsyncMock()
+            with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                with self.assertRaises(type(error)):
+                    await session.__aenter__()
+            session.transport._recover_initial_eof.assert_not_awaited()
+            self.assertFalse(guest.calls)
+        session, native, guest = fixture()
+        native._get_connected_applications.side_effect = _InitialInspectorEOF('later EOF')
+        session.transport._recover_initial_eof = AsyncMock()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(_InitialInspectorEOF, 'later EOF'):
+                await session.__aenter__()
+        session.transport._recover_initial_eof.assert_not_awaited()
+        self.assertFalse(guest.calls)
+
+    async def test_initial_recovery_keeps_original_session_deadline(self):
+        session, native, guest = fixture()
+        session.timeout = 0.035
+        async def terminated():
+            await asyncio.sleep(0.02)
+            raise _InitialInspectorEOF('initial EOF')
+        native.connect.side_effect = terminated
+        session.transport._recover_initial_eof = AsyncMock(return_value=SimpleNamespace())
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaises(TimeoutError):
+                await session.__aenter__()
+        self.assertEqual(native.connect.await_count, 2)
+        session.transport._recover_initial_eof.assert_awaited_once()
+        self.assertFalse(guest.calls)
+        session.transport.close.assert_awaited_once()
+
     async def test_lost_listing_refreshes_read_without_reopening_or_reclosing_tab(self):
         session, native, guest = fixture()
         send = native._forward_get_listing

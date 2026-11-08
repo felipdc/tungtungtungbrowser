@@ -410,20 +410,35 @@ The first native trial of this ordering still failed before client check-in,
 while the service was initializing application metadata. It does not extend or
 disable the service's deadline, and is not sufficient to qualify reliability.
 
-`InspectorTransport` allows at most three connection attempts within its single
-`timeout`, separated by 250 ms, **only** when the bridge explicitly reports
+`InspectorTransport` allows at most three connection attempts, separated by
+250 ms. During bridge handoff it retries only when the bridge explicitly reports
 `open_failed` with `handoff_error: connection_interrupted`. That response follows
 closure of the native stream and cancellation of its XPC connection, before any
 Inspector plist frame or browser action is relayed. Each subsequent reply must
-match the first bridge PID and guest boot UUID. Timeouts, EOF, malformed replies,
-identity changes, other errors and older bridges without an error category fail
-immediately. Once a handoff succeeds, disconnects and browser commands are never
-automatically replayed.
+match the first bridge PID and guest boot UUID. Handoff timeouts, EOF, malformed
+replies, identity changes, other errors and older bridges without an error
+category fail immediately. Each handoff sequence retains its single transport
+`timeout`.
+
+Session initialization also handles one narrowly identified disconnect: after
+registering its Inspector identifier, the native stream can end before returning
+its first plist reply. The session closes that stream before opening another,
+using the same bridge identity and the remaining connection-attempt budget.
+Only identifier registration has been sent at this point. The original
+`InspectorSession.timeout` bounds the whole initialization, including replacement
+streams; it is never restarted. Recovery requires the protocol library's explicit
+incomplete-read EOF cause; other wrapped I/O errors remain terminal. A send
+failure, first-reply timeout, malformed reply, failure while handling that reply,
+or later disconnect remains terminal.
+Tab creation, navigation and page commands are never replayed by this recovery.
 
 Use `InspectorTransport(max_open_attempts=1)` to disable this setup recovery.
-`transport.handoff_attempts` retains each attempt's status, error category and
-duration, including failed attempts when a later connection succeeds. This
-bounded recovery has protocol-fixture coverage. In one native guest boot, three
+`transport.handoff_attempts` retains each bridge attempt's status, error category
+and duration, including failed attempts when a later connection succeeds. An
+opened stream that ends before its initial plist reply also records
+`initial_reply_status: "eof"`. Both recovery boundaries have protocol-fixture
+coverage. The following native samples exercised the earlier interrupted-handoff
+recovery. In one guest boot, three
 separate existing-page sessions completed in sequence: attachment took 23.82,
 6.25 and 3.41 seconds, with rendered HTML reads of 1.51, 1.26 and 1.32 seconds.
 The first session retained two explicit interrupted-handoff rejections before

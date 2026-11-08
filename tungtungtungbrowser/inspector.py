@@ -27,6 +27,10 @@ class _ProtocolCommandError(InspectorError):
         self.error = error
 
 
+class _InitialInspectorEOF(InspectorError):
+    """The native stream ended before its first identifier reply."""
+
+
 def _timeout(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 300:
         raise ValueError('timeout must be between 0 and 300 seconds')
@@ -34,11 +38,12 @@ def _timeout(value):
 
 
 def _direct_inspector(service, receive, disconnected):
+    from pymobiledevice3.exceptions import ConnectionTerminatedError
     from pymobiledevice3.services.webinspector import WebinspectorService
 
     class DirectInspector(WebinspectorService):
         # This adapter is tested against the pinned upstream revision. Its service
-        # is already open; no Lockdown pairing, automation session, or retry occurs.
+        # is already open; no Lockdown pairing or automation session is used.
         def __init__(self):
             super().__init__(None)
             self._service = service
@@ -49,7 +54,17 @@ def _direct_inspector(service, receive, disconnected):
             if self._recv_task is not None:
                 return
             await self._report_identifier()
-            await self._handle_recv(await self.service.recv_plist())
+            try:
+                first = await self.service.recv_plist()
+            except ConnectionTerminatedError as error:
+                # Only this receive follows identifier registration alone.
+                # Send errors, malformed replies and later EOFs stay terminal.
+                # Upstream also wraps OSError in this exception; require its
+                # explicit end-of-stream cause instead of retrying I/O errors.
+                if not isinstance(error.__cause__, asyncio.IncompleteReadError):
+                    raise
+                raise _InitialInspectorEOF('Native Inspector closed before its initial reply') from error
+            await self._handle_recv(first)
             self._recv_task = asyncio.create_task(self.receive_loop())
 
         async def receive_loop(self):
@@ -256,10 +271,21 @@ class InspectorSession:
         try:
             async with asyncio.timeout(self.timeout):
                 service = await self.transport.open()
-                service.max_frame_size = 32 * 1024**2
-                self._inspector = _direct_inspector(service, self._receive,
-                    self._disconnected)
-                await self._inspector.connect()
+                while True:
+                    service.max_frame_size = 32 * 1024**2
+                    self._inspector = _direct_inspector(service, self._receive,
+                        self._disconnected)
+                    try:
+                        await self._inspector.connect()
+                    except _InitialInspectorEOF:
+                        recover = getattr(self.transport, '_recover_initial_eof', None)
+                        if recover is None:
+                            raise
+                        service = await recover()
+                        if service is None:
+                            raise
+                    else:
+                        break
                 await self._inspector._get_connected_applications()
                 if self.new_tab or self.new_tab_url is not None:
                     await self._create_tab()
