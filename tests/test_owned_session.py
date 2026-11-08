@@ -248,6 +248,32 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
         await session.close()
         self.assertEqual(native.events.count('close'), 1)
 
+    async def test_unicode_listing_closes_the_matching_native_display_address(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            await session.__aenter__()
+            native.pages['2'].web_url = 'https://fixture.invalid/caf%C3%A9'
+            guest.address_value = 'https://fixture.invalid/café'
+            await session.close()
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(native.events.count('close'), 1)
+
+    async def test_unicode_alias_tabs_reject_ambiguous_navigation_and_cleanup(self):
+        session, native, guest = fixture()
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            await session.__aenter__()
+            native.pages['1'].web_url = 'https://fixture.invalid/café'
+            native.pages['2'].web_url = 'https://fixture.invalid/caf%c3%a9'
+            guest.address_value = 'https://fixture.invalid/café'
+            with self.assertRaises(InspectorError):
+                await session.goto('https://next.invalid/')
+            with self.assertRaisesRegex(InspectorError, 'cleanup did not complete'):
+                await session.close()
+        self.assertNotIn('input.paste', [method for method, _ in guest.calls])
+        self.assertNotIn('close', native.events)
+        self.assertEqual(set(native.pages), {'1', '2'})
+
     async def test_switched_active_tab_never_receives_navigation_or_close(self):
         session, native, guest = fixture()
         with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):

@@ -249,6 +249,44 @@ class BrowserContractTest(unittest.TestCase):
                     browser.close_tab(expected_url=expected, expected_pid=301)
             self.assertEqual(('input.key', {'name': 'cmd+w'}) in guest.calls, accepted)
 
+    def test_existing_unicode_address_matches_utf8_without_decoding_url_syntax(self):
+        cases = [
+            ('https://fixture.invalid/caf%C3%A9?q=%E6%97%A5#%F0%9F%98%80',
+             'fixture.invalid/café?q=日#😀', True),
+            ('https://fixture.invalid/café', 'https://fixture.invalid/caf%c3%a9', True),
+            ('https://fixture.invalid/caf%C3%A9%2Fother', 'https://fixture.invalid/café/other', False),
+            ('https://fixture.invalid/caf%C3%A9%3Fq=1', 'https://fixture.invalid/café?q=1', False),
+            ('https://fixture.invalid/caf%C3%A9%23other', 'https://fixture.invalid/café#other', False),
+            ('https://fixture.invalid/caf%25C3%25A9', 'https://fixture.invalid/café', False),
+            ('https://fixture.invalid/caf%C3%A9', 'http://fixture.invalid/café', False),
+            ('https://fixture.invalid/caf%C3%A9', 'https://fixture.invalid/cafe\u0301', False),
+            ('https://fixture.invalid/caf%C3%A9?q=1', 'https://fixture.invalid/café?q=2', False),
+            ('https://fixture.invalid/caf%C3%A9#owned', 'https://fixture.invalid/café', False),
+            ('https://caf%C3%A9.invalid/path', 'https://café.invalid/path', False),
+        ]
+        for expected, value, accepted in cases:
+            with self.subTest(expected=expected, value=value):
+                guest = NativeFixture()
+                guest.address_value = value
+                browser = controlled_browser(guest=guest, input_settle=0)
+                if accepted:
+                    browser.close_tab(expected_url=expected, expected_pid=301)
+                else:
+                    with self.assertRaises(GuestError):
+                        browser.close_tab(expected_url=expected, expected_pid=301)
+                self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+w'})), int(accepted))
+
+    def test_unicode_normalization_does_not_relax_pasted_url_readback(self):
+        guest = NativeFixture()
+        guest.address_value = 'https://fixture.invalid/caf%C3%A9'
+        guest.drop_text = True
+        with self.assertRaisesRegex(GuestError, 'requested URL'):
+            controlled_browser(guest=guest, input_settle=0).goto(
+                'https://fixture.invalid/café', reuse_tab=True,
+                expected_url=guest.address_value, expected_pid=301)
+        self.assertIn(('input.paste', {'text': 'https://fixture.invalid/café'}), guest.calls)
+        self.assertNotIn(('input.key', {'name': 'return'}), guest.calls)
+
     def test_tab_close_uncertain_key_result_is_not_repeated(self):
         guest = NativeFixture()
         original = guest.call

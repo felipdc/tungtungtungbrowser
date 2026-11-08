@@ -4,9 +4,10 @@ import binascii
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
+import re
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from .guest import Guest, GuestError, contact_hold_ms, web_url
 from .display import capture_display
@@ -21,6 +22,21 @@ def _expected_address(url):
     return url if url == 'about:blank' else web_url(url)
 
 
+def _unicode_address_key(value):
+    """Match UTF-8 display forms without decoding delimiters or the authority."""
+    scheme = re.match(r'https?://', value, re.IGNORECASE)
+    address = value[scheme.end():] if scheme else value
+    boundary = re.search(r'[/?#]', address)
+    if boundary is None:
+        return value
+    offset = len(value) - len(address) + boundary.start()
+    suffix = re.sub(r'[^\x00-\x7f]+', lambda match: quote(match[0], safe=''), value[offset:])
+    # Only UTF-8's non-ASCII bytes participate. Keep ASCII escapes, including
+    # %2F, %3F, %23 and %25, distinct from literal URL syntax.
+    suffix = re.sub(r'%[89a-fA-F][0-9a-fA-F]', lambda match: match[0].upper(), suffix)
+    return value[:offset] + suffix
+
+
 def _native_address_key(url):
     """Comparison key for a full native address, including Safari's root form."""
     if url in ('', 'about:blank'):
@@ -30,8 +46,8 @@ def _native_address_key(url):
         parsed = urlsplit(url)
         if parsed.path == '/' and not parsed.query and not parsed.fragment:
             address = address[:-1]
-        return address
-    return url
+        return _unicode_address_key(address)
+    return _unicode_address_key(url) if isinstance(url, str) else url
 
 
 def _matches_active_url(value, url):
@@ -41,7 +57,8 @@ def _matches_active_url(value, url):
     parsed = urlsplit(url)
     if parsed.path == '/' and not parsed.query and not parsed.fragment:
         forms.update({url[:-1], url.split('://', 1)[1][:-1]})
-    return isinstance(value, str) and value in forms
+    return isinstance(value, str) and _unicode_address_key(value) in {
+        _unicode_address_key(form) for form in forms}
 
 
 @dataclass(frozen=True)

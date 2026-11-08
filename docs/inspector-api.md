@@ -232,6 +232,13 @@ it does not retry the key or close an unowned tab. For a uniquely owned blank ta
 the expected native editing address is exactly empty or `about:blank`.
 Navigation destinations still must be HTTP(S) URLs.
 
+For existing-tab identity, Safari's native address field can display Unicode
+characters while Inspector reports their percent-encoded UTF-8 bytes. The SDK
+matches those forms in the path, query and fragment, and treats matching forms
+in multiple tabs as ambiguous. It preserves the authority, URL delimiters,
+query values and fragment: an encoded slash is not treated as a path separator.
+Newly pasted navigation text still requires exact readback before Return.
+
 In the first native trial, the initial inspection connection failed before
 input. A later attempt created a distinct blank tab and preserved the previous
 tab, but inspection initialization exceeded its deadline. Cleanup then failed
