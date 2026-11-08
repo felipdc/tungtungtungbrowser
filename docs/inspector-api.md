@@ -239,6 +239,16 @@ in multiple tabs as ambiguous. It preserves the authority, URL delimiters,
 query values and fragment: an encoded slash is not treated as a path separator.
 Newly pasted navigation text still requires exact readback before Return.
 
+A native workflow reproduced this mismatch after navigation to a Unicode path:
+Inspector percent-encoded the accented character and the native editing field
+displayed it literally. Cleanup correctly withheld its close input under the
+previous exact comparison. With the UTF-8 comparison, recovery of that same
+owned tab closed it in 28.2 seconds and verified preservation of the original
+tab. A subsequent owned workflow also verified cleanup, in 13.2 seconds.
+These observations validate the address comparison; that run still had an
+earlier session-attachment timeout and later black page content in both native
+and host screenshots, so complete visual and session reliability remains open.
+
 In the first native trial, the initial inspection connection failed before
 input. A later attempt created a distinct blank tab and preserved the previous
 tab, but inspection initialization exceeded its deadline. Cleanup then failed
