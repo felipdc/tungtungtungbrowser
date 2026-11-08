@@ -643,3 +643,52 @@ coverage beyond the protocol fixtures. The subsequent external navigation stoppe
 at a foreground-query transport timeout before keyboard input; that run does not
 establish cross-page acceptance. A later read-only foreground query succeeded in
 8.14 seconds. At the timeout, the cgroup had no memory-limit or OOM events.
+
+### Capture timing and remaining workflow failures
+
+A subsequent disposable guest reached foreground Safari in 278.32 seconds.
+Its first owned session took 118.98 seconds to initialize, then missed a
+30-second body-condition deadline. The fixture rendered in a later capture.
+Cleanup's native focus helper terminated at its alarm; a separate recovery
+verified the owned tab's address, closed it and preserved the original tab.
+Another session lost its initial native Inspector connection before any browser
+action. These remain failures even though later sessions worked.
+
+Two later sessions captured HTTP 200 application JSON with the expected item
+identifiers and read the rendered product document. Paired device captures
+showed its image, title and price. In one session, the initial captures still
+showed a skeleton; captures following an additional five-second wait showed
+the content. Neither session completed the full cross-page workflow. One
+private recorder incorrectly rejected a cached HTTP 304 response, despite
+available rendered HTML; its device captures were blank. The next session's
+native focus query returned no first responder, so navigation stopped before
+destination text was submitted. Both owned tabs were subsequently verified
+closed. A DOM condition alone does not establish that a capture is current.
+
+A separate rendering diagnostic started directly on an external document,
+followed its link using a native CSS click, then navigated to a local fixture.
+CSS/XPath clicks, observed fixture JSON, a one-second absent-selector timeout,
+a subsequent successful read and owned-tab cleanup completed. Creation took
+38.74 seconds and cleanup 14.65 seconds; the entire diagnostic, including extra
+captures, took 256.86 seconds. The original tab was preserved. This was a
+smaller workflow, not a successful product-to-second-page run.
+
+That diagnostic retained paired native JPEG and host PNG images before and
+after focus and clicks, followed each pair with a five-second passive wait,
+then requested a native WebKit
+[`Page.snapshotRect`](https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/inspector/protocol/Page.json)
+PNG and another device pair. All five WebKit snapshots returned page content.
+The first device pair after focus retained the previous scroll position; the
+passive pair showed the focused link before the WebKit snapshot was requested.
+The first fixture JPEG also lagged the document text visible in the following
+host PNG. Later pairs showed the expected content. The persistent black-page
+failure was not reproduced in this smaller sequence, so neither the wait nor
+the native page snapshot is a qualified fix. Captures were sequential, and no
+page scripts or renderer-setting changes were used.
+
+The run retained the experimental 2-GiB, two-CPU guest and 6.5-GiB container
+limit. Its final cgroup peak was 6.5 GiB, with 17,758 memory-limit events and no
+OOM kills. These cumulative counters do not establish the cause of earlier
+failures. Both accessibility switches were off at final audit, no focus helpers
+remained, and native shutdown completed in 16.69 seconds without forced
+termination. Parent disks and renderer cache were unchanged.
