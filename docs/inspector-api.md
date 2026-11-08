@@ -739,3 +739,45 @@ remained, and shutdown completed cleanly in 8.08 seconds. Parent disks and cache
 were unchanged. The larger resource profile and longer waits did not qualify
 the full workflow; multiple configuration changes also prevent attributing the
 observed differences to one change.
+
+### Cross-page sequence and remaining capture failures
+
+A subsequent disposable 3-GiB, two-CPU guest with the same 10-GiB container
+limit reached foreground Safari in 243.78 seconds. Its first session initialized
+in 66.08 seconds, but the native focus query exceeded the administrative
+script's 30-second deadline before destination text was pasted. Cleanup closed
+the owned tab and preserved the original tab. Private phase logging in a later
+helper build recorded seven successful focus queries and guard restorations;
+it did not reproduce or explain the earlier timeout.
+
+That instrumented attempt captured valid product JSON, rendered HTML and product
+images, then navigated to a second external page and followed its link with a
+native CSS click. The subsequent fixture click reached the intended text and
+produced trusted pointer/touch down and up events, but selected a word instead
+of firing a click. No fixture JSON request followed. The response deadline
+expired, the original failure was retained, and the owned tab was closed.
+
+A fresh attempt with the original helper completed the entire method sequence
+in 315.30 seconds: session creation, product navigation and JSON, HTML, product
+and second-page captures, external link click, fixture CSS/XPath clicks and JSON,
+a 1.00-second absent-selector timeout, a successful subsequent read and verified
+cleanup. It used no diagnostic WebKit snapshots. Product and second-page images
+showed their expected content, but fixture device captures remained black before
+and after the successful actions, including after five-second passive waits.
+This establishes one complete method sequence, not reliable visual acceptance.
+
+A separate fixture diagnostic measured native event-timestamp gaps of
+55.42–179.21 ms for four contacts requesting 50 ms. Both real clicks succeeded,
+and the page's trusted event timestamps agreed with their measured contact
+durations. Those successful samples do not establish the cause of the earlier
+word selection. With the black page reproduced, native `Page.snapshotRect`
+returned the rendered fixture and its updated click state. Both device JPEG
+and host PNG captures stayed black afterward. A page snapshot can therefore
+differ from device composition in this observed failure; it did not repair it.
+
+The final cgroup peak was 10 GiB, with 1,983 memory-limit events and no OOM
+kills or CPU quota throttling. The first focus timeout preceded the limit
+events; these counters do not establish the later failures' cause. All four
+owned test tabs were verified closed, both accessibility switches were off,
+and no focus helpers remained. Shutdown completed cleanly in 7.98 seconds;
+parent disks and cache were unchanged. The resource profile remains experimental.
