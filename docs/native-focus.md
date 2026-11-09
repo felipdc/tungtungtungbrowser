@@ -89,6 +89,14 @@ evidence. The partial result is discarded. Only a fresh validated responder or
 complete unique address scan can authorize further action; partial scans are
 never retried within the same guard.
 
+A completed first-responder AX `-25215` with no element can also receive one
+fresh guarded resolution after verified restoration. Its trace must report
+only that failed query, with matching durations and an empty scan. The native
+resolver still stops at this error within its guard; the Python reader discards
+the result before starting a new invocation. Other first-responder failures
+remain terminal and retain their native AX error instead of being reported as
+missing responder-source evidence.
+
 Both invocations must verify the original accessibility settings and process
 identity. Missing replies, failed processes, ambiguous or foreign partial
 results, expired evidence and unrestored state remain terminal. The existing
@@ -346,3 +354,36 @@ production native helper and succeeded on its first resolution read; the
 controlled comparison separately exercised recovery. Cold Inspector startup
 still failed, and the revised reader has not yet passed a first-focus test on
 a fresh boot. No full external-site workflow was repeated.
+
+
+## Completed first-responder error (2026-11-09, trial 139)
+
+The first focus operation on the next boot returned AX `-25215` with no element.
+The process completed, its guard restored off/off settings, and its trace
+reported only the failed first-responder query. The previous reader rejected
+that legitimate error trace as missing responder-source evidence. Navigation
+stopped after one Command-L, before tap, text or Return. Separate verified
+recovery closed only the owned tab; the original failure remains recorded.
+
+The reader now preserves such native errors and permits one fresh query for
+the observed restored `-25215` case, within the existing two-invocation limit.
+In a controlled native comparison, a diagnostic helper performed the real
+first-responder query, released any returned element and returned this error.
+The previous reader stopped. The revised reader discarded the failed result
+and used the unchanged production helper for a second query, which read all
+16 native elements and found one enabled Safari address control. Both cases
+restored settings and left no helper process. The diagnostic helper remains
+outside production source and builds.
+
+Thirty-four targeted reader, browser and restoration tests passed, including
+exhaustion, opt-out, malformed evidence and a single browser shortcut. Normal
+integration created a session in 18.90 seconds, navigated in 22.87 seconds and
+closed its original owned tab in 12.97 seconds. Exact URL, response, DOM, HTML
+and native focus checks passed. The native screenshot was black, so this case
+does not qualify visual rendering. Its first read succeeded; the controlled
+comparison separately exercised the new recovery branch.
+
+The first cold Inspector connection still failed after four completed native
+interruptions, before opening a tab or sending input. Cold startup, the revised
+reader's first-focus behavior on a fresh boot, and native rendering remain
+unresolved. No full external-site workflow was repeated.

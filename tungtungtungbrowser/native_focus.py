@@ -192,10 +192,26 @@ class NativeFocusReader:
                     or not isinstance(trace['attempts'], list) or len(trace['attempts']) > 3):
                 raise GuestError('Native focus resolution has invalid or expired query evidence')
             if trace['source'] == 1:
-                if (not trace['first_present'] or trace['attempts']
-                        or trace['first_error'] != result.get('error')):
+                if (trace['attempts'] or trace['first_error'] != result.get('error')
+                        or (not trace['first_present'] and trace['first_error'] in (0, -25212, -25216))):
                     raise GuestError('Native focus resolution did not establish its responder source')
-                field = self._read_result(result, pid, 'ax_first_responder')
+                try:
+                    field = self._read_result(result, pid, 'ax_first_responder')
+                except GuestError as error:
+                    # A completed first-responder -25215 has been observed with
+                    # no element and full restoration. Discard it and allow one
+                    # new guarded query; no key or tap is repeated by this reader.
+                    scan = result.get('scan')
+                    empty = {'complete': False, 'elements': 0, 'visited': 0, 'matches': 0, 'foreign': 0}
+                    if (getattr(error, 'native_helper_response', None) is result
+                            and result['error'] == -25215 and result['element'] is None
+                            and trace['first_present'] is False
+                            and trace['first_seconds'] == trace['total_seconds']
+                            and isinstance(scan, dict) and scan == empty
+                            and type(scan['complete']) is bool
+                            and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))):
+                        record['retry_permitted'] = True
+                    raise
                 if field is None:
                     raise GuestError('Native focus resolution omitted its reported responder')
             else:
