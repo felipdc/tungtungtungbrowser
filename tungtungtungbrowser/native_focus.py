@@ -188,8 +188,11 @@ class NativeFocusReader:
                     or type(trace['first_error']) is not int or type(trace['first_present']) is not bool
                     or any(type(trace[k]) not in (int, float) or not math.isfinite(trace[k])
                            or trace[k] < 0 for k in ('first_seconds', 'total_seconds'))
-                    or trace['first_seconds'] > trace['total_seconds'] or trace['total_seconds'] >= 10
+                    or trace['first_seconds'] > trace['total_seconds']
                     or not isinstance(trace['attempts'], list) or len(trace['attempts']) > 3):
+                raise GuestError('Native focus resolution has invalid or expired query evidence')
+            if trace['total_seconds'] >= 10:
+                record['retry_permitted'] = self._completed_empty_budget_expiry(result, pid, trace)
                 raise GuestError('Native focus resolution has invalid or expired query evidence')
             if trace['source'] == 1:
                 if (trace['attempts'] or trace['first_error'] != result.get('error')
@@ -280,6 +283,48 @@ class NativeFocusReader:
             return field
         finally:
             record['seconds'] = time.monotonic() - started
+
+    def _completed_empty_budget_expiry(self, result, pid, trace):
+        """Discard a restored native budget failure; never return its evidence as a field."""
+        if (type(result.get('error')) is not int or result['error'] != -30
+                or result.get('element', False) is not None
+                or trace['source'] != 2 or trace['first_present']
+                or trace['first_error'] not in (0, -25212, -25216)
+                or not 0 <= trace['first_seconds'] < 10
+                or not 10 <= trace['total_seconds'] < 20
+                or not 1 <= len(trace['attempts']) <= 3):
+            return False
+        disabled = result.get('disabled_trait')
+        if type(disabled) is not int or not 0 < disabled < 2**64 or disabled & (disabled - 1):
+            return False
+        keys = {'error', 'seconds', 'complete', 'elements', 'visited', 'matches', 'foreign'}
+        elapsed = trace['first_seconds']
+        for attempt in trace['attempts']:
+            if (not isinstance(attempt, dict) or set(attempt) != keys
+                    or type(attempt['error']) is not int or attempt['error'] != 0
+                    or attempt['complete'] is not True
+                    or type(attempt['seconds']) not in (int, float)
+                    or not math.isfinite(attempt['seconds']) or not 0 <= attempt['seconds'] < 20
+                    or any(type(attempt[k]) is not int for k in ('elements', 'visited', 'matches', 'foreign'))
+                    or not 0 <= attempt['elements'] == attempt['visited'] <= 512
+                    or attempt['matches'] != 0 or attempt['foreign'] != 0):
+                return False
+            elapsed += attempt['seconds']
+        scan = result.get('scan')
+        scan_keys = {'complete', 'elements', 'visited', 'matches', 'foreign'}
+        if (not isinstance(scan, dict) or set(scan) != scan_keys
+                or scan['complete'] is not True
+                or any(type(scan[k]) is not int for k in scan_keys - {'complete'})
+                or scan != {k: trace['attempts'][-1][k] for k in scan_keys}
+                or elapsed > trace['total_seconds'] + .001):
+            return False
+        try:
+            self._read_result(result, pid, 'ax_address_field')
+        except GuestError as error:
+            # Attached evidence proves matching PID, explicit result presence,
+            # and exact restoration of both switches before reporting -30.
+            return getattr(error, 'native_helper_response', None) is result
+        return False
 
     def _read_result(self, result, pid, source):
         if (type(result.get('requested_pid')) is not int or result['requested_pid'] != pid

@@ -112,11 +112,30 @@ before the fresh query. Other mixed attribute failures, malformed values and
 invalid geometry remain terminal. Ordinary first-responder reads do not gain
 either retry.
 
+A completed native budget error `-30` can use the remaining fresh resolution
+when the discarded result contains no element and only complete, empty scans
+with no foreign elements. This requires a valid trace, matching process ID,
+verified switch restoration, a first-responder lookup under ten seconds and
+a total query duration from ten to under twenty seconds. Every scan and its
+duration must agree with the final result. The expired result remains a failed
+attempt; it supplies no field, geometry or input authorization. A fresh result
+must satisfy the ordinary ten-second accepted-query budget.
+
 Both invocations must verify the original accessibility settings and process
 identity. Missing replies, failed processes, ambiguous or foreign partial
-results, expired evidence and unrestored state remain terminal. The existing
+results, expired field data and unrestored state remain terminal. The existing
 two-invocation limit, 20-second query alarm and 22-second guard command wait
 are unchanged. These bounds do not extend a caller's deadline.
+
+A targeted warm test explicitly substituted a previously recorded, restored
+budget failure for the first successfully completed native reply, preserving
+both replies. The reader discarded that result and obtained a fresh complete
+native result before navigation. URL, response, rendered HTML, native pixels
+and owned-tab cleanup passed; the existing tabs remained through sixty seconds.
+The test used a private batched-attribute diagnostic helper and the unchanged
+public keyboard helper. It validates the Python recovery path, not a naturally
+reproduced timeout or cold reliability. The original cold attempt remains a
+failure, and fresh cold qualification is separate.
 
 A returned first responder must be Safari's URL field. If it is already editing,
 the browser proceeds to URL verification. A discovered control is not proof of
