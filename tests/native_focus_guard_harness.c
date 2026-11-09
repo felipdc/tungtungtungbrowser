@@ -27,6 +27,11 @@ static void set_setting(const char *path, unsigned char value) {
     char text = value ? '1' : '0';
     if (fd < 0 || write(fd, &text, 1) != 1) _exit(71);
     close(fd);
+    /* Make the EOF test distinguish restored values from released ownership. */
+    if (!value && !strcmp(path, "application") && access("delay-lock-release", F_OK) == 0) {
+        struct timespec delay = {0, 250000000};
+        nanosleep(&delay, 0);
+    }
 }
 static unsigned char app(void) { return setting("application"); }
 static unsigned char automation(void) { return setting("automation"); }

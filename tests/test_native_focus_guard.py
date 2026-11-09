@@ -129,10 +129,25 @@ class NativeFocusGuardTests(unittest.TestCase):
         self.assertEqual(self.observed(), (0, 0))
 
     def test_eof_and_invalid_completion_restore_settings(self):
+        import fcntl
+        (self.root / 'delay-lock-release').touch()
         process, _ = self.holder()
         process.communicate(timeout=3)  # EOF terminates the caller without finish.
         self.assertEqual(process.returncode, 5)
         self.wait_settings((0, 0))
+        # Restored values precede the guard's final acknowledgement and unlock.
+        # Starting the next case during that interval correctly fails overlap.
+        with (self.root / 'settings.lock').open() as lock:
+            end = time.monotonic() + 3
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        self.fail('Previous guard did not release its lock')
+                    time.sleep(0.01)
         result = subprocess.run([str(self.binary), 'invalid'], cwd=self.root,
                                 capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 6)
