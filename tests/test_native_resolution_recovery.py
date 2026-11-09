@@ -45,12 +45,12 @@ class ResolutionRecoveryTests(unittest.TestCase):
                     self.assertEqual(guest._rpc.call_count,attempts)
                     self.assertEqual(len(reader.last_resolution_attempts),attempts)
 
-    def test_partial_unrestored_foreign_expired_and_transport_failures_are_not_repeated(self):
+    def test_unrestored_foreign_expired_and_transport_failures_are_not_repeated(self):
         cases=[]
         for key,value in [('requested_pid',302),('guard_restored',False),('before',{})]:
             result=absent(unavailable=True);result[key]=value;cases.append(answer(result))
-        result=absent(unavailable=True);result['scan'].update(elements=24,visited=1)
-        result['resolution']['attempts'][0].update(elements=24,visited=1);cases.append(answer(result))
+        result=absent(unavailable=True);result['scan'].update(elements=24,visited=1,foreign=1)
+        result['resolution']['attempts'][0].update(elements=24,visited=1,foreign=1);cases.append(answer(result))
         result=absent();result['resolution']['total_seconds']=10;cases.append(answer(result))
         result=absent();result['resolution']['attempts'][0]['matches']=1;cases.append(answer(result))
         result=absent();result['after']=dict(result['after'],automation=0);cases.append(answer(result))

@@ -157,7 +157,7 @@ class NativeFocusReader:
         return field
 
     def resolve_address_field(self, pid, *, max_attempts=2):
-        """Repeat one completed/restored absence read; never repeat UI input."""
+        """Allow one fresh query after verified restored absence/unavailability."""
         if type(pid) is not int or not 1 < pid <= 2147483647:
             raise ValueError('Focus resolution requires a valid native process ID')
         if type(max_attempts) is not int or not 1 <= max_attempts <= 2:
@@ -227,11 +227,21 @@ class NativeFocusReader:
                     # _read_result attaches native evidence only after verifying
                     # the PID, element presence, and original switch restoration.
                     # A failed process, missing reply, or malformed trace cannot
-                    # authorize another read. Partial scans remain terminal.
+                    # authorize another read. Discard eligible partial evidence;
+                    # input still requires a fresh complete result.
                     unavailable = {'complete': False, 'elements': 0, 'visited': 0, 'matches': 0, 'foreign': 0}
+                    scan = result['scan']
+                    disabled = result.get('disabled_trait')
+                    partial_unavailable = (
+                        scan['complete'] is False
+                        and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))
+                        and 0 <= scan['visited'] < scan['elements'] <= 512
+                        and scan['matches'] == 0 and scan['foreign'] == 0
+                        and type(disabled) is int and 0 < disabled < 2**64
+                        and not disabled & (disabled - 1))
                     if (getattr(error, 'native_helper_response', None) is result
                             and result['error'] == -25216 and result['element'] is None
-                            and result['scan'] == unavailable):
+                            and (scan == unavailable or partial_unavailable)):
                         record['retry_permitted'] = True
                     raise
                 else:

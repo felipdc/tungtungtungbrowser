@@ -81,12 +81,19 @@ Partial scans, ambiguity, missing attributes and invalid geometry are errors.
 
 Each guarded resolution permits at most three eligible address scans, with
 400 ms between scans and a ten-second accepted-query budget. A completed
-resolution that proves absence, or an empty unavailable-root result with
-verified restoration, can receive one fresh guarded resolution after 100 ms.
+resolution that proves absence or an unavailable root with verified restoration
+can receive one fresh guarded resolution after 100 ms. A completed AX `-25216`
+partial scan can also permit that fresh query when it returned no element,
+found no matching or foreign elements, and has valid counts and restoration
+evidence. The partial result is discarded. Only a fresh validated responder or
+complete unique address scan can authorize further action; partial scans are
+never retried within the same guard.
+
 Both invocations must verify the original accessibility settings and process
-identity. A missing reply, failed process, partial scan, expired result or
-unrestored state cannot authorize another read. The query alarm remains 20 seconds, and the guard retains its 22-second
-command-wait limit. These bounds do not extend a caller's deadline.
+identity. Missing replies, failed processes, ambiguous or foreign partial
+results, expired evidence and unrestored state remain terminal. The existing
+two-invocation limit, 20-second query alarm and 22-second guard command wait
+are unchanged. These bounds do not extend a caller's deadline.
 
 A returned first responder must be Safari's URL field. If it is already editing,
 the browser proceeds to URL verification. A discovered control is not proof of
@@ -313,3 +320,29 @@ navigated in 22.37 seconds and completed original owned-tab cleanup in 39.04
 seconds. The exact URL, DOM condition and HTML passed, but native pixels were
 still black. This validates normal cleanup alongside the controlled reply
 timing test; it does not qualify product rendering or cold session startup.
+
+## Restored partial-query recovery (2026-11-09, trial 138)
+
+The first native focus operation on a fresh guest returned AX `-25216` after
+visiting one of 24 elements. Its process completed and restored settings, but
+the public reader stopped before any tap or text. Separate verified recovery
+closed only the owned tab. The revised reader permits one fresh guarded query
+for this specific failure without repeating the shortcut or accepting partial
+evidence.
+
+A controlled native comparison injected an element-owner error after retrieving
+the real root list. The original reader stopped at that partial result. The
+revised reader discarded it, then read all 51 elements and found one enabled
+Safari-owned address control. Both cases restored settings and left no helper
+process. A different injected error encountered foreign page elements and was
+ineligible; that diagnostic failure is retained. Thirty targeted reader,
+browser and guard tests passed, including partial-result exhaustion and rejection
+of ambiguous, foreign, malformed, expired or unrestored evidence.
+
+Normal warm integration then passed exact fixture URL, DOM condition, rendered
+HTML, native pixels and original owned-tab cleanup. Creation took 18.77 seconds,
+navigation 21.00 seconds and cleanup 10.49 seconds. That case used the unchanged
+production native helper and succeeded on its first resolution read; the
+controlled comparison separately exercised recovery. Cold Inspector startup
+still failed, and the revised reader has not yet passed a first-focus test on
+a fresh boot. No full external-site workflow was repeated.
