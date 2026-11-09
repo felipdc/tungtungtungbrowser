@@ -137,6 +137,15 @@ public keyboard helper. It validates the Python recovery path, not a naturally
 reproduced timeout or cold reliability. The original cold attempt remains a
 failure, and fresh cold qualification is separate.
 
+A subsequent cold check with durable private phase records hit the process
+alarm during restoration. Automation enable took 13.7 seconds; native reads
+finished and restoration began 19.55 seconds after process entry. The caller
+was terminated, while the independent guard completed restoration at 21.13
+seconds. A separate audit confirmed restored settings and no remaining helpers.
+The current 20-second alarm covers setup, query and restoration together. This
+failed process supplies no usable result and does not enter the completed-error
+recovery above. Separating those timing budgets remains unvalidated work.
+
 A returned first responder must be Safari's URL field. If it is already editing,
 the browser proceeds to URL verification. A discovered control is not proof of
 keyboard focus, even if it carries an editing trait. The browser verifies its
