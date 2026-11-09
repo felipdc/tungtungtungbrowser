@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import measure_ready
-from tungtungtungbrowser.guest import GuestError, GuestTransportError
+from tungtungtungbrowser.guest import GuestError, GuestHTTPError, GuestTransportError
 
 
 class SavedShot:
@@ -525,6 +525,95 @@ class ReadinessTest(unittest.TestCase):
         self.assertFalse(result['safari_foreground_verified'])
         self.assertFalse(result['navigation_verified'])
         self.assertEqual([method for method, _ in self.calls].count('apps.launch'), 1)
+
+    def test_explicit_launch_refusal_reconciles_fresh_foreground_without_replaying_input(self):
+        def observe(method, **params):
+            reply = self.native(method, **params)
+            if method == 'apps.launch':
+                raise GuestHTTPError(400, 'launch refused: com.apple.mobilesafari')
+            if method == 'apps.foreground':
+                return {**reply, 'pid': 275, 'source': 'runningboard'}
+            return reply
+        self.guest.call.side_effect = observe
+        self.run_measurement()
+        result = self.report()
+        self.assertEqual([m for m, _ in self.calls], ['screen.unlock', 'apps.launch', 'apps.foreground'])
+        self.assertEqual(result['once_only_requests'][1]['status'], 'error')
+        self.assertEqual(result['safari_launch_error'],
+                         {'status': 400, 'detail': 'launch refused: com.apple.mobilesafari'})
+        self.assertNotIn('safari_launch_response', result)
+        self.assertEqual(result['safari_foreground_response']['pid'], 275)
+        self.assertEqual(result['status'], 'complete')
+        self.assertTrue(result['screenshot_captured'])
+        self.assertFalse(result['navigation_verified'])
+
+    def test_other_complete_launch_errors_do_not_enter_foreground_reconciliation(self):
+        for index, error in enumerate([
+                GuestHTTPError(503, 'launch refused: com.apple.mobilesafari'),
+                GuestHTTPError(400, 'launch refused: com.example.other'),
+                GuestHTTPError(400, 'launch request timed out'), GuestHTTPError(400)]):
+            with self.subTest(error=error):
+                self.output = self.vm / f'other-launch-error-{index}.json'
+                self.calls.clear()
+                def observe(method, **params):
+                    reply = self.native(method, **params)
+                    if method == 'apps.launch':
+                        raise error
+                    return reply
+                self.guest.call.side_effect = observe
+                with self.assertRaises(GuestHTTPError) as raised:
+                    self.run_measurement()
+                self.assertIs(raised.exception, error)
+                self.assertEqual([m for m, _ in self.calls], ['screen.unlock', 'apps.launch'])
+                self.assertNotIn('safari_launch_error', self.report())
+
+    def test_refusal_reconciliation_requires_valid_identity_before_original_deadline(self):
+        for index, foreground in enumerate([
+                {'bundle_id': 'com.example.other', 'verified': True, 'pid': 275},
+                {'bundle_id': 'com.apple.mobilesafari', 'verified': False, 'pid': 275},
+                {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': True},
+                {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': 0},
+                {'bundle_id': 'com.apple.mobilesafari', 'verified': True, 'pid': 275}]):
+            with self.subTest(foreground=foreground):
+                self.output = self.vm / f'refusal-deadline-{index}.json'
+                self.calls.clear()
+                self.launch['started_monotonic'] = 100
+                (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+                clock = [110.0]
+                def observe(method, **params):
+                    reply = self.native(method, **params)
+                    if method == 'apps.launch':
+                        raise GuestHTTPError(400, 'launch refused: com.apple.mobilesafari')
+                    if method == 'apps.foreground':
+                        if index == 4:
+                            clock[0] = 121  # A correct but late result is insufficient.
+                        return foreground
+                    return reply
+                self.guest.call.side_effect = observe
+                with patch.object(measure_ready.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(measure_ready.time, 'sleep', side_effect=lambda s: clock.__setitem__(0, clock[0] + s)):
+                    with self.assertRaises(TimeoutError):
+                        measure_ready.main([str(self.vm), '--output', str(self.output), '--deadline-seconds', '20'])
+                result = self.report()
+                self.assertEqual(result['status'], 'failed')
+                self.assertFalse(result['safari_foreground_verified'])
+                self.assertIn('safari_launch_error', result)
+                self.assertEqual([m for m, _ in self.calls].count('apps.launch'), 1)
+                self.assertEqual([m for m, _ in self.calls].count('screen.unlock'), 1)
+
+    def test_refusal_foreground_timeout_is_terminal_and_keeps_native_rejection(self):
+        def observe(method, **params):
+            reply = self.native(method, **params)
+            if method == 'apps.launch':
+                raise GuestHTTPError(400, 'launch refused: com.apple.mobilesafari')
+            if method == 'apps.foreground':
+                raise GuestTransportError('receive_headers', TimeoutError('timed out'))
+            return reply
+        self.guest.call.side_effect = observe
+        with self.assertRaisesRegex(GuestError, 'not retrying'):
+            self.run_measurement()
+        self.assertEqual([m for m, _ in self.calls], ['screen.unlock', 'apps.launch', 'apps.foreground'])
+        self.assertIn('safari_launch_error', self.report())
 
     def test_launch_response_does_not_replace_foreground_verification(self):
         self.launch_response = {'pid': 0, 'frontmost_verified': False}

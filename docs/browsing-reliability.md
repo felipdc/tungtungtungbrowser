@@ -13,6 +13,18 @@ daemon. This preserves the existing observation without another request.
 An address is not proof that Safari's network process is ready or that a
 page can load; retain the subsequent page outcome separately.
 
+If the native launch request returns HTTP 400 with the exact error
+`launch refused: com.apple.mobilesafari`, the recorder retains that error and
+checks Safari's foreground state within the original launch deadline. Acceptance
+requires a fresh, verified Safari identity with a valid process ID, followed by
+the usual screenshot. The recorder does not repeat the launch or unlock.
+Other launch errors and uncertain transport failures remain terminal.
+`safari_launch_error` and the failed `once_only_requests` entry preserve the
+rejection even when the foreground postcondition succeeds. This reconciliation
+has targeted host-side coverage; a new cold native run of the changed recorder
+is still pending. Successful foreground verification does not establish page
+readiness or replace visual review.
+
 ### Experimental wait for an assigned guest address
 
 `scripts/measure_ready.py --wait-for-guest-ip` delays native input until the

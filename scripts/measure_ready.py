@@ -15,7 +15,7 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tungtungtungbrowser.guest import Guest, GuestError, GuestTransportError, web_url
+from tungtungtungbrowser.guest import Guest, GuestError, GuestHTTPError, GuestTransportError, web_url
 from tungtungtungbrowser import Browser
 
 
@@ -222,10 +222,15 @@ def main(argv=None):
         print(json.dumps({'stage': 'screen_unlocked',
                           'seconds': result['screen_unlocked_seconds']}), flush=True)
 
-    def safari(guest):
+    def safari(guest, *, reconcile_refusal=False):
         foreground = guest.call('apps.foreground')
         if foreground.get('bundle_id') != 'com.apple.mobilesafari' or foreground.get('verified') is not True:
             raise GuestError('Safari is not the frontmost app')
+        if reconcile_refusal:
+            if type(foreground.get('pid')) is not int or not 1 < foreground['pid'] <= 2147483647:
+                raise GuestError('Safari foreground process is not verified')
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Safari foreground reconciliation deadline exceeded')
         return foreground
 
     def screenshot(guest):
@@ -316,19 +321,29 @@ def main(argv=None):
             result['safari_foreground_source'] = 'apps.foreground'
             result['safari_foreground_response'] = retry('safari_foreground', safari)
         else:
-            result['safari_launch_response'] = request_once(
-                'apps.launch', min(120, remaining),
-                lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
+            try:
+                result['safari_launch_response'] = request_once(
+                    'apps.launch', min(120, remaining),
+                    lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
+            except GuestHTTPError as exc:
+                if exc.status != 400 or exc.detail != 'launch refused: com.apple.mobilesafari':
+                    raise
+                # This complete native rejection can accompany an already
+                # foreground Safari. Preserve the failed request and reconcile
+                # only its postcondition; never send another launch or unlock.
+                result['safari_launch_error'] = {'status': exc.status, 'detail': exc.detail}
             result['safari_launch_request_seconds'] = time.monotonic() - start
             checkpoint()
-            if result['safari_launch_response'].get('frontmost_verified') is True:
+            if result.get('safari_launch_response', {}).get('frontmost_verified') is True:
                 # Native launch already checks foreground identity. Avoid a
                 # duplicate installed/running-app scan under TCG.
                 result['safari_foreground_source'] = 'apps.launch'
                 result['safari_foreground_seconds'] = result['safari_launch_request_seconds']
             else:
                 result['safari_foreground_source'] = 'apps.foreground'
-                result['safari_foreground_response'] = retry('safari_foreground', safari)
+                result['safari_foreground_response'] = retry(
+                    'safari_foreground', lambda guest: safari(
+                        guest, reconcile_refusal='safari_launch_error' in result))
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)
         # Native foreground identity plus a valid image still requires inspection
