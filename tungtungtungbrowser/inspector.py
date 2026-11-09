@@ -188,6 +188,8 @@ class InspectorSession:
             self.url = 'about:blank'
         self.new_tab = new_tab
         self._blank_open_acknowledged = False
+        self._bootstrap_blank_requested = False
+        self._bootstrap_blank_id = None
         if new_tab_url is not None:
             web_url(new_tab_url)
             if browser is None or url is not None or '#' in new_tab_url:
@@ -386,6 +388,10 @@ class InspectorSession:
             raise InspectorError('An inspectable blank tab already exists; new blank-tab input not sent')
         if any(page.web_url == self.url for page in before.values()):
             raise InspectorError('The generated bootstrap URL is already open')
+        prepare_blank = self.new_tab_url is not None and any(
+            _native_address_key(page.web_url) == 'about:blank' for page in before.values())
+        if prepare_blank and not callable(getattr(self.browser, 'new_tab', None)):
+            raise InspectorError('A preexisting blank tab requires native Browser.new_tab; URL not opened')
         self._tab_open_requested = True
         self._create_app, self._create_before = app, set(before)
         self.tab_cleanup = {'owned': False, 'status': 'open_requested',
@@ -397,6 +403,19 @@ class InspectorSession:
                 raise InspectorError('Native blank-tab request was not acknowledged')
             self._blank_open_acknowledged = True
         else:
+            if prepare_blank:
+                # Safari can consume an existing blank when opening a URL.
+                # Establish a distinct blank ID before asking it to load our
+                # bootstrap, then require that same ID in the final listing.
+                self._bootstrap_blank_requested = True
+                result = await self._native(self.browser.new_tab, expected_pid=app.pid)
+                if (not isinstance(result, dict) or result.get('requested') is not True
+                        or result.get('method') != 'native_new_tab'):
+                    raise InspectorError('Native bootstrap-tab request was not acknowledged')
+                self._blank_open_acknowledged = True
+                while not self._claim_bootstrap_blank(await self._fresh_pages(app.id_)):
+                    self._check()
+                    await asyncio.sleep(0.05)
             await self._native(self.browser.goto, self.url)
         while True:
             pages = await self._fresh_pages(app.id_)
@@ -405,7 +424,35 @@ class InspectorSession:
             self._check()
             await asyncio.sleep(0.05)
 
+    def _claim_bootstrap_blank(self, pages):
+        if not self._blank_open_acknowledged:
+            raise InspectorError('Unacknowledged bootstrap-tab input cannot establish ownership')
+        added = set(pages) - self._create_before
+        if len(added) > 1:
+            raise InspectorError('More than one new tab appeared before bootstrap navigation')
+        if not added:
+            return False
+        page = pages[next(iter(added))]
+        if page.web_url != 'about:blank':
+            raise InspectorError('The new bootstrap tab is not blank; URL not opened')
+        self._bootstrap_blank_id = page.id_
+        self._app, self._page = self._create_app, page
+        self.tab_cleanup.update(owned=True, status='open', app_id=self._app.id_,
+                                page_id=page.id_, bootstrap_blank_page_id=page.id_)
+        missing = sorted(self._create_before - set(pages))
+        if missing:
+            self.tab_cleanup['missing_before_page_ids'] = missing
+            raise InspectorError('Native bootstrap-tab creation did not preserve existing tabs')
+        if page.web_connection_id:
+            raise InspectorError('The new bootstrap tab is held by another Inspector connection')
+        return True
+
     def _claim_created_tab(self, pages):
+        if self._bootstrap_blank_requested and self._bootstrap_blank_id is None:
+            # Reconcile a completed new-tab request after a listing timeout.
+            # Owning its blank ID does not mean its bootstrap URL was loaded.
+            self._claim_bootstrap_blank(pages)
+            return False
         matches = [page for page in pages.values() if page.web_url == self.url]
         self.tab_cleanup.update(observed_page_ids=sorted(pages),
                                 matching_page_ids=sorted(page.id_ for page in matches))
@@ -422,6 +469,8 @@ class InspectorSession:
         page = matches[0]
         if page.id_ in self._create_before:
             raise InspectorError('Native URL open reused an existing tab; ownership was not acquired')
+        if self._bootstrap_blank_id is not None and page.id_ != self._bootstrap_blank_id:
+            raise InspectorError('Native URL open did not use the prepared bootstrap tab')
         self._app, self._page = self._create_app, page
         self.tab_cleanup.update(owned=True, status='open', app_id=self._app.id_, page_id=page.id_)
         missing = sorted(self._create_before - set(pages))

@@ -262,6 +262,114 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(session.tab_cleanup['owned'])
             self.assertFalse(any(method.startswith('input.') for method, _ in guest.calls))
 
+    async def test_bootstrap_preserves_existing_blank_and_loads_a_distinct_new_tab(self):
+        for address in ('about:blank', ''):
+            with self.subTest(address=address):
+                session, native, guest = fixture()
+                native.pages['1'].web_url = address
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    async with session:
+                        self.assertEqual(session._page.id_, 2)
+                        self.assertEqual(native.pages['1'].web_url, address)
+                        self.assertEqual(native.pages['2'].web_url, session.url)
+                        self.assertEqual(session.tab_cleanup['bootstrap_blank_page_id'], 2)
+                self.assertEqual(native.events, ['new_blank', 'open', 'attach', 'detach', 'close'])
+                self.assertEqual(set(native.pages), {'1'})
+                self.assertEqual(native.pages['1'].web_url, address)
+
+    async def test_bootstrap_waits_for_an_acknowledged_unique_blank_before_opening_url(self):
+        for mode in ('blank_multiple', 'blank_no_tab', 'blank_lost_reply'):
+            with self.subTest(mode=mode):
+                session, native, guest = fixture()
+                native.pages['1'].web_url = 'about:blank'
+                native.open_mode = mode
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    with self.assertRaises((InspectorError, TimeoutError)):
+                        await session.__aenter__()
+                self.assertEqual(native.events, ['new_blank'])
+                self.assertFalse(session.tab_cleanup['owned'])
+                self.assertEqual(guest.calls.count(('input.key', {'name': 'cmd+t'})), 1)
+                self.assertNotIn('apps.open_url', [method for method, _ in guest.calls])
+                self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    async def test_bootstrap_open_reply_loss_keeps_proven_tab_ownership_without_reopening(self):
+        session, native, guest = fixture()
+        native.pages['1'].web_url = 'about:blank'
+        native.open_mode = 'new_lost_reply'
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(InspectorError, 'Open reply lost'):
+                await session.__aenter__()
+        self.assertEqual(native.events, ['new_blank', 'open', 'close'])
+        self.assertEqual(set(native.pages), {'1'})
+        self.assertEqual(session.tab_cleanup['status'], 'closed')
+
+    async def test_bootstrap_uncertain_open_never_closes_an_ambiguous_blank(self):
+        session, native, guest = fixture()
+        native.pages['1'].web_url = 'about:blank'
+        native.open_mode = 'uncertain'
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(InspectorError, 'Open reply lost'):
+                await session.__aenter__()
+        self.assertTrue(session.tab_cleanup['owned'])
+        self.assertEqual(session.tab_cleanup['bootstrap_blank_page_id'], 2)
+        self.assertEqual(session.tab_cleanup['status'], 'failed')
+        self.assertEqual(native.events, ['new_blank', 'open'])
+        self.assertEqual(set(native.pages), {'1', '2'})
+        self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    async def test_bootstrap_reused_wrong_tab_cannot_replace_prepared_tab_ownership(self):
+        session, native, guest = fixture()
+        native.pages['1'].web_url = 'about:blank'
+        native.open_mode = 'reuse'
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(InspectorError, 'reused an existing tab'):
+                await session.__aenter__()
+        self.assertEqual(session.tab_cleanup['page_id'], 2)
+        self.assertEqual(native.events, ['new_blank', 'open'])
+        self.assertEqual(set(native.pages), {'1', '2'})
+        self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    async def test_bootstrap_rejects_nonblank_or_foreign_inspected_preparation(self):
+        for state in ('nonblank', 'foreign'):
+            with self.subTest(state=state):
+                session, native, guest = fixture()
+                native.pages['1'].web_url = 'about:blank'
+                original = guest.call
+                def changed(method, **params):
+                    result = original(method, **params)
+                    if method == 'input.key' and params['name'] == 'cmd+t':
+                        if state == 'nonblank':
+                            native.pages['2'].web_url = 'https://other.invalid/'
+                        else:
+                            native.pages['2'].web_connection_id = 'another-inspector'
+                    return result
+                guest.call = changed
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    with self.assertRaises(InspectorError):
+                        await session.__aenter__()
+                self.assertEqual(native.events, ['new_blank'])
+                self.assertNotIn('apps.open_url', [method for method, _ in guest.calls])
+                self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
+    async def test_bootstrap_url_in_a_different_new_tab_is_not_attached_or_closed(self):
+        session, native, guest = fixture()
+        native.pages['1'].web_url = 'about:blank'
+        original = guest.call
+        def changed(method, **params):
+            result = original(method, **params)
+            if method == 'apps.open_url':
+                native.pages['3'] = page(3, params['url'])
+                native.pages['2'] = page(2, 'about:blank')
+            return result
+        guest.call = changed
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaisesRegex(InspectorError, 'did not use the prepared bootstrap tab'):
+                await session.__aenter__()
+        self.assertEqual(session.tab_cleanup['page_id'], 2)
+        self.assertEqual(native.events, ['new_blank', 'open'])
+        self.assertEqual(set(native.pages), {'1', '2', '3'})
+        self.assertNotIn(('input.key', {'name': 'cmd+w'}), guest.calls)
+
     async def test_ambiguous_missing_or_unacknowledged_blank_tab_never_replays_or_claims(self):
         for mode in ('blank_multiple', 'blank_no_tab', 'blank_lost_reply'):
             with self.subTest(mode=mode):

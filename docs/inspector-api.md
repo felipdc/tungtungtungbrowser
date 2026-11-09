@@ -288,6 +288,16 @@ existing tabs remained, and attaches native inspection. Bootstrap requests occur
 before attachment; register expectations before the subsequent `goto` to capture
 the actual destination's traffic.
 
+When the fresh listing contains a blank tab, the SDK first sends Command-T once
+and waits for exactly one additional blank tab ID. It opens the bootstrap URL
+only after verifying that ID and preservation of the earlier tabs, then requires
+the bootstrap to load in that same new tab. This prevents Safari from consuming
+a preexisting blank. `tab_cleanup.bootstrap_blank_page_id` records the prepared
+tab. Missing acknowledgments, competing inspection, multiple new tabs or a
+different destination tab fail without repeating input. If URL opening fails,
+proven ownership of the prepared blank is retained; ambiguous or unverified
+blank-tab cleanup still reports failure rather than closing another tab.
+
 ```python
 async with InspectorSession(
     browser=browser,
@@ -1136,3 +1146,22 @@ The container reached its 10-GiB limit, recording 2,300 limit events before
 shutdown and 2,330 by the last sample, with no OOM kills or CPU quota throttling.
 The first focus failure preceded those events; the later visible fixture
 capture followed them. These observations do not establish a rendering cause.
+
+### Preserving an existing blank during bootstrap (2026-11-09, trial 130)
+
+A targeted native case verified the new bootstrap preparation path on a warm
+device. An existing blank tab remained open while Command-T created a different
+blank ID; native URL opening loaded the unique fixture URL into that new ID.
+Creation took 16.00 seconds. Exact URL and DOM checks passed, followed by one
+native navigation in 25.25 seconds, visible native and page captures, and cleanup
+in 11.53 seconds. Only the session's new tab closed; both earlier tab IDs remained.
+The case used the unchanged production focus path. All 487 source tests passed,
+including ambiguous creation, lost replies, foreign inspection and URL opening
+into the wrong tab. Compilation and source-boundary checks passed too.
+
+This validates bootstrap ownership with an existing blank. It does not qualify
+standalone blank-tab URL handling or cold focus. A separate private focus
+candidate failed its first complete six-element scan before input, then failed
+editing-focus verification after its cleanup tap. A later explicit Command-L
+recovery closed that owned tab. Those failures remain failures; the private
+focus candidate is not included in this change.
