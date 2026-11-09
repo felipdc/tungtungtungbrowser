@@ -1,7 +1,7 @@
 # Native address-field readback
 
-`NativeFocusReader` reads Safari's focused address field without
-enumerating every visible accessibility element. It lets tab-reuse navigation
+`NativeFocusReader` reads Safari's focused address field and can discover a
+unique native address control when focus is absent. It lets tab-reuse navigation
 verify the typed URL even when the software keyboard changes the field's frame.
 It sends no touch or key events and evaluates no JavaScript in Safari.
 Configure `Browser(address_field_reader=...)` for tab-reuse navigation and
@@ -66,15 +66,43 @@ by updating the Python package alone.
 
 ## Navigation behavior and limits
 
-Command-L can reveal Safari's URL field without putting it into editing mode.
-When the reader identifies the URL field but its editing trait is absent, the
-SDK can use that verified field's frame for one focus tap and then read it again.
-Missing or unverified focus stops the operation. Subsequent editing and URL
-readback checks use the first responder, independently of its screen position.
-A failed focus query does not trigger another reader implementation or repeat
-native input.
-Missing focus, wrong ownership or a different URL prevents Return from being
-sent. A navigation acknowledgement still requires a separate page condition.
+New helper builds advertise `address_resolution: "guarded-v1"` in their native
+capability check. `from_deployment` enables the combined resolver only when the
+installation record contains that capability. A direct reader can call `check()`
+to discover it. Older helpers retain their existing first-responder behavior;
+updating Python alone does not add a native helper mode.
+
+For a capable reader, `Browser` sends Command-L once and requires its native
+acknowledgment. The resolver first queries the native first responder. Only
+absence or a completed AX `-25216` error with no element permits native address
+control discovery. Discovery requires a complete scan of at most 512 elements
+and exactly one enabled URL control owned by the expected Safari process.
+Partial scans, ambiguity, missing attributes and invalid geometry are errors.
+
+Each guarded resolution permits at most three eligible address scans, with
+400 ms between scans and a ten-second accepted-query budget. A completed
+resolution that proves absence, or an empty unavailable-root result with
+verified restoration, can receive one fresh guarded resolution after 100 ms.
+Both invocations must verify the original accessibility settings and process
+identity. A missing reply, failed process, partial scan, expired result or
+unrestored state cannot authorize another read. The query alarm remains 20 seconds, and the guard retains its 22-second
+command-wait limit. These bounds do not extend a caller's deadline.
+
+A returned first responder must be Safari's URL field. If it is already editing,
+the browser proceeds to URL verification. A discovered control is not proof of
+keyboard focus, even if it carries an editing trait. The browser verifies its
+bounds against the native screenshot and rechecks the foreground Safari PID,
+then sends at most one tap and requires a fresh editing first-responder read.
+Subsequent typed-URL verification and owned-tab close still use exact expected
+addresses. Shortcuts, taps, paste, Return and close commands are not replayed.
+A navigation acknowledgment requires a separate page condition.
+
+`reader.resolve_address_field(pid, max_attempts=1)` disables the second complete
+resolution for a direct caller. Its default limit is two; this is separate from
+`max_read_attempts`, which governs ordinary first-responder reads. The latest
+resolution and its bounded attempt history are exposed as `last_resolution` and
+`last_resolution_attempts`. `find_address_field(pid)` performs one independent
+native discovery; its result alone never establishes editing focus.
 
 Like the existing native accessibility queries, this helper may temporarily
 enable the system accessibility and automation switches. A separate guard saves
@@ -230,3 +258,37 @@ screenshot. The later warm success does not qualify the failed earlier control
 attempts. Read-only samples found both accessibility switches off after the
 first failure; those samples do not establish their state throughout the failed
 request or explain its cause.
+
+## Targeted resolution validation (2026-11-09, trial 136)
+
+The first focus operation on this guest boot ran in a separate session after
+the initial cold Inspector connection failed. One acknowledged Command-L was
+followed by a 17.17-second guarded invocation ending in complete absence with
+restored off/off settings. The second guarded invocation found a unique enabled
+URL control in 1.40 seconds. One tap and fresh editing-URL verification allowed
+navigation to finish. The requested fixture URL, DOM condition, rendered HTML
+and native screenshot passed; original cleanup closed only the owned tab in
+11.87 seconds. The pre-tap image still showed Safari suggestions without its
+drawn toolbar; the successful page image was captured before Page.snapshot.
+
+The integrated public `Browser` path was then tested on the same warm device
+with a newly built helper advertising the capability. Session creation took
+17.73 seconds, fixture navigation 21.54 seconds, and original cleanup 10.76
+seconds. Native pixels and the exact requested URL were verified. All 521
+public-candidate tests passed, including compatibility, malformed capability
+evidence, bounded native scans, restoration and unrepeated-input checks.
+
+The first cold connection still exhausted four completed native interruptions
+in 68.42 seconds before creating a tab. The later focus and warm integration
+passes do not qualify cold startup or sustained end-to-end reliability. This
+batch used targeted checks; the full external-site workflow was not repeated.
+
+A subsequent targeted product navigation reached the expected URL, DOM
+condition and rendered HTML in the same warm guest, but its native screenshot
+was black. Original cleanup then rejected a missing guard restoration reply:
+the four-second receive window expired and the guard exited with an
+undeliverable final frame. No close key was sent. Independent checks later
+found settings off/off and no surviving helper. A separate fresh, restored
+editing-URL read authorized the first close key and closed only the owned tab.
+This remains a failed visual and original-cleanup case. The address-resolution
+change does not increase that restoration-reply timeout or qualify rendering.

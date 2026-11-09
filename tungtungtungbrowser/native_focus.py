@@ -33,6 +33,11 @@ class NativeFocusReader:
         self.path = helper_path(sha256, deployment_id)
         self.max_read_attempts = max_read_attempts
         self.last_read_attempts = []
+        self.last_address_lookup = None
+        self.last_address_attempts = []
+        self.last_resolution = None
+        self.last_resolution_attempts = []
+        self.supports_address_resolution = False
 
     @classmethod
     def from_deployment(cls, guest, path, *, max_read_attempts=2):
@@ -46,6 +51,8 @@ class NativeFocusReader:
                      max_read_attempts=max_read_attempts)
         if report.get('path') != result.path:
             raise ValueError('Focus helper path does not match its deployment identity')
+        if 'native_check' in report:
+            result._accept_check(report['native_check'])
         return result
 
     def _invoke(self, arguments):
@@ -71,11 +78,17 @@ class NativeFocusReader:
         except (ValueError, TypeError) as exc:
             raise error from exc
 
-    def check(self):
-        result = self._invoke(['check'])
-        if result != {'protocol': 1, 'status': 'ready', 'ui_input_sent': False, 'ax_queried': False}:
-            raise GuestError('Native focus helper check failed')
+    def _accept_check(self, result):
+        expected = {'protocol': 1, 'status': 'ready', 'ui_input_sent': False, 'ax_queried': False}
+        if (not isinstance(result, dict) or type(result.get('protocol')) is not int
+                or result.get('ui_input_sent') is not False or result.get('ax_queried') is not False
+                or result not in (expected, {**expected, 'address_resolution': 'guarded-v1'})):
+            raise GuestError('Native focus helper returned invalid capability evidence')
+        self.supports_address_resolution = result.get('address_resolution') == 'guarded-v1'
         return result
+
+    def check(self):
+        return self._accept_check(self._invoke(['check']))
 
     def __call__(self, pid):
         if type(pid) is not int or not 1 < pid <= 2147483647:
@@ -105,6 +118,133 @@ class NativeFocusReader:
 
     def _read_once(self, pid):
         result = self._invoke(['pid', str(pid)])
+        return self._read_result(result, pid, 'ax_first_responder')
+
+    def find_address_field(self, pid):
+        """Find one native URL field; this does not establish keyboard focus."""
+        if type(pid) is not int or not 1 < pid <= 2147483647:
+            raise ValueError('Address lookup requires a valid native process ID')
+        record = self.last_address_lookup = {'attempt': 1, 'status': 'failed'}
+        self.last_address_attempts = [record]
+        started = time.monotonic()
+        try:
+            result = self._invoke(['address', str(pid)])
+            field = self._address_result(result, pid, 'address')
+            record['scan'] = result['scan']
+            record['status'] = 'absent' if field is None else 'read'
+            return field
+        finally:
+            record['seconds'] = time.monotonic() - started
+
+    def _address_result(self, result, pid, lookup):
+        field = self._read_result(result, pid, 'ax_address_field')
+        scan, disabled = result.get('scan'), result.get('disabled_trait')
+        if (result.get('lookup') != lookup or not isinstance(scan, dict)
+                or set(scan) != {'complete', 'elements', 'visited', 'matches', 'foreign'}
+                or scan['complete'] is not True
+                or any(type(scan[k]) is not int for k in ('elements', 'visited', 'matches', 'foreign'))
+                or not 0 <= scan['elements'] <= 512 or scan['visited'] != scan['elements']
+                or not 0 <= scan['foreign'] <= scan['elements']
+                or scan['matches'] > scan['elements'] - scan['foreign']
+                or scan['matches'] != (0 if field is None else 1)
+                or type(disabled) is not int or not 0 < disabled < 2**64
+                or disabled & (disabled - 1)):
+            raise GuestError('Native address lookup did not establish a complete unique result')
+        if field is not None:
+            if field['identifier'] not in ('URL', 'TabBarItemTitle') or field['traits'] & disabled:
+                raise GuestError('Native address lookup did not return an enabled URL field')
+            field['enabled'] = True
+        return field
+
+    def resolve_address_field(self, pid, *, max_attempts=2):
+        """Repeat one completed/restored absence read; never repeat UI input."""
+        if type(pid) is not int or not 1 < pid <= 2147483647:
+            raise ValueError('Focus resolution requires a valid native process ID')
+        if type(max_attempts) is not int or not 1 <= max_attempts <= 2:
+            raise ValueError('Resolution max_attempts must be 1 or 2')
+        self.last_resolution_attempts = []
+        for attempt in range(max_attempts):
+            try:
+                field = self._resolve_address_field_once(pid)
+            except GuestError:
+                if not self.last_resolution.get('retry_permitted') or attempt + 1 == max_attempts:
+                    raise
+            else:
+                if field is not None or not self.last_resolution.get('retry_permitted') or attempt + 1 == max_attempts:
+                    return field
+            time.sleep(0.1)
+
+    def _resolve_address_field_once(self, pid):
+        record = self.last_resolution = {'status': 'failed', 'retry_permitted': False, 'attempt': len(self.last_resolution_attempts) + 1}
+        self.last_resolution_attempts.append(record)
+        started = time.monotonic()
+        try:
+            result = self._invoke(['resolve', str(pid)])
+            record['native'] = result
+            trace = result.get('resolution')
+            if (result.get('lookup') != 'resolve' or not isinstance(trace, dict)
+                    or set(trace) != {'source', 'first_error', 'first_present', 'first_seconds', 'total_seconds', 'attempts'}
+                    or type(trace['source']) is not int or trace['source'] not in (1, 2)
+                    or type(trace['first_error']) is not int or type(trace['first_present']) is not bool
+                    or any(type(trace[k]) not in (int, float) or not math.isfinite(trace[k])
+                           or trace[k] < 0 for k in ('first_seconds', 'total_seconds'))
+                    or trace['first_seconds'] > trace['total_seconds'] or trace['total_seconds'] >= 10
+                    or not isinstance(trace['attempts'], list) or len(trace['attempts']) > 3):
+                raise GuestError('Native focus resolution has invalid or expired query evidence')
+            if trace['source'] == 1:
+                if (not trace['first_present'] or trace['attempts']
+                        or trace['first_error'] != result.get('error')):
+                    raise GuestError('Native focus resolution did not establish its responder source')
+                field = self._read_result(result, pid, 'ax_first_responder')
+                if field is None:
+                    raise GuestError('Native focus resolution omitted its reported responder')
+            else:
+                if trace['first_present'] or trace['first_error'] not in (0, -25212, -25216) or not trace['attempts']:
+                    raise GuestError('Native focus resolution did not justify address discovery')
+                for index, attempt in enumerate(trace['attempts']):
+                    if (not isinstance(attempt, dict) or set(attempt) != {'error', 'seconds', 'complete', 'elements', 'visited', 'matches', 'foreign'}
+                            or type(attempt['error']) is not int or type(attempt['complete']) is not bool
+                            or type(attempt['seconds']) not in (int, float) or not math.isfinite(attempt['seconds']) or attempt['seconds'] < 0
+                            or any(type(attempt[k]) is not int for k in ('elements', 'visited', 'matches', 'foreign'))
+                            or not 0 <= attempt['foreign'] <= attempt['visited'] <= attempt['elements'] <= 512
+                            or not 0 <= attempt['matches'] <= attempt['visited'] - attempt['foreign']):
+                        raise GuestError('Native focus resolution has invalid scan evidence')
+                    if index + 1 < len(trace['attempts']):
+                        absent = (attempt['error'] == 0 and attempt['complete']
+                                  and attempt['visited'] == attempt['elements'] and attempt['matches'] == 0)
+                        unavailable = (attempt['error'] == -25216 and not attempt['complete']
+                                       and not any(attempt[k] for k in ('elements', 'visited', 'matches', 'foreign')))
+                        if not (absent or unavailable):
+                            raise GuestError('Native focus resolution repeated an ineligible scan')
+                last = trace['attempts'][-1]
+                if trace['first_seconds'] + sum(a['seconds'] for a in trace['attempts']) > trace['total_seconds'] + 0.001:
+                    raise GuestError('Native focus resolution durations exceed the guarded interval')
+                if result.get('scan') != {k: last[k] for k in ('complete', 'elements', 'visited', 'matches', 'foreign')} or result.get('error') != last['error']:
+                    raise GuestError('Native focus resolution final scan does not match its history')
+                try:
+                    field = self._address_result(result, pid, 'resolve')
+                except GuestError as error:
+                    # _read_result attaches native evidence only after verifying
+                    # the PID, element presence, and original switch restoration.
+                    # A failed process, missing reply, or malformed trace cannot
+                    # authorize another read. Partial scans remain terminal.
+                    unavailable = {'complete': False, 'elements': 0, 'visited': 0, 'matches': 0, 'foreign': 0}
+                    if (getattr(error, 'native_helper_response', None) is result
+                            and result['error'] == -25216 and result['element'] is None
+                            and result['scan'] == unavailable):
+                        record['retry_permitted'] = True
+                    raise
+                else:
+                    # The address parser proved a complete zero-match scan,
+                    # matching PID and fully restored switches before None.
+                    record['retry_permitted'] = field is None
+
+            record['status'] = 'absent' if field is None else 'read'
+            return field
+        finally:
+            record['seconds'] = time.monotonic() - started
+
+    def _read_result(self, result, pid, source):
         if (type(result.get('requested_pid')) is not int or result['requested_pid'] != pid
                 or type(result.get('error')) is not int):
             raise GuestError('Native focused-element response has an invalid process or error code')
@@ -113,7 +253,7 @@ class NativeFocusReader:
                 or any(type(v) is not int or v not in (0, 1) for v in before.values())
                 or not isinstance(after, dict) or set(after) != set(before)
                 or any(type(v) is not int or v not in (0, 1) for v in after.values())
-                or before != after):
+                or before != after or result.get('guard_restored') is not True):
             raise GuestError('Native focus query did not verify restored accessibility switches')
         if 'element' not in result:
             raise GuestError('Native focus query omitted its result')
@@ -121,7 +261,7 @@ class NativeFocusReader:
         if result['error'] not in (0, -25212):
             error = GuestError(f"Native focused-element query failed (AX error {result['error']!r})")
             error.native_helper_response = result
-            error.retryable_focus_read = result['error'] == -25216 and element is None
+            error.retryable_focus_read = source == 'ax_first_responder' and result['error'] == -25216 and element is None
             raise error
         if element is None:
             # AXRuntime can represent no first responder either as a null
@@ -150,4 +290,4 @@ class NativeFocusReader:
                 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
                        for v in frame.values()) or frame['width'] < 0 or frame['height'] < 0):
             raise GuestError('Native focused element has invalid geometry')
-        return {**field, 'pid': pid, 'source': 'ax_first_responder'}
+        return {**field, 'pid': pid, 'source': source}

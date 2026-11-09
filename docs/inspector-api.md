@@ -1206,3 +1206,17 @@ case. Missing replies, identity changes, exhausted deadlines, and failures after
 page commands remain terminal. Cold startup and first native address-field
 focus still require further validation; this trial did not run the full
 external-site workflow.
+
+### Guarded address resolution (2026-11-09, trial 136)
+
+New focus-helper installations advertise a bounded native address resolver.
+`Browser` can use it after one acknowledged Command-L when a first responder
+is absent, then confirm editing focus and the exact owned URL before input.
+A native trial exercised complete absence followed by one restored second
+resolution, one verified tap, successful fixture navigation and original
+owned-tab cleanup. The integrated public path also passed on the same warm
+device. See [native focus behavior and validation](native-focus.md#navigation-behavior-and-limits).
+
+The initial cold Inspector session still failed after four completed native
+connection interruptions. This focus change does not fix that service startup
+failure; repeatable cold startup and the full workflow remain unqualified.

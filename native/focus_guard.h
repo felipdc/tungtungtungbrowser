@@ -9,6 +9,8 @@ typedef void *posix_spawn_file_actions_t;
 typedef unsigned int sigset_t;
 struct pollfd { int fd; short events, revents; };
 struct timespec { long tv_sec, tv_nsec; };
+extern int *__error(void);
+#define focus_guard_errno (*__error())
 extern int pipe(int *), close(int), poll(struct pollfd *, unsigned, int);
 extern long read(int, void *, unsigned long), write(int, const void *, unsigned long);
 extern int open(const char *, int, ...), flock(int, int), fcntl(int, int, ...);
@@ -38,6 +40,8 @@ extern int posix_spawn(int *, const char *, const posix_spawn_file_actions_t *, 
 #define SIG_ERR ((void (*)(int))-1)
 #define SIG_IGN ((void (*)(int))1)
 #else
+#include <errno.h>
+#define focus_guard_errno errno
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -56,6 +60,20 @@ struct FocusGuard { int pid, input, output; };
 struct FocusGuardState { int protocol, status, before_app, before_auto, after_app, after_auto; };
 _Static_assert(sizeof(struct FocusGuardState) == 24, "focus guard protocol ABI");
 
+/* Observation only. The pipe ABI and all deadlines stay unchanged. */
+struct FocusGuardReadTrace { int polls, poll_result, revents, read_errno; long bytes; };
+static struct FocusGuardReadTrace focus_guard_last_read;
+struct FocusGuardTrace {
+    double begin_started, begin_finished, finish_started, received_at, reaped_at;
+    long begin_write, finish_write;
+    int begin_received, finish_received, begin_valid, finish_valid;
+    int begin_errno, finish_errno, wait_pid, wait_errno, child_status;
+    int final_protocol, final_status;
+    struct FocusGuardReadTrace begin_read, finish_read;
+};
+static struct FocusGuardTrace focus_guard_trace;
+
+
 static int focus_guard_reset_signals(void) {
     /* The administrative process launcher can inherit blocked SIGALRM. An
      * alarm alone then never terminates a stuck query. This standalone helper
@@ -72,6 +90,7 @@ static double focus_guard_now(void) {
 }
 
 static int focus_guard_receive(int fd, void *data, unsigned long size, int milliseconds) {
+    focus_guard_last_read = (struct FocusGuardReadTrace){0, 0, 0, 0, -2};
     double start = focus_guard_now();
     if (start < 0) return 0;
     double end = start + milliseconds / 1000.0;
@@ -80,10 +99,15 @@ static int focus_guard_receive(int fd, void *data, unsigned long size, int milli
         if (now < 0 || now >= end) return 0;
         struct pollfd descriptor = {fd, POLLIN, 0};
         int result = poll(&descriptor, 1, (int)((end - now) * 1000) + 1);
+        focus_guard_last_read.polls++; focus_guard_last_read.poll_result = result;
+        focus_guard_last_read.revents = descriptor.revents;
         if (result < 0) continue;
         if (!result) return 0;
         /* Every protocol write fits in PIPE_BUF. Partial frames are errors. */
-        return read(fd, data, size) == (long)size;
+        long bytes = read(fd, data, size);
+        focus_guard_last_read.bytes = bytes;
+        focus_guard_last_read.read_errno = bytes < 0 ? focus_guard_errno : 0;
+        return bytes == (long)size;
     }
 }
 
@@ -151,23 +175,42 @@ static int focus_guard_run(const char *lock_path, unsigned char (*app)(void),
 }
 
 static int focus_guard_begin(struct FocusGuard *guard, struct FocusGuardState *state) {
-    return write(guard->input, "R", 1) == 1
-        && focus_guard_receive(guard->output, state, sizeof(*state), TTT_FOCUS_GUARD_WAIT_MS)
+    focus_guard_last_read = (struct FocusGuardReadTrace){0, 0, 0, 0, -2};
+    focus_guard_trace.begin_started = focus_guard_now();
+    focus_guard_trace.begin_write = write(guard->input, "R", 1);
+    focus_guard_trace.begin_errno = focus_guard_trace.begin_write < 0 ? focus_guard_errno : 0;
+    focus_guard_trace.begin_received = focus_guard_trace.begin_write == 1
+        && focus_guard_receive(guard->output, state, sizeof(*state), TTT_FOCUS_GUARD_WAIT_MS);
+    focus_guard_trace.begin_read = focus_guard_last_read;
+    focus_guard_trace.begin_valid = focus_guard_trace.begin_received
         && state->protocol == 1 && !state->status
         && (state->before_app == 0 || state->before_app == 1)
         && (state->before_auto == 0 || state->before_auto == 1)
         && state->after_app == 1 && state->after_auto == 1;
+    focus_guard_trace.begin_finished = focus_guard_now();
+    return focus_guard_trace.begin_valid;
 }
 
 static int focus_guard_finish(struct FocusGuard *guard, struct FocusGuardState *state) {
-    int complete = write(guard->input, "D", 1) == 1;
+    focus_guard_last_read = (struct FocusGuardReadTrace){0, 0, 0, 0, -2};
+    focus_guard_trace.finish_started = focus_guard_now();
+    focus_guard_trace.finish_write = write(guard->input, "D", 1);
+    focus_guard_trace.finish_errno = focus_guard_trace.finish_write < 0 ? focus_guard_errno : 0;
     close(guard->input); guard->input = -1;
-    complete = complete && focus_guard_receive(guard->output, state, sizeof(*state), 4000)
-        && state->protocol == 1 && !state->status;
+    focus_guard_trace.finish_received = focus_guard_trace.finish_write == 1
+        && focus_guard_receive(guard->output, state, sizeof(*state), 4000);
+    focus_guard_trace.finish_read = focus_guard_last_read;
+    focus_guard_trace.received_at = focus_guard_now();
+    focus_guard_trace.final_protocol = state->protocol;
+    focus_guard_trace.final_status = state->status;
+    int complete = focus_guard_trace.finish_received && state->protocol == 1 && !state->status;
+    focus_guard_trace.finish_valid = complete;
     close(guard->output); guard->output = -1;
-    /* A successful reply follows restoration. Reap the short-lived guard;
-     * the query process's alarm still bounds this final exchange. */
     int status = -1;
-    if (waitpid(guard->pid, &status, 0) != guard->pid || status != 0) complete = 0;
+    focus_guard_trace.wait_pid = waitpid(guard->pid, &status, 0);
+    focus_guard_trace.wait_errno = focus_guard_trace.wait_pid < 0 ? focus_guard_errno : 0;
+    focus_guard_trace.child_status = status;
+    focus_guard_trace.reaped_at = focus_guard_now();
+    if (focus_guard_trace.wait_pid != guard->pid || status != 0) complete = 0;
     return complete;
 }

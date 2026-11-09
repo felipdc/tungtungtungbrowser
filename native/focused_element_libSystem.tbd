@@ -4,7 +4,7 @@ targets: [ arm64-ios ]
 install-name: '/usr/lib/libSystem.B.dylib'
 exports:
   - targets: [ arm64-ios ]
-    symbols: [ _dlopen, _dlsym, _printf, _fflush, _strcmp, _alarm, _bzero,
+    symbols: [ _nanosleep, ___error, _dlopen, _dlsym, _printf, _fflush, _strcmp, _alarm, _bzero,
                _pipe, _close, _poll, _read, _write, _open, _flock, _fcntl, _setsid,
                _waitpid, _clock_gettime, _signal, _sigprocmask, _posix_spawn,
                _posix_spawn_file_actions_init, _posix_spawn_file_actions_destroy,

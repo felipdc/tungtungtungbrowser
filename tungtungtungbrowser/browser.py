@@ -241,6 +241,8 @@ class Browser:
                     'method': method, 'navigation_verified': False}
 
     def _focus_address_field(self, foreground):
+        if getattr(self.address_field_reader, 'supports_address_resolution', False) is True:
+            return self._resolve_address_field(foreground)
         if self.address_field_reader is None:
             raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
         self.guest.call('input.key', name='cmd+l')
@@ -265,6 +267,54 @@ class Browser:
             time.sleep(self.input_settle)
             field = self._address_field(foreground)
         return field
+
+    def _resolve_address_field(self, foreground):
+        """Resolve an address control after one acknowledged shortcut.
+
+        A complete native discovery supplies geometry, not editing focus. Send
+        at most one tap after verifying bounds and the foreground process, then
+        require a fresh first-responder read before returning to the caller.
+        """
+        resolver = getattr(self.address_field_reader, 'resolve_address_field', None)
+        if not callable(resolver):
+            raise GuestError('Native address resolver is not configured')
+        ack = self.guest.call('input.key', name='cmd+l')
+        if not isinstance(ack, dict) or ack.get('key') != 'cmd+l' or ack.get('dispatched') is not True:
+            raise GuestError('Native address shortcut not acknowledged; outcome is unknown')
+        time.sleep(self.input_settle)
+        field = resolver(foreground['pid'])
+        if (not isinstance(field, dict) or type(field.get('pid')) is not int
+                or field['pid'] != foreground['pid'] or type(field.get('traits')) is not int
+                or field['traits'] < 0):
+            raise GuestError('Combined query did not establish owned native URL field')
+        if field.get('source') == 'ax_first_responder':
+            if field.get('identifier') != 'URL':
+                raise GuestError('Native first responder is not the URL field')
+            if field['traits'] & _AX_IS_EDITING:
+                return field
+        elif field.get('source') == 'ax_address_field':
+            if field.get('identifier') not in ('URL', 'TabBarItemTitle') or field.get('enabled') is not True:
+                raise GuestError('Discovered native field is not an enabled URL control')
+        else:
+            raise GuestError('Unknown native field source')
+        frame = field.get('frame')
+        values = [frame.get(k) for k in ('x', 'y', 'width', 'height')] if isinstance(frame, dict) else []
+        if (len(values) != 4 or not all(type(v) in (int, float) and math.isfinite(v) for v in values)
+                or min(values[:2]) < 0 or min(values[2:]) <= 0):
+            raise GuestError('Invalid native URL field bounds; focus tap not sent')
+        x, y, width, height = values
+        screen = Screenshot.from_native(self.guest.call('screen.screenshot'))
+        if (x + width > screen.width / screen.coordinate_scale
+                or y + height > screen.height / screen.coordinate_scale):
+            raise GuestError('Native URL field outside screen bounds; focus tap not sent')
+        current = self.guest.call('apps.foreground')
+        if (not isinstance(current, dict) or current.get('verified') is not True
+                or current.get('bundle_id') != SAFARI or type(current.get('pid')) is not int
+                or current['pid'] != foreground['pid']):
+            raise GuestError('Safari foreground changed; focus tap not sent')
+        self.guest.tap(x + width / 2, y + height / 2)
+        time.sleep(self.input_settle)
+        return self._address_field(current)
 
     def close_tab(self, *, expected_url, expected_pid):
         """Send Command-W once after verifying the active tab's editing address.

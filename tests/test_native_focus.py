@@ -16,6 +16,7 @@ def native_result():
     field = {'label': 'Address', 'value': 'https://fixture.invalid/', 'identifier': 'URL',
              'traits': 1 << 21, 'frame': {'x': 20, 'y': 488, 'width': 265, 'height': 48}}
     return {'protocol': 1, 'requested_pid': 301, 'error': 0,
+            'guard_restored': True,
             'before': {'application': 0, 'automation': 1},
             'after': {'application': 0, 'automation': 1},
             'element': {'pid': 301, 'pid_error': 0, 'timeout_error': 0,
@@ -28,6 +29,58 @@ def answer(result):
 
 
 class NativeFocusTests(unittest.TestCase):
+    def test_address_lookup_requires_complete_unique_enabled_result_and_restoration(self):
+        result = {**native_result(), 'lookup': 'address', 'disabled_trait': 1 << 8,
+                  'scan': {'complete': True, 'elements': 4, 'visited': 4, 'matches': 1, 'foreign': 0}}
+        guest = Mock(); guest._rpc.return_value = answer(result)
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        field = reader.find_address_field(301)
+        self.assertEqual(field['source'], 'ax_address_field')
+        self.assertTrue(field['enabled'])
+        guest._rpc.assert_called_once_with('script.eval', source=(
+            'proc.run(' + json.dumps(reader.path) + ', ["address", "301"], "")'), timeout=30)
+        cases = [{**result, 'scan': {**result['scan'], key: value}}
+                 for key, value in [('complete', False), ('elements', 513), ('visited', 3), ('matches', 2), ('matches', True)]]
+        cases += [{**result, 'disabled_trait': value} for value in [0, True, 3, 2**64]]
+        cases += [{**result, 'lookup': 'focus'}, {**result, 'guard_restored': False},
+                  {k: v for k, v in result.items() if k != 'guard_restored'}]
+        disabled = copy.deepcopy(result)
+        disabled['element']['attributes']['traits']['value'] |= 1 << 8
+        cases.append(disabled)
+        for candidate in cases:
+            with self.subTest(candidate=candidate):
+                guest.reset_mock(); guest._rpc.return_value = answer(candidate)
+                with self.assertRaises(GuestError): reader.find_address_field(301)
+                guest._rpc.assert_called_once()
+                self.assertEqual(reader.last_address_lookup['status'], 'failed')
+
+    def test_collapsed_title_and_foreign_page_nodes(self):
+        result = {**native_result(), 'lookup': 'address', 'disabled_trait': 256,
+                  'scan': {'complete': True, 'elements': 17, 'visited': 17, 'matches': 1, 'foreign': 12}}
+        result['element']['attributes']['identifier']['value'] = 'TabBarItemTitle'
+        guest = Mock(); guest._rpc.return_value = answer(result)
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        field = reader.find_address_field(301)
+        self.assertEqual(field['identifier'], 'TabBarItemTitle')
+        self.assertEqual(field['pid'], 301)
+        guest._rpc.assert_called_once()
+        for count in (-1, True, 17, 18):
+            with self.subTest(count=count):
+                guest.reset_mock(); guest._rpc.return_value = answer({**result, 'scan': {**result['scan'], 'foreign': count}})
+                with self.assertRaises(GuestError): reader.find_address_field(301)
+                guest._rpc.assert_called_once()
+
+    def test_address_lookup_absence_and_errors_do_not_repeat_or_claim_focus(self):
+        result = {**native_result(), 'lookup': 'address', 'element': None, 'disabled_trait': 256,
+                  'scan': {'complete': True, 'elements': 4, 'visited': 4, 'matches': 0, 'foreign': 0}}
+        guest = Mock(); guest._rpc.return_value = answer(result)
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        self.assertIsNone(reader.find_address_field(301))
+        for error in (-25216, -6):
+            guest.reset_mock(); guest._rpc.return_value = answer({**result, 'error': error})
+            with self.assertRaises(GuestError): reader.find_address_field(301)
+            guest._rpc.assert_called_once()
+
     def test_validated_fixed_native_command_and_owned_focus(self):
         guest = Mock()
         guest._rpc.return_value = answer(native_result())
@@ -55,6 +108,8 @@ class NativeFocusTests(unittest.TestCase):
     def test_unrestored_wrong_owner_or_other_failed_read_is_never_repeated(self):
         failed = {**native_result(), 'error': -25216, 'element': None}
         for result in (
+                {**failed, 'guard_restored': False},
+                {k: v for k, v in failed.items() if k != 'guard_restored'},
                 {**failed, 'after': {'application': 1, 'automation': 1}},
                 {**failed, 'requested_pid': 302},
                 {**failed, 'error': -25204},

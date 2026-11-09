@@ -24,7 +24,7 @@ root, out = map(Path, sys.argv[1:])
 report = {'protocol': 1, 'binary': 'focused-element',
           'binary_sha256': hashlib.sha256((out/'focused-element').read_bytes()).hexdigest(),
           'sources': {name: hashlib.sha256((root/'native'/name).read_bytes()).hexdigest()
-                      for name in ('focused_element.c', 'focus_guard.h', 'focused_element_libSystem.tbd', 'focused_element_entitlements.plist')},
+                      for name in ('focused_element.c', 'focus_guard.h', 'focus_guard_trace.h', 'address_field.h', 'focus_resolution.h', 'focused_element_libSystem.tbd', 'focused_element_entitlements.plist')},
           'installed': False}
 with (out/'build.json').open('x') as f: json.dump(report, f, indent=2); f.write('\n')
 print(json.dumps(report, indent=2))

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../native/focus_guard.h"
+#include "../native/focus_guard_trace.h"
 
 static unsigned char setting(const char *path) {
     int fd = open(path, O_RDONLY);
@@ -17,6 +18,10 @@ static unsigned char setting(const char *path) {
     return value == '1';
 }
 static void set_setting(const char *path, unsigned char value) {
+    if (!value && !strcmp(path, "automation") && access("delay-restoration", F_OK) == 0) {
+        struct timespec delay = {4, 150000000};
+        nanosleep(&delay, 0);
+    }
     if (!value && access("fail-restoration", F_OK) == 0) return;
     int fd = open(path, O_WRONLY | O_TRUNC);
     char text = value ? '1' : '0';
@@ -50,12 +55,23 @@ int main(int argc, char **argv) {
         close(guard.input);
         (void)waitpid(guard.pid, 0, 0);
         return 6;
-    } else if (!strcmp(argv[1], "restore-fail")) {
+    } else if (!strcmp(argv[1], "restore-fail") || !strcmp(argv[1], "trace-restore-fail")) {
         int fd = open("fail-restoration", O_WRONLY | O_CREAT, 0600);
         if (fd < 0) return 7;
         close(fd);
     }
-    if (!focus_guard_finish(&guard, &state)) return 8;
+    if (!strcmp(argv[1], "trace-restore-delay")) {
+        int fd = open("delay-restoration", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0) return 7;
+        close(fd);
+    }
+    if (!strcmp(argv[1], "trace-write-fail")) close(guard.input);
+    int complete = focus_guard_finish(&guard, &state);
+    if (!strncmp(argv[1], "trace-", 6)) {
+        print_guard_trace();
+        printf("\n");
+    }
+    if (!complete) return 8;
     printf("{\"restored\":true,\"after\":[%d,%d]}\n", state.after_app, state.after_auto);
     return 0;
 }
