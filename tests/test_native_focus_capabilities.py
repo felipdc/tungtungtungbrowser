@@ -68,7 +68,7 @@ class FocusCapabilityTests(unittest.TestCase):
                 self.assertEqual(reader.guest.connection_factory().timeout, 7)
                 reader.guest._rpc.return_value = answer(check)
                 reader.check()
-                self.assertEqual(reader.guest._rpc.call_args.kwargs['timeout'], 30)
+                self.assertEqual(reader.guest._rpc.call_args.kwargs['timeout'], 60)
 
     def test_unknown_or_incomplete_timing_capability_is_rejected(self):
         for fields in [{'query_timing': 'phased-v1'},
@@ -91,3 +91,26 @@ class FocusCapabilityTests(unittest.TestCase):
                     reader.resolve_address_field(301)
                 reader.guest._rpc.assert_called_once()
                 self.assertEqual(reader.last_resolution_attempts[0]['status'], 'failed')
+
+    def test_initial_check_allows_script_startup_without_extending_unknown_queries(self):
+        from test_native_focus import native_result
+        guest = Mock(); guest._rpc.return_value = answer(READY)
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        reader.check()
+        self.assertEqual(guest._rpc.call_args.kwargs['timeout'], 60)
+        guest._rpc.return_value = answer(native_result())
+        reader(301)
+        self.assertEqual(guest._rpc.call_args.kwargs['timeout'], 30)
+        guest.call.assert_not_called()
+
+    def test_failed_check_is_terminal_and_does_not_enable_queries(self):
+        for reply in [GuestError('daemon check timeout'),
+                      {'ok': False, 'crashed': True, 'output': '', 'result': ''}]:
+            guest = Mock(); guest._rpc.side_effect = [reply, answer(READY)]
+            reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+            with self.assertRaises(GuestError):
+                reader.check()
+            guest._rpc.assert_called_once()
+            self.assertFalse(reader.supports_address_resolution)
+            self.assertEqual(reader._query_script_timeout, 30)
+            guest.call.assert_not_called()

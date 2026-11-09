@@ -58,7 +58,7 @@ class NativeFocusReader:
 
     def _invoke(self, arguments):
         source = 'proc.run(' + json.dumps(self.path) + ', ' + json.dumps(arguments) + ', "")'
-        script_timeout = 30 if arguments == ['check'] else self._query_script_timeout
+        script_timeout = 60 if arguments == ['check'] else self._query_script_timeout
         answer = self.guest._rpc('script.eval', source=source, timeout=script_timeout)
         error = GuestError('Native focus helper did not complete successfully')
         error.native_script_response = answer

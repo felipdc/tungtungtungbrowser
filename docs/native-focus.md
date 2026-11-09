@@ -163,7 +163,9 @@ The accepted native resolution budget remains ten seconds, with unchanged
 
 The capability check advertises `query_timing: "phased-v1"`. A reader that verifies
 this capability uses a 60-second administrative `script.eval` execution deadline
-for queries; capability checks and older helpers retain 30 seconds. Use
+for queries. Capability checks also use 60 seconds to allow script-session
+startup, native initialization and reply delivery; queries from older helpers
+retain 30 seconds. The installer CLI uses a 70-second HTTP timeout. Use
 `from_deployment` with the new installation record or call `check()` on a direct
 reader. The reader never changes `Guest`'s HTTP timeout. Configure it explicitly
 (for example, `Guest(timeout=70)`) to allow the complete execution window and
@@ -644,3 +646,27 @@ reply fault. It does not establish natural recovery or cold-start reliability.
 The native batch helper remains experimental; the production native helper,
 phase alarms, accepted query budget and two-query limit are unchanged. The full
 product workflow was not run because the cold focus gate failed.
+
+
+## Installation-check deadline (2026-11-09, trials 157–158)
+
+A cold installation uploaded and verified the native helper, then failed at the
+administrative daemon's 30-second script deadline during its capability check.
+The failed reply had no native process result or stdout; it does not identify
+which part of script startup, native initialization or reply delivery was slow.
+The original installation stopped before creating a session.
+
+A separate warm capability check with a 60-second script deadline completed in
+2.09 seconds after an independent restoration/process audit. The reader now
+uses that outer allowance for `check`, and the installer CLI allows 70 seconds
+for the HTTP request. Native phase alarms, query budgets and caller-supplied
+HTTP deadlines are unchanged. An initial failed check remains terminal and
+does not enable the resolver or replay the request.
+
+A distinct fresh guest subsequently passed helper installation and opened its
+first session in 53.27 seconds. Its first navigation still failed before text
+input: both allowed restored resolutions returned incomplete native address
+scans. The failure frame showed Favorites without an address bar, and a separate
+passive observation 114 seconds later still found no focused field. These cases
+used a private native batching experiment; they do not qualify that experiment,
+cold focus reliability or the full browsing workflow.
