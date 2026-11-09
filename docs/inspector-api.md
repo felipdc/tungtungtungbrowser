@@ -471,6 +471,16 @@ ordering problem without sending a page command. Failed handoffs record a fixed
 XPC error category or acknowledgement timeout in the bridge log and response;
 the bridge does not replay the handoff or change inspection preferences.
 
+The bridge performs this opening sequence on one native worker with
+`QOS_CLASS_USER_INITIATED`, verifies that class and joins the worker before
+returning the stream to its owner. The serial bridge thread retains its original
+class. Worker setup or class-verification failures are terminal; an uncertain
+join exits the owned bridge rather than releasing a request still used by the
+worker. The `inspector_handoff_schedule` log records requested and observed
+classes. Native acknowledgments, descriptor cleanup, retry limits and handoff
+deadlines are unchanged. This scheduling choice does not guarantee timely
+service startup under emulation.
+
 The queued-client build subsequently opened multiple native sessions on the
 same guest boot, but a later handoff still failed with `connection_interrupted`.
 Keep that later failure alongside the successful connections: this change does
@@ -1220,3 +1230,25 @@ device. See [native focus behavior and validation](native-focus.md#navigation-be
 The initial cold Inspector session still failed after four completed native
 connection interruptions. This focus change does not fix that service startup
 failure; repeatable cold startup and the full workflow remain unqualified.
+
+### Native startup worker qualification (2026-11-09, trial 145)
+
+A fresh guest completed native Safari readiness in 255.03 seconds. Installer
+source/build and constructor checks finished before boot; the first actual
+Inspector connection followed installation without an extra foreground warmup,
+preliminary connection or accessibility query. The new worker opened on attempt
+one in 6.43 seconds. Native logs confirmed service launch, check-in and finalized
+client registration. The worker reported class25 while the caller remained at21.
+Session creation completed in43.97 seconds and the fixture URL/condition passed.
+
+First native focus still failed after two restored queries, ending with mixed
+unavailable responder attributes. No paste or Return followed. Separate verified
+recovery closed only the owned tab and preserved the original tabs through60
+seconds. That focus failure prevented a full-workflow milestone; this startup
+result does not establish reliable cold focus or sustained browsing.
+
+The public source rebuilt to the exact cold-tested bridge binary. Forty-five
+targeted tests covered worker ownership, setup and join failures, native
+handoff recovery, installation, stopping and initial replies. The scheduling
+change retains the native opening sequence and all existing attempt/deadline
+bounds. Further cold samples are needed to establish repeatability.

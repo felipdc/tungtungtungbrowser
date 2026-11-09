@@ -95,7 +95,7 @@ static int command(int fd, char text[96]) {
     return 0;
 }
 
-static void *open_inspector(int *native, const char **failure) {
+static void *open_inspector_core(int *native, const char **failure) {
     *native = -1;
     *failure = "initialization_failed";
     int listener = socket(2, 1, 0);
@@ -176,6 +176,53 @@ static void *open_inspector(int *native, const char **failure) {
     *failure = 0;
     *native = stream;
     return connection;
+}
+
+/* Classify only the owned startup request as user-initiated.
+ * A fresh pthread owns that scheduling class; the serial bridge thread is never
+ * promoted. Native ACK, descriptor ownership and all handoff bounds are unchanged.
+ * Darwin arm64 pthread_attr_t is 64 bytes with long alignment. */
+union ThreadAttributes { long alignment; unsigned char bytes[64]; };
+struct OpenRequest { int native; const char *failure; void *connection; unsigned qos; };
+static unsigned (*current_qos)(void);
+static void *open_worker(void *argument) {
+    struct OpenRequest *request = argument;
+    request->qos = current_qos();
+    if (request->qos != 0x19) { request->failure = "startup_qos_not_applied"; return 0; }
+    request->connection = open_inspector_core(&request->native, &request->failure);
+    return 0;
+}
+static void *open_inspector(int *native, const char **failure) {
+    *native = -1; *failure = "startup_worker_failed";
+    void *library = dlopen("/usr/lib/libSystem.B.dylib", 2);
+    if (!library) return 0;
+    int (*attr_init)(void *) = dlsym(library, "pthread_attr_init");
+    int (*attr_destroy)(void *) = dlsym(library, "pthread_attr_destroy");
+    int (*attr_qos)(void *, unsigned, int) = dlsym(library, "pthread_attr_set_qos_class_np");
+    int (*create)(void **, const void *, void *(*)(void *), void *) = dlsym(library, "pthread_create");
+    int (*join)(void *, void **) = dlsym(library, "pthread_join");
+    void (*process_exit)(int) = dlsym(library, "_exit");
+    current_qos = dlsym(library, "qos_class_self");
+    if (!attr_init || !attr_destroy || !attr_qos || !create || !join || !process_exit || !current_qos) return 0;
+    unsigned caller_qos = current_qos();
+    union ThreadAttributes attributes;
+    int error = attr_init(&attributes);
+    if (error) return 0;
+    error = attr_qos(&attributes, 0x19, 0); /* QOS_CLASS_USER_INITIATED */
+    struct OpenRequest request = {-1, "startup_worker_failed", 0, 0};
+    void *thread = 0;
+    if (!error) error = create(&thread, &attributes, open_worker, &request);
+    int destroy_error = attr_destroy(&attributes);
+    if (error) return 0;
+    int join_error = join(thread, 0);
+    /* Never expose a stack request or a socket while a worker may still own it.
+     * A join failure terminates this owned bridge, causing terminal host EOF. */
+    if (join_error) process_exit(10);
+    printf("{\"protocol\":2,\"event\":\"inspector_handoff_schedule\",\"caller_qos\":%u,\"requested_qos\":25,\"worker_qos\":%u,\"caller_qos_after\":%u,\"attributes_destroy_error\":%d,\"unix\":%ld}\n",
+           caller_qos, request.qos, current_qos(), destroy_error, time(0));
+    fflush(0);
+    *native = request.native; *failure = request.failure;
+    return request.connection;
 }
 
 /* The owner carries the native plist stream directly. Closing either side
