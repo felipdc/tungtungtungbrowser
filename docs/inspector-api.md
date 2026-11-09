@@ -373,6 +373,20 @@ readback remain required before any URL is typed.
 | `screenshot(path=None)` | Uses the supplied `Browser`'s native or configured QMP capture. Review the image separately from DOM/network success. |
 | `snapshot_rect(path=None, width=..., height=..., x=0, y=0, coordinate_system='viewport', timeout=30)` | Native `Page.snapshotRect` PNG of the inspected page, excluding browser UI. Requires an explicit rectangle in CSS pixels; `coordinate_system='page'` uses page coordinates. Returns a `PageScreenshot` with image dimensions, requested rectangle, document URL, target and generation. No `Browser` is required. |
 
+Request and response expectation deadlines start when the context is entered.
+An event observed after that deadline cannot satisfy the wait, even while the
+context's action is still running. An on-time match remains valid if the action
+finishes later. Expiration does not cancel or repeat the action; an unmatched
+expectation raises `TimeoutError` when the context exits. Late responses still
+remain available through the session's normal bounded response retention.
+
+A targeted warm native check registered a 100 ms response expectation, waited
+250 ms, then clicked a fixture button once. The action completed and the context
+raised `TimeoutError`; the late HTTP 200 response and JSON remained readable.
+The rendered fixture, native capture and owned-tab cleanup passed. Local tests
+also cover requests, on-time matches with slow actions, overlapping expectations
+and preservation of an action's own error. Cold focus reliability remains open.
+
 For an explicit page rectangle, use:
 
 ```python

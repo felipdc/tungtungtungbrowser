@@ -674,8 +674,12 @@ class InspectorSession:
                 response._finished.set()
 
     def _publish(self, kind, value):
+        if not self._waiters:
+            return
+        now = asyncio.get_running_loop().time()
         for waiter in tuple(self._waiters):
-            if waiter.kind != kind or waiter.future.done():
+            if (waiter.kind != kind or waiter.future.done()
+                    or now >= waiter.deadline):
                 continue
             try:
                 if waiter.predicate(value):
