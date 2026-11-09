@@ -1247,6 +1247,16 @@ recovery closed only the owned tab and preserved the original tabs through60
 seconds. That focus failure prevented a full-workflow milestone; this startup
 result does not establish reliable cold focus or sustained browsing.
 
+A later, separate warm fixture case rendered native page content and returned
+complete focused-element attributes using a private timing probe. Its cleanup
+failed: after one acknowledged Command-W, the owned tab disappeared, a blank
+replacement appeared, and a later read-only database audit showed that an
+original tab had also disappeared. No second close command was sent. The guest
+was retained for investigation; the immutable parent remains the recovery
+baseline. Successful navigation and the earlier cleanup do not qualify this
+later cleanup, and the larger attribute timeout is still an unqualified private
+candidate. The cause of the tab loss has not been established.
+
 The public source rebuilt to the exact cold-tested bridge binary. Forty-five
 targeted tests covered worker ownership, setup and join failures, native
 handoff recovery, installation, stopping and initial replies. The scheduling
