@@ -104,11 +104,16 @@ first-responder query, an empty scan and a valid frame response. Every attribute
 from the failed response is discarded, including the frame.
 
 The same bounded recovery applies when label and identifier both return
-`-25212` with null values, while value, traits and frame succeed. This requires
+`-25212`, or both return `-25205`, with null values, while value, traits and
+frame succeed. Apple defines `-25205` as
+[`attributeUnsupported`](https://developer.apple.com/documentation/applicationservices/axerror/attributeunsupported).
+The retry does not assume that either attribute will become available: it
+discards this responder and requires a fresh complete result. This requires
 a nonempty string value, valid positive integer traits and valid frame geometry,
 as well as the ownership, restoration and responder-trace checks above. The
 partial value and frame never authorize input; the entire response is discarded
-before the fresh query. Other mixed attribute failures, malformed values and
+before the fresh query. Different errors on the two names, other mixed
+attribute failures, malformed values and
 invalid geometry remain terminal. Ordinary first-responder reads do not gain
 either retry.
 
@@ -611,3 +616,31 @@ This exercises the recovery branch with an explicit response fault and real
 native queries. The original cold failure remains recorded. The two-query
 limit, helper binary, alarms and input sequence are unchanged; cold qualification
 of this recovery remains a separate check.
+
+## Unsupported responder names (2026-11-09, trial 156)
+
+A fresh session using an experimental batched-attribute helper returned a
+first responder whose label and identifier both reported `-25205` with null
+values. Value, traits and frame succeeded. The process exited normally and
+restored both switches, but the reader rejected the partial field before text
+input. This shows that batching alone does not resolve cold focus failures.
+
+The reader now allows its remaining fresh resolution for this exact pattern,
+with the same ownership, restoration, trace, value, traits and geometry checks
+used for missing names. Different errors on the two names remain terminal.
+The entire partial response is discarded; no shortcut, tap or text is replayed.
+
+Forty-four targeted tests passed. In a controlled warm test, only the two name
+attributes in the first successful native reply were replaced with the observed
+failure; both replies were saved. The reader discarded the failed reply and
+obtained a fresh complete native field before text input, with one Command-L.
+Navigation took 25.42 seconds. Immediate and delayed native captures showed the
+expected fixture body, and owned cleanup preserved the original tabs through
+60 seconds. An independent audit after the original failure found restored
+settings and no focus helpers.
+
+This validates bounded response recovery with real native reads and an explicit
+reply fault. It does not establish natural recovery or cold-start reliability.
+The native batch helper remains experimental; the production native helper,
+phase alarms, accepted query budget and two-query limit are unchanged. The full
+product workflow was not run because the cold focus gate failed.

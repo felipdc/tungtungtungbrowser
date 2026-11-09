@@ -377,8 +377,9 @@ class NativeFocusReader:
                 all(isinstance(attributes[k], dict)
                     and set(attributes[k]) == {'error', 'value'}
                     and type(attributes[k]['error']) is int
-                    and attributes[k]['error'] == -25212
+                    and attributes[k]['error'] in (-25212, -25205)
                     and attributes[k]['value'] is None for k in ('label', 'identifier'))
+                and attributes['label']['error'] == attributes['identifier']['error']
                 and all(isinstance(attributes[k], dict)
                         and set(attributes[k]) == {'error', 'value'}
                         and type(attributes[k]['error']) is int
@@ -392,7 +393,7 @@ class NativeFocusReader:
                     and isinstance(geometry, dict) and set(geometry) == {'x', 'y', 'width', 'height'}
                     and all(type(v) in (int, float) and math.isfinite(v) for v in geometry.values())
                     and geometry['width'] > 0 and geometry['height'] > 0):
-                # Ownership and restoration were verified above. This exact
+                # Ownership and restoration were verified above. These exact
                 # completed failures permit discarding the responder and reading
                 # again in resolve mode; it never yields a partially read field.
                 error.native_helper_response = result
