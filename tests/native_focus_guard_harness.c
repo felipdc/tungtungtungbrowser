@@ -19,7 +19,7 @@ static unsigned char setting(const char *path) {
 }
 static void set_setting(const char *path, unsigned char value) {
     if (!value && !strcmp(path, "automation") && access("delay-restoration", F_OK) == 0) {
-        struct timespec delay = {4, 150000000};
+        struct timespec delay = {access("late-restoration", F_OK) == 0 ? 10 : 4, 150000000};
         nanosleep(&delay, 0);
     }
     if (!value && access("fail-restoration", F_OK) == 0) return;
@@ -60,8 +60,13 @@ int main(int argc, char **argv) {
         if (fd < 0) return 7;
         close(fd);
     }
-    if (!strcmp(argv[1], "trace-restore-delay")) {
+    if (!strcmp(argv[1], "trace-restore-delay") || !strcmp(argv[1], "trace-restore-late")) {
         int fd = open("delay-restoration", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0) return 7;
+        close(fd);
+    }
+    if (!strcmp(argv[1], "trace-restore-late")) {
+        int fd = open("late-restoration", O_WRONLY | O_CREAT, 0600);
         if (fd < 0) return 7;
         close(fd);
     }

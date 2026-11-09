@@ -28,7 +28,7 @@ class NativeFocusTraceTests(unittest.TestCase):
             for name in ('application', 'automation'):
                 Path(directory, name).write_text('0')
             result = subprocess.run([str(self.binary), mode], cwd=directory,
-                                    capture_output=True, text=True, timeout=7)
+                                    capture_output=True, text=True, timeout=14)
             ready, trace = [json.loads(line) for line in result.stdout.splitlines()][:2]
             self.assertEqual(trace['begin_write'], 1)
             self.assertEqual(trace['begin_received'], 1)
@@ -79,8 +79,18 @@ class NativeFocusTraceTests(unittest.TestCase):
         # restores on EOF, then reports its undeliverable final reply as 12.
         self.assertEqual(trace['child_status'], 12 << 8)
 
-    def test_late_restoration_is_not_misreported_as_received_success(self):
+    def test_delayed_restoration_receives_the_verified_final_frame(self):
         result, trace, state = self.execute('trace-restore-delay')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(state, (0, 0))
+        self.assertEqual(trace['finish_received'], 1)
+        self.assertEqual(trace['finish_valid'], 1)
+        self.assertEqual(trace['finish_read_bytes'], 24)
+        self.assertEqual(trace['child_status'], 0)
+        self.assertGreater(trace['finish_receive_seconds'], 4)
+
+    def test_late_restoration_is_not_misreported_as_received_success(self):
+        result, trace, state = self.execute('trace-restore-late')
         self.assertEqual(result.returncode, 8)
         self.assertEqual(state, (0, 0))
         self.assertEqual(trace['finish_received'], 0)
@@ -88,7 +98,7 @@ class NativeFocusTraceTests(unittest.TestCase):
         self.assertEqual(trace['finish_poll_result'], 0)
         self.assertEqual(trace['finish_read_bytes'], -2)
         self.assertEqual(trace['child_status'], 12 << 8)
-        self.assertGreater(trace['finish_receive_seconds'], 3.8)
+        self.assertGreater(trace['finish_receive_seconds'], 9.8)
 
 
 if __name__ == '__main__':

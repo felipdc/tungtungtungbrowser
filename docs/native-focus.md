@@ -292,3 +292,24 @@ found settings off/off and no surviving helper. A separate fresh, restored
 editing-URL read authorized the first close key and closed only the owned tab.
 This remains a failed visual and original-cleanup case. The address-resolution
 change does not increase that restoration-reply timeout or qualify rendering.
+
+
+A separate restoration-reply fix increases only the final pipe receive window
+from four to ten seconds. The main query alarm remains 20 seconds and the
+guard command wait remains 22 seconds; the latter is not a hard process
+deadline because the guard must restore settings. A full valid restoration
+frame and clean guard exit are still required. No browser input is retried.
+
+On the same warm guest, a controlled six-second delay before restoration made
+the four-second receiver miss the final frame and fail. The ten-second receiver
+accepted the complete frame after 7.35 seconds and verified clean guard exit.
+Independent reads found both switches off after each case. Local tests also
+cover a restoration delay beyond the new window, which must still fail. All
+522 candidate tests passed. These fault-injection builds were used only for
+validation; the production helper contains no injected delay.
+
+A subsequent production-build product case created a session in 19.02 seconds,
+navigated in 22.37 seconds and completed original owned-tab cleanup in 39.04
+seconds. The exact URL, DOM condition and HTML passed, but native pixels were
+still black. This validates normal cleanup alongside the controlled reply
+timing test; it does not qualify product rendering or cold session startup.
