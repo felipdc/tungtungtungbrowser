@@ -318,20 +318,33 @@ class NativeFocusReader:
             error = GuestError('Native focused-element attribute read failed')
             frame = attributes.get('frame')
             geometry = frame.get('value') if isinstance(frame, dict) else None
-            if (source == 'ax_first_responder'
-                    and all(isinstance(attributes[k], dict)
-                            and set(attributes[k]) == {'error', 'value'}
-                            and type(attributes[k]['error']) is int
-                            and attributes[k]['error'] == -25216
-                            and attributes[k]['value'] is None
-                            for k in ('label', 'value', 'identifier', 'traits'))
+            unavailable = all(isinstance(attributes[k], dict)
+                              and set(attributes[k]) == {'error', 'value'}
+                              and type(attributes[k]['error']) is int
+                              and attributes[k]['error'] == -25216
+                              and attributes[k]['value'] is None
+                              for k in ('label', 'value', 'identifier', 'traits'))
+            missing_names = (
+                all(isinstance(attributes[k], dict)
+                    and set(attributes[k]) == {'error', 'value'}
+                    and type(attributes[k]['error']) is int
+                    and attributes[k]['error'] == -25212
+                    and attributes[k]['value'] is None for k in ('label', 'identifier'))
+                and all(isinstance(attributes[k], dict)
+                        and set(attributes[k]) == {'error', 'value'}
+                        and type(attributes[k]['error']) is int
+                        and attributes[k]['error'] == 0 for k in ('value', 'traits'))
+                and isinstance(attributes['value']['value'], str) and bool(attributes['value']['value'])
+                and type(attributes['traits']['value']) is int
+                and 0 < attributes['traits']['value'] < 2**64)
+            if (source == 'ax_first_responder' and (unavailable or missing_names)
                     and isinstance(frame, dict) and set(frame) == {'error', 'value'}
                     and type(frame['error']) is int and frame['error'] == 0
                     and isinstance(geometry, dict) and set(geometry) == {'x', 'y', 'width', 'height'}
                     and all(type(v) in (int, float) and math.isfinite(v) for v in geometry.values())
                     and geometry['width'] > 0 and geometry['height'] > 0):
                 # Ownership and restoration were verified above. This exact
-                # completed failure permits discarding the responder and reading
+                # completed failures permit discarding the responder and reading
                 # again in resolve mode; it never yields a partially read field.
                 error.native_helper_response = result
                 error.retryable_focus_attributes = True

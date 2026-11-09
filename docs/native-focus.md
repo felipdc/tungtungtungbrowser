@@ -101,9 +101,16 @@ A completed responder whose label, value, identifier and traits all return
 AX `-25216` with null values can also receive one fresh guarded resolution.
 This requires verified ownership and restoration, an otherwise successful
 first-responder query, an empty scan and a valid frame response. Every attribute
-from the failed response is discarded, including the frame. Mixed attribute
-errors, malformed values and invalid geometry remain terminal. Ordinary
-first-responder reads do not gain this retry.
+from the failed response is discarded, including the frame.
+
+The same bounded recovery applies when label and identifier both return
+`-25212` with null values, while value, traits and frame succeed. This requires
+a nonempty string value, valid positive integer traits and valid frame geometry,
+as well as the ownership, restoration and responder-trace checks above. The
+partial value and frame never authorize input; the entire response is discarded
+before the fresh query. Other mixed attribute failures, malformed values and
+invalid geometry remain terminal. Ordinary first-responder reads do not gain
+either retry.
 
 Both invocations must verify the original accessibility settings and process
 identity. Missing replies, failed processes, ambiguous or foreign partial
@@ -510,3 +517,26 @@ This validates the bounded response-recovery path with a deliberate host-side
 fault and real native reads. It does not establish cold-start reliability or
 repeatability of the original transient error. The helper binary, query alarms,
 input sequencing and maximum number of queries are unchanged.
+
+## Missing responder names (2026-11-09, trial 148)
+
+A fresh session stopped before text input when label and identifier returned
+`-25212` with null values, while value, traits and frame succeeded. The process
+completed and restored both switches. Private phase diagnostics measured
+10.92 seconds in guard setup, including 9.68 seconds enabling automation; the
+first-responder query took 0.19 seconds. This sample did not reproduce the
+earlier alarm and does not establish where that earlier invocation stalled.
+
+A separate warm recovery returned complete attributes and safely closed the
+owned tab. The reader now permits its existing second resolution for the exact
+missing-name result described above. A controlled warm test replaced only those
+two attributes after a successful native query. It discarded the entire reply,
+obtained a fresh complete native field, and navigated with one Command-L.
+Native screenshots showed the fixture immediately and 15 seconds later. One
+close removed only the owned tab, with all original tabs preserved through
+60 seconds and exactly eight observed cleanup key events.
+
+This exercises the recovery branch with an explicit response fault and real
+native queries. The original cold failure remains recorded. The two-query
+limit, helper binary, alarms and input sequence are unchanged; cold qualification
+of this recovery remains a separate check.
