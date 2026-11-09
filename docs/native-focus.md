@@ -387,3 +387,11 @@ The first cold Inspector connection still failed after four completed native
 interruptions, before opening a tab or sending input. Cold startup, the revised
 reader's first-focus behavior on a fresh boot, and native rendering remain
 unresolved. No full external-site workflow was repeated.
+
+The final database audit also failed tab preservation: one original tab was
+absent despite being present in the immediate post-recovery listing. It was
+already absent before normal candidate integration. The cause is unresolved;
+immediate owned-page disappearance does not qualify sustained cleanup. The
+isolated parent image is unchanged. The batch reached its 10-GiB memory limit
+with 1,509 limit events and no OOM kill; this does not establish the cause of
+the tab or rendering failures.
