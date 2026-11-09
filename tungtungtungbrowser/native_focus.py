@@ -211,6 +211,17 @@ class NativeFocusReader:
                             and type(scan['complete']) is bool
                             and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))):
                         record['retry_permitted'] = True
+                    elif (getattr(error, 'native_helper_response', None) is result
+                            and getattr(error, 'retryable_focus_attributes', False) is True
+                            and trace['first_present'] is True and trace['first_error'] == 0
+                            and trace['first_seconds'] == trace['total_seconds']
+                            and isinstance(scan, dict) and scan == empty
+                            and type(scan['complete']) is bool
+                            and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))):
+                        # The responder exists but its identity attributes were
+                        # unavailable. Discard every attribute, including its
+                        # frame; only a new complete query can authorize input.
+                        record['retry_permitted'] = True
                     raise
                 if field is None:
                     raise GuestError('Native focus resolution omitted its reported responder')
@@ -304,7 +315,27 @@ class NativeFocusReader:
             raise GuestError('Native focused-element attributes are incomplete')
         if any(not isinstance(v, dict) or type(v.get('error')) is not int or v['error'] != 0
                or 'value' not in v for v in attributes.values()):
-            raise GuestError('Native focused-element attribute read failed')
+            error = GuestError('Native focused-element attribute read failed')
+            frame = attributes.get('frame')
+            geometry = frame.get('value') if isinstance(frame, dict) else None
+            if (source == 'ax_first_responder'
+                    and all(isinstance(attributes[k], dict)
+                            and set(attributes[k]) == {'error', 'value'}
+                            and type(attributes[k]['error']) is int
+                            and attributes[k]['error'] == -25216
+                            and attributes[k]['value'] is None
+                            for k in ('label', 'value', 'identifier', 'traits'))
+                    and isinstance(frame, dict) and set(frame) == {'error', 'value'}
+                    and type(frame['error']) is int and frame['error'] == 0
+                    and isinstance(geometry, dict) and set(geometry) == {'x', 'y', 'width', 'height'}
+                    and all(type(v) in (int, float) and math.isfinite(v) for v in geometry.values())
+                    and geometry['width'] > 0 and geometry['height'] > 0):
+                # Ownership and restoration were verified above. This exact
+                # completed failure permits discarding the responder and reading
+                # again in resolve mode; it never yields a partially read field.
+                error.native_helper_response = result
+                error.retryable_focus_attributes = True
+            raise error
         field = {k: v['value'] for k, v in attributes.items()}
         if (any(not isinstance(field[k], str) for k in ('label', 'identifier'))
                 or not isinstance(field['value'], (str, int, float)) or isinstance(field['value'], bool)

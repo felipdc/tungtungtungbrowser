@@ -97,6 +97,14 @@ the result before starting a new invocation. Other first-responder failures
 remain terminal and retain their native AX error instead of being reported as
 missing responder-source evidence.
 
+A completed responder whose label, value, identifier and traits all return
+AX `-25216` with null values can also receive one fresh guarded resolution.
+This requires verified ownership and restoration, an otherwise successful
+first-responder query, an empty scan and a valid frame response. Every attribute
+from the failed response is discarded, including the frame. Mixed attribute
+errors, malformed values and invalid geometry remain terminal. Ordinary
+first-responder reads do not gain this retry.
+
 Both invocations must verify the original accessibility settings and process
 identity. Missing replies, failed processes, ambiguous or foreign partial
 results, expired evidence and unrestored state remain terminal. The existing
@@ -479,3 +487,26 @@ parent images and cache. The 10-GiB container recorded 4,482 memory-limit events
 no OOM kill and no CPU throttling. Earlier native product pixels rendered after
 limit events had already begun; the counts do not establish the rendering
 failure's cause. No runtime change was adopted from this batch.
+
+## Completed responder attribute failure (2026-11-09, trial 144)
+
+A targeted session stopped before paste or Return when its first native
+responder query returned the expected process and a frame, but label, value,
+identifier and traits each returned `-25216` with null values. The helper
+completed successfully and restored both switches. A later independent read
+found the editing address field; the original navigation remains failed.
+
+The reader now discards that exact failure and permits one fresh resolution
+within its existing two-query limit. A warm-device diagnostic replaced those
+four attribute replies after an actual successful guarded query. The second,
+unmodified native query returned the complete editing field in 1.16 seconds.
+Navigation sent one Command-L, pasted only after the fresh result, and reached
+the expected fixture URL and condition in 23.86 seconds. Native and display
+captures showed the fixture before any page snapshot; Safari toolbar artifacts
+remained. Owned-tab cleanup completed, with original tab identities preserved
+through 60 seconds of observation.
+
+This validates the bounded response-recovery path with a deliberate host-side
+fault and real native reads. It does not establish cold-start reliability or
+repeatability of the original transient error. The helper binary, query alarms,
+input sequencing and maximum number of queries are unchanged.
