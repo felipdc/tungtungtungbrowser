@@ -418,3 +418,64 @@ rendered the fixture. Cleanup preserved all original tabs through 60 seconds
 of observation. Final independent audits confirmed preservation, restored
 settings and no surviving focus helper. These warm results do not qualify the
 failed first focus or cold startup. No full external-site workflow was repeated.
+
+## First-focus pass and native rendering failure (2026-11-09, trial 141)
+
+The next guest reached foreground readiness in 237.14 seconds. Its original
+test harness failed before opening a connection because it supplied a
+360-second session timeout, above the supported 300-second maximum. The
+corrected, separate case used 240-second transport and 300-second session
+budgets. Its first actual handoff opened on attempt two; a private larger
+attempt cap was not exercised. Extra idle time after the harness error prevents
+attributing this result to a startup fix. Session creation took 117.50 seconds,
+most of it after the successful handoff.
+
+The unchanged public resolver passed the first native focus operation in one
+guarded invocation. After an absent first responder and an unavailable scan,
+a complete scan found no URL control, then the third permitted scan found one
+unique control. Accepted native query time was 8.05 seconds within the existing
+ten-second budget. The helper exited zero and restored both settings. Fresh
+screen and process checks, one tap and a fresh exact editing-URL read preceded
+typing. Native fixture captures immediately and 15 seconds later passed before
+Page.snapshot. Original tabs were preserved through 60 seconds after cleanup.
+
+That targeted gate permitted one full workflow milestone on the same warm
+device, using an exact copy of the published SDK with its public four-attempt
+maximum. Session creation took 16.12 seconds; the two external navigations took
+21.63 and 41.26 seconds. The first page supplied validated product JSON, DOM,
+HTML and a native product image. A later native capture showed its title and
+price after an intervening Page.snapshot, so independent settled rendering is
+not established by that later capture.
+
+The second page passed URL, HTTP, original HTML and rendered HTML checks, but
+both the guest and host screenshots had black page bodies. Page.snapshot showed
+the product while subsequent visible-screen captures remained black. The
+milestone failed before selector-action and timeout checks. A separate passive
+observer sent no input or Page.snapshot and still found black pixels through
+160 seconds after case failure. Separate recovery verified the exact owned
+editing URL, sent its first close key and preserved all original tabs through
+60 seconds of read-only observation. The original workflow remains failed.
+
+A narrow fixture control on the same warm device then created in 14.96 seconds
+and navigated in 22.59 seconds. Its initial and both post-navigation native
+captures were also black before Page.snapshot, which rendered the fixture.
+This failure therefore persisted beyond the external page. Its first close
+removed the owned Inspector page, but the database changed between the two
+post-close copies: one retained the owned row and the next omitted it. Both
+preserved every original tab. The harness's identical-copy assertion failed;
+that failure and both copies are retained, with subsequent observation sending
+no additional close key.
+
+All five later observations had matching database copies containing exactly the
+original tabs, from 89 through 149 seconds after that close. A future harness
+can classify an in-progress deletion separately from tab loss, while still
+requiring every original in each valid copy and full removal at the final
+deadline. This does not turn the original failed audit into a pass. The current
+rendering failure and repeatable cold startup remain unresolved.
+
+Final independent audits found restored settings, no focus helper and exactly
+the original tabs. The guest stopped cleanly in 7.68 seconds with unchanged
+parent images and cache. The 10-GiB container recorded 4,482 memory-limit events,
+no OOM kill and no CPU throttling. Earlier native product pixels rendered after
+limit events had already begun; the counts do not establish the rendering
+failure's cause. No runtime change was adopted from this batch.
