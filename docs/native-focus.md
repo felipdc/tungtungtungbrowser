@@ -362,8 +362,9 @@ The first focus operation on the next boot returned AX `-25215` with no element.
 The process completed, its guard restored off/off settings, and its trace
 reported only the failed first-responder query. The previous reader rejected
 that legitimate error trace as missing responder-source evidence. Navigation
-stopped after one Command-L, before tap, text or Return. Separate verified
-recovery closed only the owned tab; the original failure remains recorded.
+stopped after one Command-L, before tap, text or Return. Separate recovery's
+immediate listing showed the owned tab gone and the original present; the
+later preservation failure is recorded below.
 
 The reader now preserves such native errors and permits one fresh query for
 the observed restored `-25215` case, within the existing two-invocation limit.
@@ -395,3 +396,25 @@ immediate owned-page disappearance does not qualify sustained cleanup. The
 isolated parent image is unchanged. The batch reached its 10-GiB memory limit
 with 1,509 limit events and no OOM kill; this does not establish the cause of
 the tab or rendering failures.
+
+## First focus and settled cleanup (2026-11-09, trial 140)
+
+The next boot's first focus still failed. A restored partial scan permitted
+the second guarded query, which completed three scans but found no URL control.
+Navigation stopped after one Command-L, before tap, text or Return. The native
+capture also lacked an address bar. Cold Inspector startup had already failed
+at its shared 120-second deadline; increasing a private attempt limit did not
+resolve it.
+
+Separate recovery verified the exact owned editing address and sent one close
+key. Inspector reported disappearance before the database reflected removal.
+Later read-only samples preserved every original tab through 114 seconds after
+that close. No input was repeated. An immediate persisted-row assertion was
+too strict; the original failed assertion remains in the evidence.
+
+A distinct warm fixture control created in 18.77 seconds and navigated in
+21.22 seconds. Both native captures, taken before Page.snapshot, visibly
+rendered the fixture. Cleanup preserved all original tabs through 60 seconds
+of observation. Final independent audits confirmed preservation, restored
+settings and no surviving focus helper. These warm results do not qualify the
+failed first focus or cold startup. No full external-site workflow was repeated.
