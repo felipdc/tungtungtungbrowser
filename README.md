@@ -205,6 +205,10 @@ after keyboard layout changes and has a separate native build and installer.
 The SDK does not fall back to the daemon's flat UI-tree API, which can leave
 system accessibility and automation switches enabled.
 
+An optional [native navigation key helper](docs/native-keyboard.md) dispatches
+each chord's release before its settling pause and records dispatch timing.
+It has a separate build and installer and is selected through `Guest`.
+
 The optional [Inspector API](docs/inspector-api.md) provides rendered HTML,
 attached/detached selector waits, verified CSS/XPath DOM focus and native
 request/response observation, including response bodies. Experimental

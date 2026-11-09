@@ -101,11 +101,16 @@ def contact_hold_ms(value):
 
 
 class Guest:
-    def __init__(self, cid=3, timeout=30, connection_factory=None, *, touch_helper_sha256=None):
+    def __init__(self, cid=3, timeout=30, connection_factory=None, *, touch_helper_sha256=None,
+                 keyboard_helper_sha256=None):
         if touch_helper_sha256 is not None:
             from .native_touch import helper_path
             helper_path(touch_helper_sha256)
         self.touch_helper_sha256 = touch_helper_sha256
+        if keyboard_helper_sha256 is not None:
+            from .native_keyboard import helper_path
+            helper_path(keyboard_helper_sha256)
+        self.keyboard_helper_sha256 = keyboard_helper_sha256
         self.connection_factory = connection_factory or (lambda: VsockHTTPConnection(cid, timeout))
 
     def request(self, method, path, data=None):
@@ -152,6 +157,11 @@ class Guest:
     def call(self, method, **params):
         if method not in ALLOWED_METHODS:
             raise ValueError(f"Native browser controller does not support {method!r}")
+        if method == 'input.key' and getattr(self, 'keyboard_helper_sha256', None) is not None:
+            from .native_keyboard import press_key
+            if set(params) != {'name'}:
+                raise ValueError('Native navigation key requires only name')
+            return press_key(self, self.keyboard_helper_sha256, params['name'])
         if method == "logs.syslog":
             params = log_options(**params)
         if method == "notify.state" and (set(params) != {"name"}

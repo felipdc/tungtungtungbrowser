@@ -41,6 +41,12 @@ Do not count successful DOM conditions or screenshot file creation as a visual
 pass. Retain the roughly 300-second cold-start budget while working on these
 failures; reducing the startup number is not the current optimization target.
 
+Use targeted checks for each fix and keep the guest warm during a batch.
+Reserve the full workflow for milestones after startup, native focus, visible
+pixels and owned-tab preservation pass. The optional
+[native navigation key helper](native-keyboard.md) passed warm navigation and
+cleanup checks; the subsequent cold native focus alarm remains unresolved.
+
 ## Runtime baseline and recorded experiments
 
 The recorded runtime targets are reliable cold startup, responsive use of warmed

@@ -1,5 +1,13 @@
 # Native diagnostics and workarounds
 
+## Navigation keyboard helper
+
+`keyboard_helper.c` preallocates a supported navigation chord and dispatches all
+releases before its settling pause. The [guide](../docs/native-keyboard.md)
+covers the separate build, verified installation, Python selection and native
+validation limits. `check_keyboard_helper.c` checks the dispatch lifecycle with
+host mocks; the targeted Python tests also exercise uncertain result handling.
+
 ## Inspector session bridge
 
 `inspector_bridge.c` owns a local native Web Inspector service and carries its
