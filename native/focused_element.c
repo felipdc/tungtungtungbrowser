@@ -4,6 +4,7 @@
  * This process sends no UI input and never executes in a page.
  */
 #include "focus_guard.h"
+#include "focus_deadline.h"
 #include "address_field.h"
 #include "focus_resolution.h"
 
@@ -43,7 +44,7 @@ static void print_resolution(const struct FocusResolution *r) {
 int main(int argc,char **argv){
  if(!focus_guard_reset_signals())return 13;
  int guard_mode=argc==2&&!strcmp(argv[1],"guard");
- if(!guard_mode)alarm(20);
+ if(!guard_mode)focus_deadline_setup();
  signal(SIGPIPE,SIG_IGN);
  int check=argc==2&&!strcmp(argv[1],"check");
  int address_mode=argc==3&&!strcmp(argv[1],"address");
@@ -79,9 +80,10 @@ int main(int argc,char **argv){
   if(!finder.array_type||!finder.count||!finder.at||!finder.retain||!disabled||!*disabled)return 5;
   disabled_trait=*disabled;
  }
- if(check){printf("{\"protocol\":1,\"status\":\"ready\",\"ui_input_sent\":false,\"ax_queried\":false,\"address_resolution\":\"guarded-v1\"}\n");fflush(0);return 0;}
+ if(check){printf("{\"protocol\":1,\"status\":\"ready\",\"ui_input_sent\":false,\"ax_queried\":false,\"address_resolution\":\"guarded-v1\",\"query_timing\":\"phased-v1\"}\n");fflush(0);return 0;}
  struct FocusGuardState initial={0},restored={0};
  if(!focus_guard_begin(&guard,&initial))return 9;
+ focus_deadline_query();
  Boolean beforeApp=initial.before_app,beforeAuto=initial.before_auto;
  if(client)client(2);if(override)override(2);
  CF root=create(pid),focused=0;int e=-1;struct FocusResolution resolution={0};
@@ -102,6 +104,7 @@ int main(int argc,char **argv){
   unsigned keys[]={2001,2006,5019,2004,2003};const char*names[]={"label","value","identifier","traits","frame"};for(unsigned i=0;i<5;i++){if(i)printf(",");quoted(names[i]);printf(":");attr(focused,keys[i]);}printf("}}");
  }else printf("null");
  if(focused)release(focused);if(root)release(root);
+ focus_deadline_restore();
  int complete=focus_guard_finish(&guard,&restored);
  complete=complete&&restored.before_app==beforeApp&&restored.before_auto==beforeAuto
    &&restored.after_app==beforeApp&&restored.after_auto==beforeAuto;

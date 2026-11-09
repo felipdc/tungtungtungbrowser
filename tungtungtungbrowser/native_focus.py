@@ -38,6 +38,7 @@ class NativeFocusReader:
         self.last_resolution = None
         self.last_resolution_attempts = []
         self.supports_address_resolution = False
+        self._query_script_timeout = 30
 
     @classmethod
     def from_deployment(cls, guest, path, *, max_read_attempts=2):
@@ -57,7 +58,8 @@ class NativeFocusReader:
 
     def _invoke(self, arguments):
         source = 'proc.run(' + json.dumps(self.path) + ', ' + json.dumps(arguments) + ', "")'
-        answer = self.guest._rpc('script.eval', source=source, timeout=30)
+        script_timeout = 30 if arguments == ['check'] else self._query_script_timeout
+        answer = self.guest._rpc('script.eval', source=source, timeout=script_timeout)
         error = GuestError('Native focus helper did not complete successfully')
         error.native_script_response = answer
         if (not isinstance(answer, dict) or answer.get('ok') is not True
@@ -82,9 +84,11 @@ class NativeFocusReader:
         expected = {'protocol': 1, 'status': 'ready', 'ui_input_sent': False, 'ax_queried': False}
         if (not isinstance(result, dict) or type(result.get('protocol')) is not int
                 or result.get('ui_input_sent') is not False or result.get('ax_queried') is not False
-                or result not in (expected, {**expected, 'address_resolution': 'guarded-v1'})):
+                or result not in (expected, {**expected, 'address_resolution': 'guarded-v1'},
+                              {**expected, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1'})):
             raise GuestError('Native focus helper returned invalid capability evidence')
         self.supports_address_resolution = result.get('address_resolution') == 'guarded-v1'
+        self._query_script_timeout = 60 if result.get('query_timing') == 'phased-v1' else 30
         return result
 
     def check(self):

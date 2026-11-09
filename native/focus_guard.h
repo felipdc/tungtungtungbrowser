@@ -197,8 +197,8 @@ static int focus_guard_finish(struct FocusGuard *guard, struct FocusGuardState *
     focus_guard_trace.finish_write = write(guard->input, "D", 1);
     focus_guard_trace.finish_errno = focus_guard_trace.finish_write < 0 ? focus_guard_errno : 0;
     close(guard->input); guard->input = -1;
-    /* Slow native preference restoration can outlast four seconds. Keep the
-     * query process alarm as the overall bound while awaiting its final frame. */
+    /* Slow native preference restoration can outlast four seconds. The caller arms its
+     * restoration alarm before entering this function, covering receive and reap. */
     focus_guard_trace.finish_received = focus_guard_trace.finish_write == 1
         && focus_guard_receive(guard->output, state, sizeof(*state), 10000);
     focus_guard_trace.finish_read = focus_guard_last_read;

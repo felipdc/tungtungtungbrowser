@@ -49,3 +49,45 @@ class FocusCapabilityTests(unittest.TestCase):
                 with self.assertRaises(GuestError):
                     reader._accept_check(check)
                 self.assertFalse(reader.supports_address_resolution)
+
+    def test_phase_capability_selects_execution_deadline_without_changing_http_timeout(self):
+        from test_native_focus import native_result
+        from tungtungtungbrowser.guest import Guest
+        for check, timeout in [(READY, 30), ({**READY, 'address_resolution': 'guarded-v1'}, 30),
+                               ({**READY, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1'}, 60)]:
+            with self.subTest(check=check):
+                reader = self.deployment(check)
+                reader.guest = Guest(timeout=7)
+                factory = reader.guest.connection_factory
+                self.assertEqual(factory().timeout, 7)
+                reader.guest._rpc = Mock()
+                reader.guest._rpc.return_value = answer(native_result())
+                self.assertEqual(reader(301)['pid'], 301)
+                self.assertEqual(reader.guest._rpc.call_args.kwargs['timeout'], timeout)
+                self.assertIs(reader.guest.connection_factory, factory)
+                self.assertEqual(reader.guest.connection_factory().timeout, 7)
+                reader.guest._rpc.return_value = answer(check)
+                reader.check()
+                self.assertEqual(reader.guest._rpc.call_args.kwargs['timeout'], 30)
+
+    def test_unknown_or_incomplete_timing_capability_is_rejected(self):
+        for fields in [{'query_timing': 'phased-v1'},
+                       {'address_resolution': 'guarded-v1', 'query_timing': 'phased-v2'},
+                       {'address_resolution': 'guarded-v1', 'query_timing': 60},
+                       {'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1', 'extra': True}]:
+            with self.subTest(fields=fields):
+                with self.assertRaises(GuestError):
+                    self.deployment({**READY, **fields})
+
+    def test_phase_deadline_does_not_retry_a_failed_process_or_missing_reply(self):
+        check = {**READY, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1'}
+        process_failure = {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps({
+            'status': -1, 'signal': 14, 'stderr': '', 'stdout': ''})}
+        for reply in [process_failure, GuestError('caller HTTP timeout')]:
+            with self.subTest(reply=reply):
+                reader = self.deployment(check)
+                reader.guest._rpc.side_effect = [reply, answer(READY)]
+                with self.assertRaises(GuestError):
+                    reader.resolve_address_field(301)
+                reader.guest._rpc.assert_called_once()
+                self.assertEqual(reader.last_resolution_attempts[0]['status'], 'failed')

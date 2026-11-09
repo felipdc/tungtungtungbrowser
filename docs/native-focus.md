@@ -46,7 +46,7 @@ prepared guest's administrative daemon and supported platform entitlements.
 from tungtungtungbrowser import Browser, NativeFocusReader
 from tungtungtungbrowser.guest import Guest
 
-guest = Guest(cid=3, timeout=60)
+guest = Guest(cid=3, timeout=70)
 reader = NativeFocusReader.from_deployment(
     guest, "/absolute/external/focus-deployment/install.json"
 )
@@ -124,8 +124,9 @@ must satisfy the ordinary ten-second accepted-query budget.
 Both invocations must verify the original accessibility settings and process
 identity. Missing replies, failed processes, ambiguous or foreign partial
 results, expired field data and unrestored state remain terminal. The existing
-two-invocation limit, 20-second query alarm and 22-second guard command wait
-are unchanged. These bounds do not extend a caller's deadline.
+two-invocation limit and 22-second guard command wait are unchanged. Each
+invocation now has separate caller phase alarms, described below; these do not
+extend a caller's HTTP timeout or an enclosing session deadline.
 
 A targeted warm test explicitly substituted a previously recorded, restored
 budget failure for the first successfully completed native reply, preserving
@@ -142,9 +143,51 @@ alarm during restoration. Automation enable took 13.7 seconds; native reads
 finished and restoration began 19.55 seconds after process entry. The caller
 was terminated, while the independent guard completed restoration at 21.13
 seconds. A separate audit confirmed restored settings and no remaining helpers.
-The current 20-second alarm covers setup, query and restoration together. This
-failed process supplies no usable result and does not enter the completed-error
-recovery above. Separating those timing budgets remains unvalidated work.
+That build used one 20-second alarm for setup, query and restoration together.
+The failed process supplies no usable result and does not enter the completed-error
+recovery above.
+
+The current helper gives setup 20 seconds, rearms a 20-second query alarm only
+after the guard acknowledges enablement, and arms a ten-second restoration alarm
+before receiving the final frame and reaping the guard. This explicitly raises
+the caller's total nominal allowance to at most 50 seconds. The independent guard
+has no process alarm and can outlive the caller to restore settings. A hung
+setup, query, restoration receive or child reap still terminates the caller.
+The accepted native resolution budget remains ten seconds, with unchanged
+250 ms messaging timeouts and bounded scans.
+
+The capability check advertises `query_timing: "phased-v1"`. A reader that verifies
+this capability uses a 60-second administrative `script.eval` execution deadline
+for queries; capability checks and older helpers retain 30 seconds. Use
+`from_deployment` with the new installation record or call `check()` on a direct
+reader. The reader never changes `Guest`'s HTTP timeout. Configure it explicitly
+(for example, `Guest(timeout=70)`) to allow the complete execution window and
+response delivery; a shorter caller deadline remains in effect. A timed-out
+request or failed native process is never replayed.
+
+Linux lifecycle tests use the production guard and phase-alarm code with scaled
+alarms and file-backed preferences. Slow setup/query/restoration work terminates
+under the old shared alarm and succeeds with separate alarms. Deliberately hung
+setup, query, restoration and reap all terminate the caller while the independent
+guard restores settings. The tests also cover an inherited blocked/ignored alarm
+and the distinction between execution and HTTP timeouts.
+
+A controlled warm native comparison added the same fixed delays to both builds:
+eight seconds in setup, eight before query work and five before restoration.
+The shared-alarm control terminated at 20.38 seconds during restoration; the
+phased candidate completed in 21.91 seconds with a verified owned editing field.
+Independent audits found both settings restored and no remaining helpers after
+each case. The deliberately delayed builds are private validation artifacts;
+the production helper contains no injected delays or attribute batching.
+
+The uninstrumented candidate then opened a warm session in 19.62 seconds and
+navigated in 23.23 seconds. URL, HTTP response, rendered HTML and native JPEGs
+immediately and fifteen seconds later passed. Original owned-tab cleanup and
+sixty-second preservation of the existing tabs also passed. Cold reliability remains open:
+the first focus attempt on the fresh guest returned restored, completed queries
+but no owned URL field, so no text or Return was sent. That run also had a fixture
+transfer pause before helper installation and is not an uninterrupted cold timing
+comparison. The full external-site workflow was not repeated for this fix.
 
 A returned first responder must be Safari's URL field. If it is already editing,
 the browser proceeds to URL verification. A discovered control is not proof of
@@ -353,8 +396,8 @@ change does not increase that restoration-reply timeout or qualify rendering.
 
 
 A separate restoration-reply fix increases only the final pipe receive window
-from four to ten seconds. The main query alarm remains 20 seconds and the
-guard command wait remains 22 seconds; the latter is not a hard process
+from four to ten seconds. At that stage the main query alarm remained 20 seconds
+and the guard command wait remained 22 seconds; the latter is not a hard process
 deadline because the guard must restore settings. A full valid restoration
 frame and clean guard exit are still required. No browser input is retried.
 
