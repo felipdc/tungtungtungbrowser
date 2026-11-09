@@ -87,7 +87,7 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 2)
 
     async def test_exhaustion_and_opt_out_preserve_failure(self):
-        for rejection, attempts in ((r, n) for r in (INTERRUPTED, ACK_TIMEOUT) for n in (1, 3)):
+        for rejection, attempts in ((r, n) for r in (INTERRUPTED, ACK_TIMEOUT) for n in (1, 3, 4)):
             with self.subTest(reason=rejection['handoff_error'], attempts=attempts):
                 before = len(self.connections)
                 self.replies.extend([rejection] * attempts)
@@ -121,6 +121,29 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
         await transport.close()
         await asyncio.gather(*self.handlers)
         self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 3)
+
+    async def test_explicit_fourth_attempt_requires_three_completed_rejections(self):
+        self.replies = [INTERRUPTED, ACK_TIMEOUT, INTERRUPTED, OPENED]
+        transport = self.transport(max_open_attempts=4)
+        await transport.open()
+        self.assertEqual([r['status'] for r in transport.handoff_attempts],
+                         ['rejected', 'rejected', 'rejected', 'opened'])
+        await transport.close()
+        await asyncio.gather(*self.handlers)
+        self.assertEqual(self.connections, [{'command': b'open\n', 'tail': b''}] * 4)
+
+    async def test_fourth_attempt_retains_identity_and_shared_deadline(self):
+        self.replies = [ACK_TIMEOUT] * 3 + [OPENED | {'pid': 99}]
+        transport = self.transport(max_open_attempts=4)
+        with self.assertRaisesRegex(InspectorError, 'Invalid native Inspector handoff'):
+            await transport.open()
+        self.assertEqual(len(transport.handoff_attempts), 4)
+        self.assertFalse(self.services)
+        self.replies.append(None)
+        transport = self.transport(max_open_attempts=4, timeout=.05)
+        with self.assertRaises(TimeoutError): await transport.open()
+        self.assertEqual(len(transport.handoff_attempts), 1)
+        self.assertTrue(transport.closed)
 
     async def test_legacy_unknown_and_other_rejections_are_not_retried(self):
         for reason in (None, 'unknown', 'connection_invalid',
@@ -179,7 +202,7 @@ class HandoffRecoveryTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(InspectorError, 'Invalid native Inspector handoff'):
                 await transport.open()
             self.assertEqual(len(transport.handoff_attempts), 1)
-        for attempts in (0, 4, True, 1.0, None):
+        for attempts in (0, 5, True, 1.0, None):
             with self.assertRaises(ValueError):
                 self.transport(max_open_attempts=attempts)
 

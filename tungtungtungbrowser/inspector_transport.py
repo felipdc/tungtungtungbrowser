@@ -43,8 +43,8 @@ class InspectorTransport:
     def __init__(self, *, cid=3, timeout=30, bridge_socket=None, max_open_attempts=3):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 300:
             raise ValueError('timeout must be between 0 and 300 seconds')
-        if type(max_open_attempts) is not int or not 1 <= max_open_attempts <= 3:
-            raise ValueError('max_open_attempts must be an integer between 1 and 3')
+        if type(max_open_attempts) is not int or not 1 <= max_open_attempts <= 4:
+            raise ValueError('max_open_attempts must be an integer between 1 and 4')
         self.timeout = timeout
         self.max_open_attempts = max_open_attempts
         self.handoff_attempts = []

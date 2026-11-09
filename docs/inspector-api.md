@@ -488,8 +488,9 @@ The first native trial of this ordering still failed before client check-in,
 while the service was initializing application metadata. It does not extend or
 disable the service's deadline, and is not sufficient to qualify reliability.
 
-`InspectorTransport` allows at most three connection attempts, separated by
-250 ms. During bridge handoff it retries only when the bridge explicitly reports
+`InspectorTransport` defaults to three connection attempts, separated by
+250 ms. Set `max_open_attempts=4` to permit one additional attempt within the
+same transport deadline; supported limits are one through four. During bridge handoff it retries only when the bridge explicitly reports
 `open_failed` with `handoff_error: connection_interrupted` or
 `handoff_error: acknowledgment_timeout`. Both complete replies follow closure
 of the native stream and cancellation of its XPC connection, before any
@@ -514,6 +515,8 @@ or later disconnect remains terminal.
 Tab creation, navigation and page commands are never replayed by this recovery.
 
 Use `InspectorTransport(max_open_attempts=1)` to disable this setup recovery.
+An optional fourth attempt may require an explicitly larger transport and
+session timeout; raising the attempt limit does not extend either deadline.
 `transport.handoff_attempts` retains each bridge attempt's status, error category
 and duration, including failed attempts when a later connection succeeds. An
 opened stream that ends before its initial plist reply also records
@@ -1179,3 +1182,27 @@ candidate failed its first complete six-element scan before input, then failed
 editing-focus verification after its cleanup tap. A later explicit Command-L
 recovery closed that owned tab. Those failures remain failures; the private
 focus candidate is not included in this change.
+
+### Optional fourth startup attempt (2026-11-09, trial 135)
+
+Two first-cold-session checks exhausted the three-attempt default. In the latter
+check, native service logs recorded shutdown before client check-in; the final
+control reply was still pending when the 60-second session budget expired.
+A later read-only reconciliation confirmed that handoff had terminated. The
+original session remained failed, and no tab or browser input was replayed.
+
+A controlled comparison on one warm guest then forced three completed native
+acknowledgment-timeout rejections per case. The default exhausted its three
+attempts in 78.29 seconds. With `InspectorTransport(timeout=120,
+max_open_attempts=4)` and a 240-second session budget, the fourth attempt
+succeeded on the same bridge PID and guest boot. Session creation took 100.45
+seconds. The exact fixture URL, rendered HTML, DOM condition, and native screen
+image were verified; original cleanup closed only the owned tab in 14.57
+seconds. These explicitly configured deadlines applied to the comparison;
+default attempt counts and timeouts remain unchanged.
+
+This validates recovery after completed native rejections in that controlled
+case. Missing replies, identity changes, exhausted deadlines, and failures after
+page commands remain terminal. Cold startup and first native address-field
+focus still require further validation; this trial did not run the full
+external-site workflow.
