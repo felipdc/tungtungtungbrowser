@@ -78,6 +78,12 @@ in recordings or screenshots while the action runs.
   native contact already in flight. Cleanup can therefore extend beyond the
   action timeout. An unacknowledged restoration is retained in `cleanup_errors`
   and makes the session unusable until it is closed.
+- Before any contact, a screenshot connection that fails while awaiting HTTP
+  headers permits one fresh screenshot read within the original action deadline.
+  The document and Safari foreground identity are checked again first. The
+  allowance is shared by both highlight captures; a second failure is terminal.
+  Other transport phases, malformed images and native contacts are not retried.
+  The action result records `capture_read_retries`.
 - A selector match, successful input acknowledgement or `isTrusted` event alone
   does not establish a working application flow or physical-device equivalence.
   Validate response data, DOM changes, screenshots and session cleanup together.
@@ -114,3 +120,24 @@ document, before any native foreground read, screenshot or contact. Its two
 owned tabs closed successfully. This verifies no input for that suspended-page
 case; it does not qualify highlight discrimination for a background page that
 continues answering Inspector requests.
+
+### Disconnected highlight capture (2026-11-11)
+
+A cold session exhausted a 60-second click deadline during the selection
+contact after a 38-second foreground check. The contact finished and released;
+no real click followed, and Inspector mode was restored. A separate warm trial
+with a 120-second deadline failed when the guest closed the first highlight
+screenshot connection before returning HTTP headers. No contact was sent in
+that warm attempt. Neither failure was caused by a recorded container memory
+limit event, CPU quota throttling, renderer execution fault or GPU restart; the
+underlying reason for the disconnected guest response remains unconfirmed.
+
+The bounded screenshot read above addresses this pre-contact failure without
+repeating input. Protocol tests cover either highlight, the shared retry limit,
+changed document/foreground, cancellation and terminal failures in other
+transport phases. A separate warm diagnostic deliberately discarded one valid
+native capture response to exercise the path: its click completed in 16.7
+seconds, followed by native address navigation in 32.9 seconds. Native and host
+images showed the click result and settled fixture. This is an explicit fault
+injection result, not a naturally recovered transport failure or a fresh cold
+qualification. The two original failed attempts remain failed.

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from test_inspector_focus import focused_session
 from tungtungtungbrowser.inspector import DocumentChangedError, InspectorError
+from tungtungtungbrowser.guest import GuestTransportError
 from tungtungtungbrowser.pointer import PointerGeometryError
 
 try:
@@ -120,6 +121,104 @@ class InspectorClickTests(unittest.IsolatedAsyncioTestCase):
             await session.click('button')
         self.assertEqual(self.inputs, [])
         self.assertIn('DOM.hideHighlight', [m for m, _ in self.commands])
+
+    async def test_disconnected_capture_gets_one_fresh_read_before_any_contact(self):
+        for failed_capture in (1, 2):
+            session = self.fixture()
+            original = session.browser.guest.call
+            captures = []
+            def capture(method):
+                if method == 'screen.screenshot':
+                    captures.append(method)
+                    self.assertEqual(self.inputs, [])
+                    if len(captures) == failed_capture:
+                        raise GuestTransportError('receive_headers', OSError('peer closed'))
+                return original(method)
+            session.browser.guest.call = capture
+            result = await session.click('button')
+            self.assertEqual(len(captures), 3)
+            self.assertEqual(result['capture_read_retries'], 1)
+            self.assertEqual(self.operations.count('apps.foreground'), 2)
+            self.assertEqual(len(self.inputs), 2)
+
+    async def test_capture_retry_exhaustion_restores_highlight_without_contact(self):
+        for failures in ((1, 2), (1, 3)):
+            session = self.fixture()
+            original = session.browser.guest.call
+            captures = []
+            def capture(method):
+                if method == 'screen.screenshot':
+                    captures.append(method)
+                    if len(captures) in failures:
+                        raise GuestTransportError('receive_headers', OSError('peer closed'))
+                return original(method)
+            session.browser.guest.call = capture
+            with self.assertRaises(GuestTransportError):
+                await session.click('button')
+            self.assertEqual(len(captures), failures[-1])
+            self.assertEqual(self.inputs, [])
+            self.assertIn('DOM.hideHighlight', [m for m, _ in self.commands])
+
+    async def test_capture_retry_requires_unchanged_document_and_foreground(self):
+        for changed in ('document', 'foreground'):
+            session = self.fixture()
+            original = session.browser.guest.call
+            captures = []
+            def capture(method):
+                if method == 'screen.screenshot':
+                    captures.append(method)
+                    if changed == 'document':
+                        self.loop.call_soon_threadsafe(session._event, 'page-a', {'method': 'DOM.documentUpdated'})
+                    else:
+                        self.foreground['pid'] = 8
+                    raise GuestTransportError('receive_headers', OSError('peer closed'))
+                return original(method)
+            session.browser.guest.call = capture
+            with self.assertRaises(InspectorError):
+                await session.click('button')
+            self.assertEqual(len(captures), 1)
+            self.assertEqual(self.inputs, [])
+
+    async def test_capture_failure_in_other_transport_phases_is_terminal(self):
+        for phase in ('connect', 'send_request', 'read_body'):
+            session = self.fixture()
+            original = session.browser.guest.call
+            captures = []
+            def capture(method):
+                if method == 'screen.screenshot':
+                    captures.append(method)
+                    raise GuestTransportError(phase, OSError('transport failure'))
+                return original(method)
+            session.browser.guest.call = capture
+            with self.assertRaises(GuestTransportError):
+                await session.click('button')
+            self.assertEqual(len(captures), 1)
+            self.assertEqual(self.inputs, [])
+
+    async def test_cancelled_retry_foreground_read_cannot_capture_or_touch(self):
+        session = self.fixture()
+        original = session.browser.guest.call
+        started, release = threading.Event(), threading.Event()
+        captures = []
+        def capture(method):
+            if method == 'screen.screenshot':
+                captures.append(method)
+                raise GuestTransportError('receive_headers', OSError('peer closed'))
+            if captures and method == 'apps.foreground':
+                started.set()
+                release.wait(2)
+            return original(method)
+        session.browser.guest.call = capture
+        task = asyncio.create_task(session.click('button'))
+        await asyncio.to_thread(started.wait, 1)
+        self.assertTrue(started.is_set())
+        task.cancel()
+        release.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(len(captures), 1)
+        self.assertEqual(self.inputs, [])
+        self.assertFalse(session._native_tasks)
 
     async def test_selection_timeout_restores_mode_and_does_not_click(self):
         session = self.fixture(selection=False)

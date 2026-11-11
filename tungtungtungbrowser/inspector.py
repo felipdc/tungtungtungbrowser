@@ -9,7 +9,7 @@ import json
 import time
 import uuid
 
-from .guest import web_url
+from .guest import GuestTransportError, web_url
 from .browser import _expected_address, _native_address_key
 from .inspector_transport import InspectorError, InspectorTransport
 from .page_capture import MAX_PAGE_IMAGE_BYTES, PageScreenshot, decode_page_png
@@ -891,7 +891,14 @@ class InspectorSession:
             state = {'target': self.target_id, 'ancestry': NodeAncestry(), 'selection': None}
             self._pointer_state = state
             highlight_requested = mode_requested = False
+            capture_read_retries = 0
             target = None
+            async def verify_foreground():
+                foreground = await self._run_native(self.browser.guest.call, 'apps.foreground')
+                if (not isinstance(foreground, dict) or foreground.get('verified') is not True
+                        or foreground.get('bundle_id') != SAFARI
+                        or type(foreground.get('pid')) is not int or foreground['pid'] != self._app.pid):
+                    raise InspectorError('Inspected Safari process is not in the foreground; input not sent')
             try:
                 target, generation, node = await self._resolve_selector(selector, strategy=strategy, strict=True)
                 if node is None:
@@ -901,11 +908,7 @@ class InspectorSession:
                 if (properties.get('nodeId') != node or properties.get('exists') is not True
                         or any(properties.get(k) is True for k in ('disabled', 'hidden', 'ignored'))):
                     raise InspectorError('Selector is absent, disabled, hidden or ignored; input not sent')
-                foreground = await self._run_native(self.browser.guest.call, 'apps.foreground')
-                if (not isinstance(foreground, dict) or foreground.get('verified') is not True
-                        or foreground.get('bundle_id') != SAFARI
-                        or type(foreground.get('pid')) is not int or foreground['pid'] != self._app.pid):
-                    raise InspectorError('Inspected Safari process is not in the foreground; input not sent')
+                await verify_foreground()
                 self._same_document(target, generation)
                 colors, images = highlight_colors(), []
                 for color in colors:
@@ -913,7 +916,19 @@ class InspectorSession:
                     await self._command('DOM.highlightNode', target=target, nodeId=node,
                                         highlightConfig={'contentColor': dict(zip(('r', 'g', 'b', 'a'), (*color, 1)))})
                     await asyncio.sleep(_POINTER_SETTLE_SECONDS)
-                    image = await self._run_native(self.browser.guest.call, 'screen.screenshot')
+                    try:
+                        image = await self._run_native(self.browser.guest.call, 'screen.screenshot')
+                    except GuestTransportError as error:
+                        if error.phase != 'receive_headers' or capture_read_retries:
+                            raise
+                        # A disconnected read before any contact can obtain one
+                        # fresh image within the original action deadline. Never
+                        # reuse partial bytes or retry selection/action input.
+                        self._same_document(target, generation)
+                        await verify_foreground()
+                        self._same_document(target, generation)
+                        capture_read_retries += 1
+                        image = await self._run_native(self.browser.guest.call, 'screen.screenshot')
                     images.append(Screenshot.from_native(image))
                     self._same_document(target, generation)
                 try:
@@ -955,6 +970,7 @@ class InspectorSession:
                 return {'method': 'native_selector_touch', 'node_id': node, 'hit_node_id': hit,
                         'strategy': strategy, 'x': point['x'], 'y': point['y'],
                         'selection_touch_dispatched': True, 'click_dispatched': True,
+                        'capture_read_retries': capture_read_retries,
                         'page_result_verified': False}
             finally:
                 # Restore native UI modes even on timeout, caller cancellation,

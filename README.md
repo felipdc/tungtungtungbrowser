@@ -197,6 +197,7 @@ resulting `/vm/launch.json` when comparing runs.
 | Native guest RPC | 120 seconds in `BrowserProfile` |
 | Inspector session / transport | 300 / 240 seconds; at most 4 bounded initial handoff attempts |
 | Native input | 5-second settling interval, explicit `touch_hold_ms=0` |
+| Selector clicks | Pass `timeout=120` explicitly; response expectations around the action should allow at least 180 seconds |
 
 The memory allowances overlap: shared memory is charged to the container's
 memory limit, not an extra 6 GiB allocation. These are tested starting settings,
@@ -204,6 +205,14 @@ not guaranteed minima or deadlines for the complete workflow. Action and
 condition methods retain their own timeout arguments, generally 30 seconds;
 pass longer deadlines explicitly for slow emulation. `BrowserProfile` leaves
 the default `Browser` and `InspectorSession` constructors unchanged.
+
+Session deadlines do not override individual action deadlines. A cold trial's
+foreground check took 38 seconds; its 60-second CSS action then expired during
+native element selection, before the actual click. The SDK waited for the
+in-flight contact to finish and restored Inspector mode. Do not replay a timed
+out action automatically: inspect its evidence first. The example below uses
+120 seconds for clicks and 180 seconds for their request/response expectations;
+an expectation's clock starts on entry and includes the action itself.
 
 The successful workflow additionally used the optional patched QEMU
 `14c9913d` experiment with **`VPHONE_NATIVE_FP=1`, `QEMU_TLB_UNSYNCED=0`**.
@@ -409,15 +418,15 @@ async def main():
         (output / 'rendered.html').write_text(rendered)
 
         # Register before clicking so a fast request is not missed.
-        async with page.expect_request('*api-fixture-data.json', timeout=120) as request, \
-                page.expect_response('*api-fixture-data.json', timeout=120) as response:
-            await page.click('#load-data', timeout=90)
+        async with page.expect_request('*api-fixture-data.json', timeout=180) as request, \
+                page.expect_response('*api-fixture-data.json', timeout=180) as response:
+            await page.click('#load-data', timeout=120)
         assert response.value.status == 200
         payload = await response.value.json(timeout=120)
         assert payload['item']['id'] == 'fixture-item'
         await page.wait_for_selector('#state[data-response="200"]', timeout=120)
 
-        await page.click("//button[@id='record-click']", strategy='xpath', timeout=90)
+        await page.click("//button[@id='record-click']", strategy='xpath', timeout=120)
         await page.wait_for_selector('#state[data-clicked="true"]', timeout=120)
         await page.screenshot(output / 'device.jpg')
 
@@ -474,7 +483,7 @@ XPath can currently appear as no match.
 | Rendered HTML | `await page.content()` serializes the current DOM; it is different from the original response. |
 | Lookup | `query_selector(selector, strategy='css')`; returns first node ID or `None`. |
 | Conditions | `wait_for_selector(..., state='attached'/'detached')`; presence is not visibility. `wait_for_url()` accepts a case-sensitive URL glob. |
-| CSS/XPath action | `click(..., timeout=90)` uses native touch. `focus()` uses native DOM focus and does not establish keyboard ownership. |
+| CSS/XPath action | `click(..., timeout=120)` uses native touch. `focus()` uses native DOM focus and does not establish keyboard ownership. |
 | Navigation | `goto('https://example.com/')` verifies the owned/active native address field. `reload()` requests one native reload. Follow either with a page condition. |
 | Network observation | `expect_request()` / `expect_response()` accept a URL glob or synchronous predicate. Register before the action. Headers/status/URLs are available on the retained records. |
 | Response content | `await response.body()`, `.text()`, `.json()` after loading finishes; default limit 16 MiB. No streaming/interception/fulfillment. |
