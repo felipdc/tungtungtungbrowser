@@ -309,8 +309,9 @@ class NativeFocusReader:
                     # _read_result attaches native evidence only after verifying
                     # the PID, element presence, and original switch restoration.
                     # A failed process, missing reply, or malformed trace cannot
-                    # authorize another read. Discard eligible partial evidence;
-                    # input still requires a fresh complete result.
+                    # authorize another read. One counted candidate is not yet
+                    # a unique field: discard it along with the whole partial
+                    # scan. Input still requires a fresh complete result.
                     unavailable = {'complete': False, 'elements': 0, 'visited': 0, 'matches': 0, 'foreign': 0}
                     scan = result['scan']
                     disabled = result.get('disabled_trait')
@@ -318,7 +319,7 @@ class NativeFocusReader:
                         scan['complete'] is False
                         and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))
                         and 0 <= scan['visited'] < scan['elements'] <= 512
-                        and scan['matches'] == 0 and scan['foreign'] == 0
+                        and 0 <= scan['matches'] <= 1 and scan['foreign'] == 0
                         and type(disabled) is int and 0 < disabled < 2**64
                         and not disabled & (disabled - 1))
                     if (getattr(error, 'native_helper_response', None) is result

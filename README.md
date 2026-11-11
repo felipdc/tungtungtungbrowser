@@ -228,9 +228,11 @@ ttt_compose run --rm --no-deps --entrypoint "$TTT_QEMU_EXECUTABLE" iphone --vers
 This overlay sets native FP to 1 and TLB mode to 0 and requires an explicit
 executable. It does not download or qualify that executable.
 
-To assess strict rendering, use a separate preserved VM trial with
-`TTT_RENDER_DIAGNOSTICS_DIR=''`. The base Compose file defaults to this strict
-setting; the named experimental profile opts into census mode. A DOM or WebKit
+To assess rendering without census mode, use a separate preserved VM trial with
+`TTT_RENDER_DIAGNOSTICS_DIR=''`. The base Compose file defaults to census off;
+the named experimental profile opts in. Disabling census is distinct from the
+renderer’s stronger `REIMS_VGPU_STRICT=1` audit setting and does not itself
+establish Metal fidelity. A DOM or WebKit
 snapshot can succeed while the composed device image is blank. Review native
 captures independently, and retain failed attempts. Keep the device warm for
 targeted fixes; reserve complete workflows for milestones.

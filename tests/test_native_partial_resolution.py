@@ -8,10 +8,10 @@ from test_native_focus_resolution_reader import resolved
 from test_native_address_discovery import address
 
 
-def partial(visited=1):
+def partial(visited=1, matches=0):
     result = resolved(address=True)
     scan = {'complete': False, 'elements': 28, 'visited': visited,
-            'matches': 0, 'foreign': 0}
+            'matches': matches, 'foreign': 0}
     result.update(error=-25216, element=None, scan=scan)
     result['resolution']['attempts'] = [{'error': -25216, 'seconds': .5, **scan}]
     return result
@@ -40,17 +40,28 @@ class PartialResolutionTests(unittest.TestCase):
 
     def test_exhaustion_and_opt_out_never_accept_partial_results(self):
         for attempts in (1, 2):
-            reader, guest = self.reader([partial()] * attempts)
+            reader, guest = self.reader([partial(9, matches=1)] * attempts)
             with patch('tungtungtungbrowser.native_focus.time.sleep'), self.assertRaises(GuestError):
                 reader.resolve_address_field(301, max_attempts=attempts)
             self.assertEqual(guest._rpc.call_count, attempts)
             self.assertTrue(all(r['status'] == 'failed' for r in reader.last_resolution_attempts))
 
+    def test_one_unreturned_candidate_requires_a_fresh_complete_result(self):
+        for address in (False, True):
+            reader, guest = self.reader([partial(9, matches=1), resolved(address=address)])
+            with patch('tungtungtungbrowser.native_focus.time.sleep'):
+                field = reader.resolve_address_field(301)
+            self.assertEqual(field['source'], 'ax_address_field' if address else 'ax_first_responder')
+            self.assertEqual(guest._rpc.call_count, 2)
+            self.assertIsNone(reader.last_resolution_attempts[0]['native']['element'])
+            self.assertTrue(reader.last_resolution_attempts[0]['retry_permitted'])
+            self.assertEqual(reader.last_resolution_attempts[1]['status'], 'read')
+
     def test_ambiguity_foreign_nodes_bad_bounds_or_unverified_result_are_terminal(self):
         cases = []
-        for key, value in [('matches', 1), ('foreign', 1), ('visited', 28),
+        for key, value in [('matches', 2), ('foreign', 1), ('visited', 28),
                            ('elements', 513), ('visited', True), ('complete', True)]:
-            result = partial()
+            result = partial(9)
             result['scan'][key] = value
             result['resolution']['attempts'][0][key] = value
             cases.append(result)
@@ -72,7 +83,8 @@ class PartialResolutionTests(unittest.TestCase):
         foreground = {'pid': 301, 'bundle_id': 'com.apple.mobilesafari', 'verified': True}
         for success in (False, True):
             ui = NativeFixture()
-            reader, guest = self.reader([address(absent=True), partial(), resolved() if success else partial()])
+            reader, guest = self.reader([address(absent=True), partial(9, matches=1),
+                                        resolved() if success else partial(9, matches=1)])
             reader.supports_address_resolution = True
             browser = Browser(guest=ui, address_field_reader=reader, input_settle=0)
             with patch('tungtungtungbrowser.native_focus.time.sleep'):

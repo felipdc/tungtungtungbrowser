@@ -106,8 +106,9 @@ Each guarded resolution permits at most three eligible address scans, with
 resolution that proves absence or an unavailable root with verified restoration
 can receive one fresh guarded resolution after 100 ms. A completed AX `-25216`
 partial scan can also permit that fresh query when it returned no element,
-found no matching or foreign elements, and has valid counts and restoration
-evidence. The partial result is discarded. Only a fresh validated responder or
+counted at most one candidate and no foreign elements, and has valid counts and
+restoration evidence. A candidate count does not establish a unique field;
+the whole partial result is discarded. Only a fresh validated responder or
 complete unique address scan can authorize further action; partial scans are
 never retried within the same guard.
 
@@ -758,3 +759,28 @@ keyboard recording completed, and an independent audit found both settings off
 and no owned focus helper. This qualifies that cold sequence with the stated
 driver and explicit deadlines. Earlier failed sequences remain failed, and one
 successful cold case does not establish general startup repeatability.
+
+## Partial discovery with one candidate (2026-11-11)
+
+A cold trial of the published image reached Safari foreground in 236.7 seconds
+and opened its first Inspector session in 50.9 seconds. A CSS click and native
+captures passed. The following address-bar navigation failed after one
+acknowledged Command-L: the restored resolver returned AX `-25216`, 19 elements,
+nine visited, one candidate, no foreign elements and no returned field. No
+navigation text, Return or close shortcut followed that failed read.
+
+The Python resolver now permits its existing one fresh guarded query for this
+specific partial result as well as a zero-candidate partial result. The counted
+candidate is discarded; only a new validated responder or complete unique scan
+can authorize input. Multiple candidates, foreign evidence, malformed traces,
+unrestored switches and transport failures remain terminal. The native helper,
+input behavior and two-invocation limit are unchanged.
+
+Protocol tests reproduce the failure and cover fresh success, exhaustion,
+ambiguity and one shortcut with no input from partial evidence. Separate native
+recovery closed the retained owned tab once and preserved the original tabs.
+A targeted warm session then opened in 14.9 seconds, navigated with native focus
+in 32.2 seconds, rendered the fixture and verified owned cleanup. The warm
+navigation used direct address discovery, so it does not establish that the new
+partial-scan recovery was exercised natively. Fresh cold qualification remains
+necessary; the original cold failure is retained.
