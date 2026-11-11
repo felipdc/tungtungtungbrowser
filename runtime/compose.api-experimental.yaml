@@ -1,0 +1,8 @@
+# Optional candidate CPU settings. The binary must already be built/patched.
+# Combine with compose.yaml and api-experimental.env; see docs/native-fp.md.
+services:
+  iphone:
+    environment:
+      QEMU: ${TTT_QEMU_EXECUTABLE:?Set TTT_QEMU_EXECUTABLE to the qualified candidate path inside the container}
+      VPHONE_NATIVE_FP: "1"
+      QEMU_TLB_UNSYNCED: "0"

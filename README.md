@@ -19,14 +19,14 @@ under development. The current cold-start target is roughly 300 seconds;
 repeatable startup and warm navigation take priority over reducing that time
 further. This is a development target, not a startup guarantee.
 
-Current performance is provisionally accepted for API development. The main
-priority is a complete session workflow: navigate, wait for page conditions,
-read rendered HTML, observe requests and response bodies, capture screenshots,
-use CSS/XPath actions across pages, then close and clean up. An optional
-[native Inspector API](docs/inspector-api.md) now provides HTML reads, CSS/XPath
-lookup, condition waits and request/response capture. Selector actions and the
-complete repeatable workflow remain unfinished; see the [API roadmap](docs/roadmap.md).
-Further runtime optimization should address failures measured in that workflow.
+Current performance is provisionally accepted for API development. A native
+workflow has exercised owned-session creation, navigation across sites, DOM
+conditions, original/rendered HTML, JSON response capture, CSS/XPath clicks,
+native screenshots and verified owned-tab cleanup. That run used the explicit
+experimental settings below. Repeated cold startup, native focus and warm
+session reliability still need qualification; one successful workflow is not a
+general reliability guarantee. See the [Inspector API](docs/inspector-api.md)
+and [roadmap](docs/roadmap.md) for the evidence and remaining limits.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.
@@ -53,17 +53,66 @@ not be treated as entirely reclaimable cache. Measure the whole container
 for your workload before selecting a smaller host. Initial firmware preparation
 and first-boot migration are separate from ordinary browser startup.
 
-## Get the source
+## Get started from scratch
+
+Use a Debian 13 x86_64 host with four CPU cores, 16 GiB RAM and at least
+100 GiB free disk for the first build. Keep additional space for VM copies,
+firmware downloads and failed-run evidence. Start with this size before trying
+the smaller experimental configurations.
+
+Install Git, Python with venv support, Docker Engine/CLI and Docker Compose.
+Check `docker version` and `docker compose version`; the Debian daemon package
+alone does not install every client component. Your user must be able to run
+Docker. Before firmware creation, confirm matching kernel headers and the
+`usbip_core`, `vhci_hcd` and `vhost_vsock` modules are available; see the
+[host setup guide](docs/setup.md). The runtime build invokes upstream dependency
+installation with `sudo`.
 
 ```sh
 git clone https://github.com/felipdc/tungtungtungbrowser.git
 cd tungtungtungbrowser
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -e '.[inspector,pointer]'
+
+# Keep downloaded sources, build state, firmware and captures outside the repo.
+export TTT_RUNTIME_DIR="$HOME/.cache/tungtungtungbrowser/vphone-linux"
+export TTT_STATE_DIR="$HOME/.local/state/tungtungtungbrowser"
+bash scripts/build_runtime.sh
+bash scripts/create_vm.sh --list
 ```
 
-Use the [setup guide](docs/setup.md) to prepare a Linux host and VM, or follow
-the commands below if you already have a compatible VM bundle. See the
-[roadmap](docs/roadmap.md) for planned APIs and the
-[contribution guide](CONTRIBUTING.md) for development checks.
+Choose a device/iOS pairing from that list. Inspect its creation flow before
+running it (replace both placeholders with the listed values):
+
+```sh
+bash scripts/create_vm.sh --device '<device identifier>' --ios '<iOS version>' \
+  --scale 3 --name browser-device --dry-run
+bash scripts/create_vm.sh --device '<device identifier>' --ios '<iOS version>' \
+  --scale 3 --name browser-device
+```
+
+Creation downloads firmware separately and follows upstream's resumable setup.
+Complete first-boot migration and cleanly stop the upstream emulator. Use the
+created bundle's absolute path as `TTT_VM_DIR` below. See the pinned upstream
+[creation guide](https://github.com/YahiaAngelo/vphone-linux/blob/888d17ca17268aaecd277c64f2d95385b184744b/docs/CREATE-ON-LINUX.md)
+and [runtime patches](patches/README.md). This repository supplies no firmware.
+
+For the complete API, the prepared research guest also needs:
+
+- Safari's **Web Inspector enabled** in its Advanced settings. The bridge does
+  not silently change this setting.
+- Support for the native helpers' platform/accessibility/HID entitlements.
+  Installing an executable on an ordinary physical iPhone is insufficient.
+- The matching [native touch framework repair](docs/touch-repair.md), installed
+  and verified using the [native installation guide](docs/native-touch-installation.md).
+  VM creation and helper installation do not apply this build-specific repair.
+- The tested portrait display geometry: **393 × 852 points at scale 3** for
+  calibrated taps. A different scale or rotation needs separate qualification.
+
+Start the runtime and complete readiness before installing the API helpers.
+If you only need native navigation/capture, `pip install -e .` installs the
+dependency-free base controller; the Inspector and pointer extras are optional.
 
 ## Start with a prepared VM
 
@@ -78,19 +127,20 @@ to its mounted files even though its default UID is 0.
 export TTT_VM_DIR=/absolute/path/to/your/ios-bundle
 export TTT_RUNTIME_DIR=/absolute/path/to/built/vphone-linux
 
-# An explicit compatibility setting for the experimental software renderer.
-# It records unsupported Metal behavior; rendering fidelity is not guaranteed.
-export TTT_RENDER_DIAGNOSTICS_DIR=/vm/census
-
-export TTT_VM_MEMORY_GIB=3
-export TTT_VM_CPUS=4
-export TTT_TCG_CACHE_MIB=1024
-
-docker compose -f runtime/compose.yaml up --build -d
-# Omit --sync-clock if launcher clock maintenance is enabled.
-docker compose -f runtime/compose.yaml exec iphone \
+# Use the same profile and Compose files for every command in this shell.
+ttt_compose() {
+  docker compose --env-file runtime/api-experimental.env \
+    -f runtime/compose.yaml "$@"
+}
+ttt_compose build
+# Confirm the QEMU executable loads before opening guest disks.
+ttt_compose run --rm --no-deps \
+  --entrypoint /runtime/qemu/build/qemu-system-aarch64 iphone --version
+ttt_compose up -d
+# The profile enables launcher-owned clock maintenance; do not add --sync-clock.
+ttt_compose exec iphone \
   python3 scripts/measure_ready.py /vm --qmp-socket /vm/control.sock \
-  --sync-clock --output /vm/readiness.json
+  --output /vm/readiness-001.json
 ```
 
 The readiness command waits for native control, unlocks the device and checks
@@ -100,7 +150,7 @@ A successful request does not prove page rendering. Capture the display and
 check the content:
 
 ```sh
-docker compose -f runtime/compose.yaml exec iphone \
+ttt_compose exec iphone \
   python3 -m tungtungtungbrowser --qmp-socket /vm/control.sock \
   capture 'https://example.com/' \
   --settle-seconds 30 --output /vm/captures/example-001
@@ -118,7 +168,7 @@ modification times can belong to an earlier boot.
 Stop through Compose so iOS can flush its filesystem:
 
 ```sh
-docker compose -f runtime/compose.yaml stop
+ttt_compose stop
 ```
 
 The launcher records cold-start parameters in `launch.json` and shutdown
@@ -129,29 +179,61 @@ a termination signal after the guest's shutdown grace period. QEMU can return
 exit code `0` in that case; that code alone does not establish a clean iOS
 shutdown. Preserve the stopped VM bundle before investigating a failed shutdown.
 
-## Build and create a VM
+## Recommended experimental settings
 
-The setup scripts resolve paths relative to this checkout and put downloaded
-runtime sources under the user's cache directory. Set `TTT_RUNTIME_DIR` and
-`TTT_STATE_DIR` to override those locations.
+Use [runtime/api-experimental.env](runtime/api-experimental.env) as a starting
+profile for API development. Environment variables already exported in your
+shell override Compose's env-file values; inspect `ttt_compose config` and the
+resulting `/vm/launch.json` when comparing runs.
+
+| Setting | Profile value / reason |
+| --- | --- |
+| Guest | 3 GiB RAM, 2 application CPUs |
+| Container | 10 GiB RAM, no additional swap, 4 CPU quota, 6 GiB shared-memory allowance |
+| Renderer | CPU Lavapipe, 1 thread; Mesa Vulkan driver pinned by the Dockerfile |
+| Translation cache | 1024 MiB |
+| Clock maintenance | 60 seconds, owned by the launcher |
+| Renderer census | Explicitly enabled at `/vm/census`; permits and records approximations that strict mode can refuse |
+| Native guest RPC | 120 seconds in `BrowserProfile` |
+| Inspector session / transport | 300 / 240 seconds; at most 4 bounded initial handoff attempts |
+| Native input | 5-second settling interval, explicit `touch_hold_ms=0` |
+
+The memory allowances overlap: shared memory is charged to the container's
+memory limit, not an extra 6 GiB allocation. These are tested starting settings,
+not guaranteed minima or deadlines for the complete workflow. Action and
+condition methods retain their own timeout arguments, generally 30 seconds;
+pass longer deadlines explicitly for slow emulation. `BrowserProfile` leaves
+the default `Browser` and `InspectorSession` constructors unchanged.
+
+The successful workflow additionally used the optional patched QEMU
+`14c9913d` experiment with **`VPHONE_NATIVE_FP=1`, `QEMU_TLB_UNSYNCED=0`**.
+The default `build_runtime.sh` still builds the pinned baseline. The env file
+does not replace that binary or apply its FP boundary patch. Follow the
+[native FP evaluation](docs/native-fp.md) to prepare and qualify a separate
+candidate; record the binary hash and actual environment in each trial.
+Do not treat a baseline build as reproduction of that experimental result.
+
+Once the candidate is prepared, use its path **inside the container** and add
+the candidate overlay to every Compose invocation:
 
 ```sh
-bash scripts/build_runtime.sh
-bash scripts/create_vm.sh --list
-bash scripts/create_vm.sh --device 'iPhone17,3' --ios 26.6.2 \
-  --scale 3 --name browser-device
+export TTT_QEMU_EXECUTABLE=/runtime/path/to/qualified/qemu-system-aarch64
+ttt_compose() {
+  docker compose --env-file runtime/api-experimental.env \
+    -f runtime/compose.yaml -f runtime/compose.api-experimental.yaml "$@"
+}
+ttt_compose run --rm --no-deps --entrypoint "$TTT_QEMU_EXECUTABLE" iphone --version
 ```
 
-The build runs the upstream dependency installer, which uses `sudo`. Firmware
-creation follows upstream device/version compatibility and resumable setup.
-Use `--dry-run` to inspect a selected creation flow. Prepared devices normally
-live in the upstream setup workspace, outside this checkout. Display scale is
-a native guest setting: reducing it can change browser-visible geometry and
-must be checked against the intended device profile.
+This overlay sets native FP to 1 and TLB mode to 0 and requires an explicit
+executable. It does not download or qualify that executable.
 
-See [setup details](docs/setup.md), [runtime patches](patches/README.md), and
-the upstream [creation guide](https://github.com/YahiaAngelo/vphone-linux/blob/888d17ca17268aaecd277c64f2d95385b184744b/docs/CREATE-ON-LINUX.md).
-Firmware and VM images are obtained separately under their own terms.
+To assess strict rendering, use a separate preserved VM trial with
+`TTT_RENDER_DIAGNOSTICS_DIR=''`. The base Compose file defaults to this strict
+setting; the named experimental profile opts into census mode. A DOM or WebKit
+snapshot can succeed while the composed device image is blank. Review native
+captures independently, and retain failed attempts. Keep the device warm for
+targeted fixes; reserve complete workflows for milestones.
 
 ## Python and native control
 
@@ -217,6 +299,206 @@ with a calibrated touch helper and require the optional `pointer` dependency.
 Inspection has a separate native bridge build and installer. Request
 modification, streaming HTML, automatic scrolling and full lifecycle coverage remain
 on the [API roadmap](docs/roadmap.md#browser-api-implementation-backlog).
+
+## Install the browser API helpers
+
+Build on Linux with `clang-19`, `ld64.lld-19`, `ldid` and Python 3.11+. The
+helper scripts use project-authored linker declarations and do not need an
+Apple SDK. Their individual guides describe tool-path overrides:
+[touch](docs/native-touch-helper.md), [keyboard](docs/native-keyboard.md),
+[focus](docs/native-focus.md), [Inspector bridge](docs/inspector-api.md).
+Check that these tools are on `PATH` before building.
+
+On Debian, install the LLVM tools and the dependencies for building the
+[Procursus ldid signer](https://github.com/ProcursusTeam/ldid/tree/v2.1.5-procursus7)
+in an external directory:
+
+```sh
+sudo apt-get install clang-19 lld-19 build-essential pkg-config libssl-dev libplist-dev
+mkdir -p "$HOME/.cache/ttt-tools"
+git clone --branch v2.1.5-procursus7 --depth 1 \
+  https://github.com/ProcursusTeam/ldid.git "$HOME/.cache/ttt-tools/ldid"
+make -C "$HOME/.cache/ttt-tools/ldid" -j2
+export PATH="$HOME/.cache/ttt-tools/ldid:$PATH"
+```
+
+```sh
+command -v clang-19 ld64.lld-19 ldid
+export TTT_API_WORK="$HOME/.local/state/ttt-api"
+mkdir -p "$TTT_API_WORK"
+bash scripts/build_browser_helpers.sh "$TTT_API_WORK/build-001"
+
+# Run on the Linux VM host where guest CID 3 is reachable over VSOCK.
+# Complete runtime readiness and the guest prerequisites first.
+python3 scripts/install_browser_helpers.py "$TTT_API_WORK/build-001" \
+  --cid 3 --output "$TTT_API_WORK/deploy-001"
+export TTT_API_DEPLOYMENT="$TTT_API_WORK/deploy-001"
+```
+
+Both output directories must be new and outside the checkout. The installer
+verifies source/binary hashes for all four helpers before its first upload.
+It installs touch, keyboard and focus helpers, then starts the Inspector bridge
+in explicit process mode and verifies its process/boot identity. No touch or
+keyboard input is sent by installation. A completed `profile.json` enables
+`BrowserProfile`; a partial installation remains a failure with its records and
+guest files preserved. Do not blindly rerun installation after a timeout.
+
+Install once for a batch, then reuse the running bridge and the deployment
+records for each session. Touch/keyboard executables have content-addressed
+paths: their individual installers deliberately refuse to overwrite an existing
+installation. For an already prepared guest, reuse its verified installation
+records and use the individual installers for changed helpers. A failed bundle
+is not automatically resumed or rolled back. Stop/reinstall the bridge after a
+guest reboot; its previous process identity is no longer current. See the
+[bridge lifecycle instructions](docs/inspector-api.md#installation).
+
+## Browser API: a complete first example
+
+The async API inspects WebKit's native DOM and Network domains. Navigation and
+touch use native Safari/iOS input. There is no `evaluate()` API, page-script
+injection, request interception or replacement of browser properties.
+
+Start the repository's [local fixture](docs/api-fixture.md) in the runtime's
+network namespace. Leave this command running in another terminal:
+
+```sh
+ttt_compose exec iphone python3 scripts/serve_probe.py \
+  --output /vm/fixture-001 --request-log /vm/fixture-001-requests.jsonl
+```
+
+The server prints a random `qemu_guest_url`. Append `api-workflow.html` to it
+and set `TTT_FIXTURE_URL` in the host shell running Python. For example, a
+printed `http://10.0.2.2:8767/<random-path>/` becomes
+`http://10.0.2.2:8767/<random-path>/api-workflow.html`. Use the actual printed
+path. The loopback server must share QEMU's network namespace for this route.
+
+```sh
+export TTT_FIXTURE_URL='<qemu_guest_url>api-workflow.html'
+export TTT_CAPTURE_DIR="$TTT_API_WORK/capture-001"
+```
+
+Run this Python on the host using the venv with both extras installed:
+
+```python
+import asyncio
+import os
+from pathlib import Path
+from tungtungtungbrowser import BrowserProfile
+
+
+async def main():
+    profile = BrowserProfile(os.environ['TTT_API_DEPLOYMENT'])
+    browser = profile.browser()  # Native device JPEGs; no QMP override.
+    fixture = os.environ['TTT_FIXTURE_URL']
+    output = Path(os.environ['TTT_CAPTURE_DIR'])
+    output.mkdir(parents=True, exist_ok=False)
+    page = profile.session(browser=browser, new_tab_url=fixture)
+    async with page:
+        # The session creates and owns one tab using this caller-owned fixture.
+        # Its initial document response predates attachment: observe a reload.
+        async with page.expect_response(
+            lambda r: r.url.split('#', 1)[0] == fixture, timeout=120
+        ) as document:
+            await page.reload()
+        await page.wait_for_selector('#state[data-ready="true"]', timeout=120)
+        original = await document.value.text(timeout=120)
+        rendered = await page.content()
+        (output / 'original.html').write_text(original)
+        (output / 'rendered.html').write_text(rendered)
+
+        # Register before clicking so a fast request is not missed.
+        async with page.expect_request('*api-fixture-data.json', timeout=120) as request, \
+                page.expect_response('*api-fixture-data.json', timeout=120) as response:
+            await page.click('#load-data', timeout=90)
+        assert response.value.status == 200
+        payload = await response.value.json(timeout=120)
+        assert payload['item']['id'] == 'fixture-item'
+        await page.wait_for_selector('#state[data-response="200"]', timeout=120)
+
+        await page.click("//button[@id='record-click']", strategy='xpath', timeout=90)
+        await page.wait_for_selector('#state[data-clicked="true"]', timeout=120)
+        await page.screenshot(output / 'device.jpg')
+
+        destination = fixture + '?page=2'
+        await page.goto(destination)
+        await page.wait_for_url('*api-workflow.html?page=2', timeout=120)
+        await page.wait_for_selector('#state[data-ready="true"]', timeout=120)
+        assert 'Second document ready' in await page.content()
+        await page.screenshot(output / 'second-device.jpg')
+
+    # Context exit verifies owned-tab closure and releases native inspection.
+    print(page.tab_cleanup)
+    assert not page.cleanup_errors
+
+
+asyncio.run(main())
+```
+
+Review the native JPEGs as well as the HTML/JSON. A DOM condition does not
+establish completed device painting. The fixture's own JavaScript is ordinary
+served page content; the controller does not inject it.
+
+To attach an existing tab instead, use
+`profile.session(browser=browser, url='https://example.com/')`. Closing that
+session detaches inspection and leaves the existing tab intact. An owned tab
+shares the current Safari cookies/site data; it is not a fresh isolated browser
+context. Avoid manual tab switches and keep one controller per guest.
+
+## Selectors, actions and waits
+
+CSS is the default. Standard WebKit CSS selectors work, including IDs, classes,
+attributes and combinators. XPath must be selected explicitly:
+
+```python
+node = await page.query_selector('#load-data')
+node = await page.query_selector('button:not([disabled])')
+node = await page.query_selector("//button[@id='record-click']", strategy='xpath')
+await page.wait_for_selector('#delayed-marker', timeout=90)
+await page.wait_for_selector('.loading', state='detached', timeout=90)
+await page.focus('#next-page')
+```
+
+`query_selector` returns a native node ID or `None`, not an element object.
+Node IDs are short-lived; use selectors again for actions. Queries return the
+first match, while `focus` and `click` require exactly one acceptable target.
+Click resolves a visible target and verifies native hit selection before a
+calibrated touch. It has no automatic scrolling, chained locators or input
+retry. The supported strategies are `css` and `xpath`; text/role selectors,
+frame locators and shadow-root traversal are not general APIs here. An invalid
+XPath can currently appear as no match.
+
+| Capability | API and practical limit |
+| --- | --- |
+| Rendered HTML | `await page.content()` serializes the current DOM; it is different from the original response. |
+| Lookup | `query_selector(selector, strategy='css')`; returns first node ID or `None`. |
+| Conditions | `wait_for_selector(..., state='attached'/'detached')`; presence is not visibility. `wait_for_url()` accepts a case-sensitive URL glob. |
+| CSS/XPath action | `click(..., timeout=90)` uses native touch. `focus()` uses native DOM focus and does not establish keyboard ownership. |
+| Navigation | `goto('https://example.com/')` verifies the owned/active native address field. `reload()` requests one native reload. Follow either with a page condition. |
+| Network observation | `expect_request()` / `expect_response()` accept a URL glob or synchronous predicate. Register before the action. Headers/status/URLs are available on the retained records. |
+| Response content | `await response.body()`, `.text()`, `.json()` after loading finishes; default limit 16 MiB. No streaming/interception/fulfillment. |
+| Device image | `screenshot()` uses native JPEG by default; configuring `Browser(qmp_socket=...)` selects a host display PNG. Includes browser UI. |
+| Page image | `snapshot_rect(width=393, height=650)` returns a WebKit page PNG in an explicit CSS-pixel rectangle, without browser UI; it does not prove device composition. |
+| Coordinate input | `browser.tap(x, y)`, `type_text(text)`, `press(name)`, `swipe(...)`; native input requires verified focus and screen geometry. No selector-based `fill()` API yet. |
+| Session cleanup | `async with page` releases inspection; verified owned tabs close once. `tab_cleanup`, `cleanup_errors` and `transport.failure` retain outcomes. |
+
+Timeouts are seconds except `wait_for_timeout(milliseconds)`. A response
+expectation's deadline starts when entering its context, including the action's
+duration. A timeout never replays native input. Read-only waits may poll fresh
+documents. On a connection or cleanup failure, preserve the record and inspect
+the live state before another action; do not assume a timed-out key did nothing.
+
+After closing every session, stop the bridge with its deployment identity:
+
+```sh
+python3 scripts/stop_inspector_bridge.py \
+  "$TTT_API_DEPLOYMENT/bridge/deploy.json" --cid 3 \
+  --output "$TTT_API_WORK/bridge-stop-001.json"
+ttt_compose stop
+```
+
+See the [full API reference](docs/inspector-api.md),
+[selector action limits](docs/selector-clicks.md) and
+[native control reference](docs/browser-control.md) for detailed contracts.
 
 ## Proxy, resources and diagnostics
 
