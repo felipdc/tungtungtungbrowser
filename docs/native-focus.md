@@ -670,3 +670,20 @@ scans. The failure frame showed Favorites without an address bar, and a separate
 passive observation 114 seconds later still found no focused field. These cases
 used a private native batching experiment; they do not qualify that experiment,
 cold focus reliability or the full browsing workflow.
+
+## Discovery before the shortcut (2026-11-11, trial 162)
+
+A private candidate queried the native address list before any Command-L,
+focus tap or navigation text. Cold readiness passed in 241.73 seconds and the
+owned session opened in 61.68 seconds. The first guarded scan returned a
+restored partial `-25216`; the second completed a six-element scan with no
+matching address control. The native screenshot nevertheless showed the
+rendered fixture and a normal collapsed address bar. The original navigation
+stopped, preserving both results and sending no focus or navigation input.
+
+This does not qualify direct discovery as a cold-focus fix. A further private
+revision that reveals the bar once after verified complete absence has only
+local test coverage. Its warm native trial was held after separate cleanup
+failed tab preservation, as recorded in [native keyboard validation](native-keyboard.md#preservation-failure-with-the-native-helper-2026-11-11-trial-162).
+The public focus implementation and native helper remain unchanged by these
+experiments. Full product-workflow validation was not repeated.

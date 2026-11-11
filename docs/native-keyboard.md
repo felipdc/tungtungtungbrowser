@@ -86,3 +86,27 @@ recording contained the eight expected events, and all four original tabs
 remained through 60 seconds. These observations support the bounded keyboard
 implementation; they do not establish the cause of earlier duplicate tab
 effects or resolve cold focus reliability.
+
+## Preservation failure with the native helper (2026-11-11, trial 162)
+
+A later cold session created one owned tab, then stopped before navigation
+input because native address discovery found no control. Separate cleanup
+verified the exact owned URL through the published Python focus path and sent
+one acknowledged `cmd+w` using the same optional native keyboard helper.
+The owned tab disappeared, but a pre-existing tab also disappeared and a new
+blank tab appeared. Independent database copies confirmed this after the
+Inspector listing first reported the change; later copies retained the loss.
+No second close or other recovery input was sent.
+
+The bounded HID observer completed without overflow and recorded exactly eight
+events: one `cmd+l` chord and one `cmd+w` chord, including all releases. The
+close key's release dispatch call took 0.530 seconds. This evidence does not
+establish a repeat or duplicate-consumption cause: the observer boundary does
+not report Safari's handling. Both accessibility settings were subsequently
+confirmed restored, with no remaining focus helpers.
+
+The earlier successful preservation checks remain valid for their runs, but
+this failure leaves cleanup reliability unresolved with the native helper too.
+The experimental focus changes used in this run remain unpublished. Preserve
+original failures and verify settled tab state; a successful dispatch receipt
+alone cannot establish that only the owned tab closed.
