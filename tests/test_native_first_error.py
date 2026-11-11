@@ -5,6 +5,7 @@ from tungtungtungbrowser import Browser, NativeFocusReader, GuestError
 from test_browser import NativeFixture
 from test_native_focus import SHA, TOKEN, answer
 from test_native_focus_resolution_reader import resolved
+from test_native_address_discovery import address
 
 
 def failed_responder(code=-25215):
@@ -81,7 +82,7 @@ class FirstResponderErrorTests(unittest.TestCase):
         foreground = {'pid': 301, 'bundle_id': 'com.apple.mobilesafari', 'verified': True}
         for success in (False, True):
             ui = NativeFixture(); guest = Mock()
-            guest._rpc.side_effect = [answer(failed_responder()),
+            guest._rpc.side_effect = [answer(address(absent=True)), answer(failed_responder()),
                                      answer(resolved() if success else failed_responder())]
             reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
             reader.supports_address_resolution = True
@@ -91,6 +92,6 @@ class FirstResponderErrorTests(unittest.TestCase):
                     self.assertEqual(browser._focus_address_field(foreground)['pid'], 301)
                 else:
                     with self.assertRaises(GuestError): browser._focus_address_field(foreground)
-            self.assertEqual(guest._rpc.call_count, 2)
+            self.assertEqual(guest._rpc.call_count, 3)
             self.assertEqual([p['name'] for m, p in ui.calls if m == 'input.key'], ['cmd+l'])
             self.assertFalse(any(m in ('input.paste', 'input.touch_sequence') for m, _ in ui.calls))

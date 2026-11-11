@@ -5,6 +5,7 @@ from tungtungtungbrowser import Browser, GuestError, NativeFocusReader
 from test_browser import NativeFixture
 from test_native_focus import SHA, TOKEN, answer
 from test_native_focus_resolution_reader import resolved
+from test_native_address_discovery import address
 
 
 def unavailable_attributes():
@@ -49,7 +50,8 @@ class FocusAttributeTests(unittest.TestCase):
         foreground = {'pid': 301, 'bundle_id': 'com.apple.mobilesafari', 'verified': True}
         for success in (False, True):
             ui = NativeFixture()
-            guest, reader = self.reader([answer(unavailable_attributes()),
+            guest, reader = self.reader([answer(address(absent=True)),
+                                         answer(unavailable_attributes()),
                                          answer(resolved() if success else unavailable_attributes())])
             reader.supports_address_resolution = True
             browser = Browser(guest=ui, address_field_reader=reader, input_settle=0)
@@ -59,7 +61,7 @@ class FocusAttributeTests(unittest.TestCase):
                 else:
                     with self.assertRaises(GuestError):
                         browser._focus_address_field(foreground)
-            self.assertEqual(guest._rpc.call_count, 2)
+            self.assertEqual(guest._rpc.call_count, 3)
             self.assertEqual([p['name'] for m, p in ui.calls if m == 'input.key'], ['cmd+l'])
             self.assertFalse(any(m in ('input.paste', 'input.touch_sequence') for m, _ in ui.calls))
 

@@ -7,6 +7,7 @@
 #include "focus_deadline.h"
 #include "address_field.h"
 #include "focus_resolution.h"
+#include "focus_attributes.h"
 
 typedef unsigned long Size;typedef unsigned char Boolean;typedef const void *CF;
 typedef struct {double x,y,w,h;} Rect;
@@ -22,7 +23,7 @@ static int valid_pid(const char *s) {
  return n>1?(int)n:0;
 }
 static void quoted(const char*s){printf("\"");for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32)printf("\\u%04x",c);else printf("%c",c);}printf("\"");}
-static void attr(CF e,unsigned key){CF v=0;int err=copyAttr(e,(CF)(Size)key,&v);printf("{\"error\":%d,\"value\":",err);if(!v)printf("null");else if(typeID(v)==stringType()){char b[8192]={0};if(stringUTF8(v,b,sizeof(b),0x08000100))quoted(b);else printf("null");}else if(typeID(v)==numberType()){long long n=0;if(numberValue(v,4,&n))printf("%lld",n);else printf("null");}else if(typeID(v)==valueType()){Rect r={0};if(axValue(v,3,&r)&&__builtin_isfinite(r.x)&&__builtin_isfinite(r.y)&&__builtin_isfinite(r.w)&&__builtin_isfinite(r.h))printf("{\"x\":%.6f,\"y\":%.6f,\"width\":%.6f,\"height\":%.6f}",r.x,r.y,r.w,r.h);else printf("null");}else printf("null");printf("}");if(v)release(v);}
+static void attr_value(int err,CF v){printf("{\"error\":%d,\"value\":",err);if(!v)printf("null");else if(typeID(v)==stringType()){char b[8192]={0};if(stringUTF8(v,b,sizeof(b),0x08000100))quoted(b);else printf("null");}else if(typeID(v)==numberType()){long long n=0;if(numberValue(v,4,&n))printf("%lld",n);else printf("null");}else if(typeID(v)==valueType()){Rect r={0};if(axValue(v,3,&r)&&__builtin_isfinite(r.x)&&__builtin_isfinite(r.y)&&__builtin_isfinite(r.w)&&__builtin_isfinite(r.h))printf("{\"x\":%.6f,\"y\":%.6f,\"width\":%.6f,\"height\":%.6f}",r.x,r.y,r.w,r.h);else printf("null");}else printf("null");printf("}");}
 #include "focus_guard_trace.h"
 extern int nanosleep(const struct timespec *, struct timespec *);
 struct ResolutionContext { CF root; int pid; struct AddressFieldAPI *finder; int (*timeout)(CF,float); };
@@ -71,6 +72,13 @@ int main(int argc,char **argv){
  LOAD(copyAttr,ax,"AXUIElementCopyAttributeValue");LOAD(release,cf,"CFRelease");LOAD(typeID,cf,"CFGetTypeID");LOAD(stringType,cf,"CFStringGetTypeID");LOAD(numberType,cf,"CFNumberGetTypeID");LOAD(valueType,ax,"AXValueGetTypeID");LOAD(stringUTF8,cf,"CFStringGetCString");LOAD(numberValue,cf,"CFNumberGetValue");LOAD(axValue,ax,"AXValueGetValue");
  void(*client)(unsigned)=dlsym(ax,"__AXSetRequestingClient");unsigned long long(*override)(unsigned long long)=dlsym(ax,"_AXOverrideRequestingClientType");
  if(!create||!timeout||!getPid||!elementType||!copyAttr||!release||!typeID||!stringType||!numberType||!valueType||!stringUTF8||!numberValue||!axValue||!app||!automation||!setApp||!setAuto)return 5;
+ struct FocusAttributeAPI batch={0};
+ LOAD(batch.number,cf,"CFNumberCreate");LOAD(batch.array,cf,"CFArrayCreate");
+ LOAD(batch.array_type,cf,"CFArrayGetTypeID");LOAD(batch.null_type,cf,"CFNullGetTypeID");
+ LOAD(batch.count,cf,"CFArrayGetCount");LOAD(batch.at,cf,"CFArrayGetValueAtIndex");
+ LOAD(batch.copy,ax,"AXUIElementCopyMultipleAttributeValues");
+ batch.type=typeID;batch.value_type=valueType;batch.read_value=axValue;batch.release=release;
+ if(!batch.number||!batch.array||!batch.array_type||!batch.null_type||!batch.count||!batch.at||!batch.copy)return 5;
  struct AddressFieldAPI finder={0};struct AddressFieldScan scan={0};unsigned long long disabled_trait=0;
  if(address_mode||resolve_mode||check){
   finder.copy=copyAttr;finder.owner=getPid;finder.timeout=timeout;finder.type=typeID;finder.element_type=elementType;finder.string_type=stringType;finder.release=release;finder.string=stringUTF8;finder.now=focus_guard_now;
@@ -101,7 +109,11 @@ int main(int argc,char **argv){
  printf(",\"element\":");
  if(focused&&!e&&typeID(focused)==elementType()){
   int owner=0,pe=getPid(focused,&owner),te=timeout(focused,0.25f);printf("{\"pid\":%d,\"pid_error\":%d,\"timeout_error\":%d,\"attributes\":{",owner,pe,te);
-  unsigned keys[]={2001,2006,5019,2004,2003};const char*names[]={"label","value","identifier","traits","frame"};for(unsigned i=0;i<5;i++){if(i)printf(",");quoted(names[i]);printf(":");attr(focused,keys[i]);}printf("}}");
+  struct FocusAttributeResult attributes={0};double started=focus_guard_now();focus_attributes_read(&batch,focused,&attributes);double seconds=focus_guard_now()-started;
+ const char*names[]={"label","value","identifier","traits","frame"};
+ for(unsigned i=0;i<5;i++){CF v=0;int error=focus_attribute_value(&batch,&attributes,i,&v);if(i)printf(",");quoted(names[i]);printf(":");attr_value(error,v);}
+ printf("},\"attribute_batch\":{\"error\":%d,\"count\":5,\"seconds\":%.6f}}",attributes.error,seconds);
+ if(attributes.values)release(attributes.values);
  }else printf("null");
  if(focused)release(focused);if(root)release(root);
  focus_deadline_restore();

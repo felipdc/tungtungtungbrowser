@@ -271,7 +271,7 @@ class Browser:
         return field
 
     def _resolve_address_field(self, foreground):
-        """Resolve an address control after one acknowledged shortcut.
+        """Resolve the current native address control before sending input.
 
         A complete native discovery supplies geometry, not editing focus. Send
         at most one tap after verifying bounds and the foreground process, then
@@ -280,11 +280,16 @@ class Browser:
         resolver = getattr(self.address_field_reader, 'resolve_address_field', None)
         if not callable(resolver):
             raise GuestError('Native address resolver is not configured')
-        ack = self.guest.call('input.key', name='cmd+l')
-        if not isinstance(ack, dict) or ack.get('key') != 'cmd+l' or ack.get('dispatched') is not True:
-            raise GuestError('Native address shortcut not acknowledged; outcome is unknown')
-        time.sleep(self.input_settle)
-        field = resolver(foreground['pid'])
+        discover = getattr(self.address_field_reader, 'discover_address_field', None)
+        field = discover(foreground['pid']) if callable(discover) else None
+        if field is None:
+            # A completed discovery can omit Safari's collapsed address bar.
+            # Reveal it once, then require entirely fresh native focus evidence.
+            ack = self.guest.call('input.key', name='cmd+l')
+            if not isinstance(ack, dict) or ack.get('key') != 'cmd+l' or ack.get('dispatched') is not True:
+                raise GuestError('Native address shortcut not acknowledged; outcome is unknown')
+            time.sleep(self.input_settle)
+            field = resolver(foreground['pid'])
         if (not isinstance(field, dict) or type(field.get('pid')) is not int
                 or field['pid'] != foreground['pid'] or type(field.get('traits')) is not int
                 or field['traits'] < 0):

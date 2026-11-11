@@ -1,3 +1,4 @@
+from test_native_address_discovery import address
 import copy
 import unittest
 from unittest.mock import Mock, patch
@@ -53,7 +54,8 @@ class MissingFocusNamesTests(unittest.TestCase):
     def test_browser_never_replays_shortcut_or_uses_partial_value(self):
         for success in (False, True):
             ui = NativeFixture()
-            guest, reader = self.reader([self.missing_names(), resolved() if success else self.missing_names()])
+            guest, reader = self.reader([address(absent=True),
+                                         self.missing_names(), resolved() if success else self.missing_names()])
             browser = Browser(guest=ui, address_field_reader=reader, input_settle=0)
             foreground = {'pid': 301, 'bundle_id': 'com.apple.mobilesafari', 'verified': True}
             with patch('tungtungtungbrowser.native_focus.time.sleep'):
@@ -63,7 +65,7 @@ class MissingFocusNamesTests(unittest.TestCase):
                     with self.assertRaises(GuestError): browser._focus_address_field(foreground)
             self.assertEqual([p['name'] for m, p in ui.calls if m == 'input.key'], ['cmd+l'])
             self.assertFalse(any(m in ('input.paste', 'input.touch_sequence') for m, _ in ui.calls))
-            self.assertEqual(guest._rpc.call_count, 2)
+            self.assertEqual(guest._rpc.call_count, 3)
 
     def test_other_errors_bad_ownership_restoration_and_malformed_values_are_terminal(self):
         changes = [

@@ -72,12 +72,34 @@ installation record contains that capability. A direct reader can call `check()`
 to discover it. Older helpers retain their existing first-responder behavior;
 updating Python alone does not add a native helper mode.
 
-For a capable reader, `Browser` sends Command-L once and requires its native
-acknowledgment. The resolver first queries the native first responder. Only
-absence or a completed AX `-25216` error with no element permits native address
-control discovery. Discovery requires a complete scan of at most 512 elements
-and exactly one enabled URL control owned by the expected Safari process.
-Partial scans, ambiguity, missing attributes and invalid geometry are errors.
+For a capable reader, `Browser` first discovers the current native address
+control. A complete, unique result can proceed to the existing tap and fresh
+editing check without a preliminary Command-L. Discovery accepts at most 512
+native elements and exactly one enabled URL control owned by the expected
+Safari process. Its geometry does not establish editing focus.
+
+`discover_address_field(pid, max_attempts=2)` permits at most two native address
+queries. A complete empty scan returns immediately. A restored AX `-25216`
+scan with no element, no matches or foreign elements and valid incomplete counts
+can receive one fresh query after 100 ms. Partial evidence is discarded and never authorizes
+input. Transport failure, wrong ownership, ambiguity, invalid geometry and
+unrestored settings remain terminal. The existing `find_address_field(pid)`
+method continues to make one query.
+
+After complete absence, `Browser` sends Command-L once and requires its native
+acknowledgment. It then uses the guarded resolver, which first queries the native
+first responder and can discover an address control after permitted absence or
+AX failure. Every subsequent tap, paste and Return still requires the existing
+fresh field, ownership and editing checks. Missing replies never cause an input
+replay.
+
+New helper builds read the five focused-element attributes in one native
+`AXUIElementCopyMultipleAttributeValues` call. The returned array must contain
+exactly five values. Missing values and per-attribute native errors retain their
+individual errors; failed or malformed batches do not fall back to separate
+attribute queries. Build and installer manifests include `focus_attributes.h`.
+Rebuild and install the helper to use batched attributes; an existing helper
+keeps its deployed native implementation.
 
 Each guarded resolution permits at most three eligible address scans, with
 400 ms between scans and a ten-second accepted-query budget. A completed
@@ -687,3 +709,33 @@ local test coverage. Its warm native trial was held after separate cleanup
 failed tab preservation, as recorded in [native keyboard validation](native-keyboard.md#preservation-failure-with-the-native-helper-2026-11-11-trial-162).
 The public focus implementation and native helper remain unchanged by these
 experiments. Full product-workflow validation was not repeated.
+
+## Completed discovery and batched attributes
+
+The address preparation path now tries native address discovery before sending
+Command-L. A completed unique control proceeds through the existing bounds,
+foreground and fresh editing checks. Complete absence returns immediately, so
+Browser can reveal the bar once and require fresh native resolution. Only a
+validated, restored AX unavailable result can use the bounded second discovery
+query; transport failures and uncertain input are never replayed. The separate
+combined resolver retains its existing retry policy.
+
+This follows an actual cold navigation failure: a complete six-element scan
+found no address control, then an unnecessary second scan returned a partial AX
+error. No navigation input was sent. Targeted regression tests cover that exact
+sequence and require the fresh resolver after the single acknowledged shortcut.
+The original cold case remains failed.
+
+The native helper reads label, value, identifier, traits and frame in one AX
+batch. It retains the owned result array until parsing finishes and rejects
+malformed arrays and unavailable attributes without individual-query fallback.
+The installer verifies the new header as part of the build manifest. Existing
+phase deadlines, restoration checks and input verification remain unchanged.
+
+A warm fixture case using these sources created its session in 18.88 seconds,
+clicked in 12.60 seconds and completed native navigation in 33.21 seconds.
+Native captures showed the fixture and click feedback; its owned tab closed
+and all original tabs remained through 60 seconds. Independent checks found
+both accessibility settings off and no owned focus helper. This validates the
+warm native path; fresh cold qualification and a complete product workflow
+with this source version remain pending.

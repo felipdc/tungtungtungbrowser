@@ -18,6 +18,10 @@ class Reader:
     def __init__(self, guest, field):
         self.guest, self.field, self.resolved, self.fresh = guest, field, 0, 0
     def resolve_address_field(self, pid):
+        if self.field is not None:
+            raise AssertionError("Present discovered control must not require a shortcut")
+        return self.guest.focused_field(pid)
+    def discover_address_field(self, pid):
         self.resolved += 1
         self.last_resolution = {'status': 'read'}
         if isinstance(self.field, Exception): raise self.field
@@ -50,14 +54,14 @@ class NativeAddressResolutionTests(unittest.TestCase):
     def test_editing_first_responder_needs_no_tap_or_second_preparation_read(self):
         b = self.browser(self.field)
         self.assertEqual(b._focus_address_field(FG), self.field)
-        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.assertEqual(self.inputs(), [])
         self.assertEqual(self.taps(), [])
         self.assertEqual((self.reader.resolved, self.reader.fresh), (1,0))
     def test_discovered_or_nonediting_field_gets_one_tap_and_fresh_read(self):
         for field in [self.discovered(), {**self.field, 'traits': 0}]:
             self.guest.calls.clear(); b = self.browser(field)
             self.assertEqual(b._focus_address_field(FG)['source'], 'ax_first_responder')
-            self.assertEqual(self.inputs(), ['cmd+l'])
+            self.assertEqual(self.inputs(), [])
             self.assertEqual(len(self.taps()), 1)
             self.assertEqual((self.reader.resolved, self.reader.fresh), (1,1))
     def test_configured_zero_reaches_address_focus_contact(self):
@@ -71,21 +75,19 @@ class NativeAddressResolutionTests(unittest.TestCase):
         self.assertEqual(self.taps()[0]['events'][0]['delay_ms'], 0)
         self.assertEqual((reader.resolved, reader.fresh), (1, 1))
 
-    def test_uncertain_shortcut_stops_before_read_or_tap(self):
+    def test_discovery_does_not_dispatch_a_shortcut(self):
         original = self.guest.call
-        for ack in [None, {'key': 'cmd+l', 'dispatched': False}, GuestError('Lost reply')]:
-            def call(method, **params):
-                if method == 'input.key':
-                    if isinstance(ack, Exception): raise ack
-                    return ack
-                return original(method, **params)
-            self.guest.call = call
-            b = self.browser(self.discovered())
-            with self.assertRaises(GuestError): b._focus_address_field(FG)
-            self.assertEqual(self.reader.resolved, 0)
-            self.assertEqual(self.taps(), [])
+        def call(method, **params):
+            if method == 'input.key':
+                raise AssertionError('Discovery must not send a keyboard shortcut')
+            return original(method, **params)
+        self.guest.call = call
+        b = self.browser(self.discovered())
+        self.assertEqual(b._focus_address_field(FG)['source'], 'ax_first_responder')
+        self.assertEqual((self.reader.resolved, self.reader.fresh), (1, 1))
+        self.assertEqual(len(self.taps()), 1)
     def test_bad_resolution_cannot_cause_tap_or_navigation_input(self):
-        fields = [None, GuestError('Failed guard'), {**self.field, 'pid': 302},
+        fields = [GuestError('Failed guard'), {**self.field, 'pid': 302},
                   {**self.field, 'source': 'other'}, {**self.field, 'identifier': 'Other'},
                   {**self.discovered(), 'enabled': False},
                   {**self.discovered(), 'frame': {'x': 1, 'y': 900, 'width': 10, 'height': 10}}]
@@ -93,7 +95,7 @@ class NativeAddressResolutionTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.guest.calls.clear(); b = self.browser(field)
                 with self.assertRaises(GuestError): b._focus_address_field(FG)
-                self.assertEqual(self.inputs(), ['cmd+l']); self.assertEqual(self.taps(), [])
+                self.assertEqual(self.inputs(), []); self.assertEqual(self.taps(), [])
                 self.assertEqual(self.reader.resolved, 1)
     def test_foreground_change_stops_before_tap(self):
         self.guest.foreground = 'com.apple.other'
@@ -104,13 +106,43 @@ class NativeAddressResolutionTests(unittest.TestCase):
         b = self.browser(self.discovered())
         with self.assertRaises(GuestError): b._focus_address_field(FG)
         self.assertEqual(len(self.taps()), 1)
-        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.assertEqual(self.inputs(), [])
         self.assertEqual((self.reader.resolved, self.reader.fresh), (1,1))
     def test_cleanup_requires_exact_expected_url_before_first_close_key(self):
         b = self.browser(self.discovered())
         with self.assertRaises(GuestError):
             b.close_tab(expected_url='https://different.invalid/', expected_pid=301)
-        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.assertEqual(self.inputs(), [])
         self.guest.calls.clear()
         b.close_tab(expected_url=self.field['value'], expected_pid=301)
-        self.assertEqual(self.inputs(), ['cmd+l', 'cmd+w'])
+        self.assertEqual(self.inputs(), ['cmd+w'])
+
+
+class MissingAddressControlTests(unittest.TestCase):
+    setUp = NativeAddressResolutionTests.setUp
+    browser = NativeAddressResolutionTests.browser
+    inputs = NativeAddressResolutionTests.inputs
+    taps = NativeAddressResolutionTests.taps
+    def test_complete_absence_reveals_once_then_requires_fresh_resolver(self):
+        b = self.browser(None)
+        self.assertEqual(b._focus_address_field(FG)['identifier'], 'URL')
+        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.assertEqual(self.taps(), [])
+    def test_missing_shortcut_ack_does_not_resolve_or_replay(self):
+        b = self.browser(None)
+        self.reader.resolve_address_field = Mock(side_effect=AssertionError('must not resolve after unknown input'))
+        original = self.guest.call
+        def call(method, **params):
+            result = original(method, **params)
+            return {} if method == 'input.key' else result
+        self.guest.call = call
+        with self.assertRaises(GuestError): b._focus_address_field(FG)
+        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.reader.resolve_address_field.assert_not_called()
+    def test_failed_post_shortcut_query_does_not_replay_or_tap(self):
+        b = self.browser(None)
+        self.reader.resolve_address_field = Mock(side_effect=GuestError('Unavailable'))
+        with self.assertRaises(GuestError): b._focus_address_field(FG)
+        self.assertEqual(self.inputs(), ['cmd+l'])
+        self.assertEqual(self.taps(), [])
+        self.reader.resolve_address_field.assert_called_once_with(301)

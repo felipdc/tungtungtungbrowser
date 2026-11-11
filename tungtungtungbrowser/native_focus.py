@@ -128,14 +128,62 @@ class NativeFocusReader:
         """Find one native URL field; this does not establish keyboard focus."""
         if type(pid) is not int or not 1 < pid <= 2147483647:
             raise ValueError('Address lookup requires a valid native process ID')
-        record = self.last_address_lookup = {'attempt': 1, 'status': 'failed'}
-        self.last_address_attempts = [record]
+        self.last_address_attempts = []
+        return self._find_address_field_once(pid)
+
+    def discover_address_field(self, pid, *, max_attempts=2):
+        """Discover without querying a possibly unrelated first responder."""
+        if type(pid) is not int or not 1 < pid <= 2147483647:
+            raise ValueError('Address lookup requires a valid native process ID')
+        if type(max_attempts) is not int or not 1 <= max_attempts <= 2:
+            raise ValueError('Discovery max_attempts must be 1 or 2')
+        self.last_address_attempts = []
+        for attempt in range(max_attempts):
+            try:
+                field = self._find_address_field_once(pid)
+            except GuestError:
+                if not self.last_address_lookup['retry_permitted'] or attempt + 1 == max_attempts:
+                    raise
+            else:
+                # A completed absence is actionable: Browser can reveal the
+                # collapsed bar once and then obtain fresh focus evidence.
+                # An optional scan must not replace it with a later failure.
+                return field
+            time.sleep(0.1)
+
+    def _find_address_field_once(self, pid):
+        record = self.last_address_lookup = {
+            'attempt': len(self.last_address_attempts) + 1,
+            'status': 'failed', 'retry_permitted': False}
+        self.last_address_attempts.append(record)
         started = time.monotonic()
         try:
             result = self._invoke(['address', str(pid)])
-            field = self._address_result(result, pid, 'address')
+            record['native'] = result
+            try:
+                field = self._address_result(result, pid, 'address')
+            except GuestError as error:
+                scan, disabled = result.get('scan'), result.get('disabled_trait')
+                # Only a completed, restored unavailable scan without any
+                # matching or foreign evidence permits a fresh bounded query.
+                # No partial attribute or geometry is returned to the caller.
+                record['retry_permitted'] = (
+                    getattr(error, 'native_helper_response', None) is result
+                    and result.get('lookup') == 'address'
+                    and result['error'] == -25216 and result['element'] is None
+                    and isinstance(scan, dict)
+                    and set(scan) == {'complete', 'elements', 'visited', 'matches', 'foreign'}
+                    and scan['complete'] is False
+                    and all(type(scan[k]) is int for k in ('elements', 'visited', 'matches', 'foreign'))
+                    and (scan['elements'] == scan['visited'] == 0
+                         or 0 <= scan['visited'] < scan['elements'] <= 512)
+                    and scan['matches'] == scan['foreign'] == 0
+                    and type(disabled) is int and 0 < disabled < 2**64
+                    and not disabled & (disabled - 1))
+                raise
             record['scan'] = result['scan']
             record['status'] = 'absent' if field is None else 'read'
+            record['retry_permitted'] = False
             return field
         finally:
             record['seconds'] = time.monotonic() - started
