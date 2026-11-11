@@ -6,6 +6,10 @@ and release events without a voluntary sleep while keys are held. It waits
 key hold when the emulated guest is busy; scheduling can still interrupt the
 sequence. Each receipt includes the actual dispatch timestamps.
 
+Each event requests `kIOHIDKeyboardEventOptionsNoKeyRepeat`. These navigation
+operations intend one chord even when scheduling delays its release. The option
+does not acknowledge Safari's handling or make an uncertain result safe to retry.
+
 Supported keys are `cmd+a`, `cmd+l`, `cmd+t`, `cmd+w` and `return`. Configuring
 this helper rejects other keys before input. It does not change the default
 daemon route for unconfigured guests. Failed or uncertain helper calls never
@@ -110,3 +114,34 @@ this failure leaves cleanup reliability unresolved with the native helper too.
 The experimental focus changes used in this run remain unpublished. Preserve
 original failures and verify settled tab state; a successful dispatch receipt
 alone cannot establish that only the owned tab closed.
+
+## Native no-repeat option validation (trial 163)
+
+A no-input native probe allocated the four close-chord events with options zero
+and with the no-repeat bit. It read their flags after construction, after the
+existing integer-field setting and after setting the sender. All four candidate
+events retained the bit through every step. The probe created no dispatch client
+and sent no events. Apple's [event option definition](https://github.com/apple-oss-distributions/IOHIDFamily/blob/777ccd9698845aadf711e32d843c8c9b777431d9/IOHIDFamily/IOHIDEventServiceTypes.h)
+and [keyboard filter](https://github.com/apple-oss-distributions/IOHIDFamily/blob/777ccd9698845aadf711e32d843c8c9b777431d9/IOHIDEventSystemPlugIns/IOHIDKeyboardFilter.mm)
+describe this option and its repeat-processing check. Those sources do not
+establish the guest's complete injected-event route or Safari consumption.
+
+The same candidate binary then closed one owned fixture tab after the published
+Python focus path verified its editing URL. Native screenshots showed the
+fixture, the HID observer recorded the expected address and close chords, and
+all original tabs remained through 60 seconds. Creation and focus used the
+previous keyboard binary; only the close chord used the candidate. Focus was
+checked after fixture rendering, native captures and a 15-second observation,
+so this case does not qualify immediate cold navigation focus.
+
+A later unchanged control on the same guest and Safari process also passed its
+fixture captures, close and 60-second preservation checks. The observation
+connection interruption left a substantial warm interval between these cases.
+This comparison therefore demonstrates neither a repeat-triggered failure nor
+candidate superiority.
+
+This change requests the documented behavior for one-shot keys. It does not
+establish the cause of trial 162's tab loss or resolve intermittent cleanup
+reliability. The existing no-replay policy and tab-preservation checks remain
+necessary. The earlier held-key tab-creation comparison was inconclusive because
+both the unchanged control and the candidate created one tab.

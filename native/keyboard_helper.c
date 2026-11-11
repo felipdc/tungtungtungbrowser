@@ -37,7 +37,8 @@ int main(int argc,char **argv){
  if(command){usages[0]=0xe3;usages[1]=key;usages[2]=key;usages[3]=0xe3;down[0]=down[1]=1;}
  Ref events[4]={0,0,0,0};U64 before[4]={0,0,0,0},after[4]={0,0,0,0};
  for(unsigned i=0;i<count;i++){
-  events[i]=make_key(0,0,7,usages[i],down[i],0);
+  /* kIOHIDKeyboardEventOptionsNoKeyRepeat: one-shot navigation keys. */
+  events[i]=make_key(0,0,7,usages[i],down[i],1U << 8);
   if(!events[i]){for(unsigned j=0;j<i;j++)release(events[j]);release(client);return fail("event_allocation",6);}
   set_integer(events[i],4,1);set_sender(events[i],0x8000000817319372ULL);
  }

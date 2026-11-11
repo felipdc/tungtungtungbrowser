@@ -12,7 +12,7 @@ void *mock_dlopen(const char *p,int n){(void)p;(void)n;return (void*)1;}
 U64 mock_ticks(void){return ++now;}
 int mock_usleep(unsigned n){if(n!=20000||dispatched!=4)return -1;return interrupted?-1:0;}
 static Ref client(Ref p){(void)p;return (void*)2;}
-static Ref key(Ref a,U64 b,U32 page,U32 usage,Bool down,U32 flags){(void)a;(void)b;(void)flags;if(page!=7)return 0;if(++allocated==fail_at)return 0;keys[allocated-1]=(struct Key){usage,down};return &keys[allocated-1];}
+static Ref key(Ref a,U64 b,U32 page,U32 usage,Bool down,U32 flags){(void)a;(void)b;if(flags!=(1U<<8))return 0;if(page!=7)return 0;if(++allocated==fail_at)return 0;keys[allocated-1]=(struct Key){usage,down};return &keys[allocated-1];}
 static void integer(Ref a,U32 field,long value){(void)a;(void)field;(void)value;}
 static void sender(Ref a,U64 b){(void)a;(void)b;}
 static void dispatch(Ref c,Ref p){(void)c;struct Key *k=p;seen_usage[dispatched]=k->usage;seen_down[dispatched++]=k->down;}
