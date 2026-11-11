@@ -1262,3 +1262,28 @@ targeted tests covered worker ownership, setup and join failures, native
 handoff recovery, installation, stopping and initial replies. The scheduling
 change retains the native opening sequence and all existing attempt/deadline
 bounds. Further cold samples are needed to establish repeatability.
+
+### Full workflow with fragment interlock (2026-11-11)
+
+After a successful [cold session and native focus check](native-focus.md#cold-qualification-with-the-interlock-capable-driver),
+the same warm guest completed the external-product workflow: request/response
+observation, validated application JSON, rendered HTML, a second product page's
+original and rendered documents, and native screenshots. Returning to the local
+fixture passed CSS/XPath focus and clicks, fixture JSON, an intentional one-second
+selector timeout and a subsequent successful read. Owned cleanup preserved all
+original tabs through 60 seconds; the 120-second keyboard observer completed.
+Independent audits found restored accessibility settings and no focus helpers.
+
+This used the published SDK and native helpers with Mesa `26.1.6-1~bpo13+1`,
+a 3-GiB/two-CPU guest, one software-rendering thread, and a four-CPU/10-GiB
+container. Explicit settings were `touch_hold_ms=0`, a 300-second session budget,
+240-second transport timeout and four opening attempts. Defaults are unchanged.
+Renderer census mode remained enabled in this experimental profile; the result
+does not qualify strict Metal fidelity or general startup repeatability.
+
+No fragment-interlock pipeline refusals, execution faults or guest GPU restart
+messages appeared during the batch. Earlier failures remain retained, and their
+blank-page cause is not established by this result. Initial product captures
+still preceded complete painting; later native captures showed the expected
+content. DOM readiness alone therefore remains insufficient for a visual pass.
+External URLs, page content and acceptance artifacts remain private.

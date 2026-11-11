@@ -737,5 +737,24 @@ clicked in 12.60 seconds and completed native navigation in 33.21 seconds.
 Native captures showed the fixture and click feedback; its owned tab closed
 and all original tabs remained through 60 seconds. Independent checks found
 both accessibility settings off and no owned focus helper. This validates the
-warm native path; fresh cold qualification and a complete product workflow
-with this source version remain pending.
+warm native path; it did not qualify a fresh cold start or the complete product
+workflow.
+
+### Cold qualification with the interlock-capable driver
+
+A subsequent fresh guest using the same public SDK and production helpers,
+with the [updated Mesa driver](setup.md#lavapipe-capabilities-and-renderer-logs),
+passed native readiness in 267.52 seconds. Its first owned session opened in
+70.72 seconds, the CSS click completed in 14.26 seconds, and the first native
+navigation completed in 111.72 seconds. The foreground read before the focus
+tap accounted for 48.63 seconds; this was not a startup-speed improvement.
+
+Discovery returned one restored partial `-25216`, then a complete six-element
+scan with no address control. It sent one Command-L and required fresh native
+resolution, a verified tap and editing readback before navigation text. Native
+and host images showed the fixture before and after input and after settling.
+Owned cleanup preserved all original tabs through 60 seconds; the bounded
+keyboard recording completed, and an independent audit found both settings off
+and no owned focus helper. This qualifies that cold sequence with the stated
+driver and explicit deadlines. Earlier failed sequences remain failed, and one
+successful cold case does not establish general startup repeatability.

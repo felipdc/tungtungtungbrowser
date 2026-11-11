@@ -42,10 +42,10 @@ runtime. Confirm no emulator still owns `Disk.img`. Keep VM bundles, proxy
 credentials, deployment configuration and captured page content in external
 directories. Do not put them into a source archive or container image.
 
-The runtime and proxy Dockerfiles also build natively for ARM64. The ARM
-images have passed controller import and proxy binary execution checks, but
-the complete ARM runtime still needs native guest verification. The source
-build, firmware creation and kernel-selection helpers remain validated only
+Earlier runtime and proxy images built natively for ARM64 and passed controller
+import and proxy binary execution checks. The Mesa driver update below is
+qualified on x86_64 only; the complete ARM runtime still needs native guest
+verification. The source build, firmware creation and kernel-selection helpers remain validated only
 on x86_64. A different host CPU alone does not establish acceleration for
 Apple-specific CPU instructions.
 
@@ -131,6 +131,29 @@ use different host IDs; use the mapped identity for that daemon. The runtime
 checkout also needs readable files and traversable directories. Rerun the
 container check after correcting access; the launcher does not change ownership
 or permissions automatically.
+
+## Lavapipe capabilities and renderer logs
+
+The runtime image pins Mesa Vulkan drivers to `26.1.6-1~bpo13+1` from Debian's
+signed `trixie-backports` repository. The previous Mesa 25.0.7 CPU driver lacked
+`fragmentShaderPixelInterlock`: native raster-order pipeline creation failed
+with `RasterOrderGroups` / `Feature(FragmentShaderPixelInterlock)` errors.
+The pinned driver exposes pixel and sample interlock while retaining CPU
+rendering. Driver capability checks alone do not establish usable native pages.
+
+Rebuild the image after updating the Dockerfile. If your Compose overlays bind
+mount `libvulkan_lvp.so`, that mount overrides the image's driver. Check the
+actual mounted library and its dependencies before booting; updating the image
+alone leaves an older mounted driver active. Preserve the old image and library
+when comparing a new driver on a separate guest copy.
+
+The image sets `REIMS_VGPU_LOG=warn`, so renderer failures appear in the VM's
+`console.log`. Set this variable explicitly when launching outside the image.
+The pinned renderer installs no logger when it is unset. Logging does not
+enable census mode or change how failures are handled; `REIMS_VGPU_CENSUS_DIR`
+remains empty by default. Keep native screenshots, page/API results and renderer
+logs together when diagnosing a blank page: a GPU restart message alone does
+not identify its cause.
 
 ## Resource settings
 

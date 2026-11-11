@@ -45,7 +45,17 @@ Use targeted checks for each fix and keep the guest warm during a batch.
 Reserve the full workflow for milestones after startup, native focus, visible
 pixels and owned-tab preservation pass. The optional
 [native navigation key helper](native-keyboard.md) passed warm navigation and
-cleanup checks; the subsequent cold native focus alarm remains unresolved.
+cleanup checks. A later [cold qualification](native-focus.md#cold-qualification-with-the-interlock-capable-driver)
+passed first-session creation, native focus, visible fixture input and owned
+cleanup with the interlock-capable CPU driver. Preserve the earlier cold alarms
+and failed rendering cases; that successful sequence does not establish general
+startup repeatability.
+
+The subsequent [full-workflow milestone](inspector-api.md#full-workflow-with-fragment-interlock-2026-11-11)
+passed on that same warm guest, including application JSON, two external product
+pages, visible native captures, CSS/XPath actions, timeout recovery and preserved
+owned cleanup. Keep validation targeted between milestones; broader runtime
+repeatability and the experimental profile's limits remain separate work.
 
 ## Runtime baseline and recorded experiments
 
