@@ -153,7 +153,7 @@ def main(argv=None):
     tap.add_argument("x", type=float)
     tap.add_argument("y", type=float)
     tap.add_argument("--hold-ms", type=int, default=50,
-                     help="Requested native contact hold, 1–1000 ms (default: 50)")
+                     help="Requested native contact hold, 0–1000 ms (default: 50)")
     capturing = sub.add_parser("capture", help="Collect native evidence; does not assert rendered-page success")
     capturing.add_argument("url")
     capturing.add_argument("--output", type=Path, required=True)

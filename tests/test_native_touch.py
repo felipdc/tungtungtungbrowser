@@ -87,8 +87,24 @@ class NativeTouchTests(unittest.TestCase):
             Browser(guest=self.guest).tap(196, 105, hold_ms=800)
         self.assertEqual([c['method'] for c in self.calls], ['device.screen', 'script.eval'])
 
+    def test_configured_zero_hold_and_explicit_override(self):
+        browser = Browser(guest=self.guest, touch_hold_ms=0)
+        self.answer = process_result({**result(), 'requested_hold_ms': 0})
+        self.assertEqual(browser.tap(196, 105)['native']['requested_hold_ms'], 0)
+        self.assertIn(', "0"]', self.calls[-1]['params']['source'])
+        self.calls.clear()
+        self.answer = process_result(result())
+        self.assertEqual(browser.tap(196, 105, hold_ms=50)['native']['requested_hold_ms'], 50)
+        self.assertIn(', "50"]', self.calls[-1]['params']['source'])
+
+    def test_invalid_configured_hold_sends_no_input(self):
+        for value in (-1, 1001, True, 0.0, None, '0'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                Browser(guest=self.guest, touch_hold_ms=value)
+        self.assertEqual(self.calls, [])
+
     def test_invalid_hold_fails_before_geometry_or_input(self):
-        for value in (0, -1, 1001, True, 50.0, float('nan'), '800', None):
+        for value in (-1, 1001, True, 50.0, float('nan'), '800', None):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 Browser(guest=self.guest).tap(196, 105, hold_ms=value)
         self.assertEqual(self.calls, [])

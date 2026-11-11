@@ -256,7 +256,7 @@ class GuestContractTest(unittest.TestCase):
         self.assertEqual(self.requests, [])
 
     def test_requested_hold_changes_down_delay_and_keeps_balanced_release(self):
-        for hold in (1, 800, 1000):
+        for hold in (0, 1, 800, 1000):
             self.requests.clear()
             self.guest.tap(120, 240, hold_ms=hold)
             self.assertEqual([r['method'] for r in self.requests], ['input.touch_sequence'])
@@ -266,7 +266,7 @@ class GuestContractTest(unittest.TestCase):
                 {'phase': 'up', 'x': 120, 'y': 240, 'delay_ms': 0}])
 
     def test_invalid_hold_sends_no_sequence(self):
-        for value in (True, 0, 1001, 800.0, None, '800', float('nan')):
+        for value in (True, -1, 1001, 800.0, None, '800', float('nan')):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.guest.tap(120, 240, hold_ms=value)
         self.assertEqual(self.requests, [])

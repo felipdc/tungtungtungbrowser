@@ -15,6 +15,7 @@ static Event events[4], client;
 static int allocations, releases, sent, fail_at, interrupted, missing_symbol;
 static U64 previous_time;
 static unsigned int expected_sleep;
+static int sleep_calls;
 static Ref allocate(void) {
     allocations++;
     return allocations == fail_at ? 0 : &events[allocations - 1];
@@ -68,10 +69,10 @@ void *fake_dlsym(void *library,const char *symbol) {
 #undef SYMBOL
     assert(0); return 0;
 }
-int fake_usleep(unsigned int microseconds) { assert(sent == 1 && microseconds == expected_sleep); return interrupted ? -1 : 0; }
+int fake_usleep(unsigned int microseconds) { assert(sent == 1 && microseconds == expected_sleep); sleep_calls++; return interrupted ? -1 : 0; }
 U64 fake_time(void) { return previous_time + 1000; }
 static void reset(void) {
-    memset(events,0,sizeof(events)); allocations = releases = sent = fail_at = interrupted = missing_symbol = 0; previous_time = 0; expected_sleep = 50000;
+    memset(events,0,sizeof(events)); allocations = releases = sent = fail_at = interrupted = missing_symbol = 0; previous_time = 0; expected_sleep = 50000; sleep_calls = 0;
 }
 int main(void) {
     char *tap[] = {"helper", "tap", "0.25", "0.5", "0.01", "50"};
@@ -81,7 +82,10 @@ int main(void) {
     reset(); expected_sleep = 800000; assert(helper_main(6,tap) == 0 && sent == 2 && releases == 5);
     reset(); expected_sleep = 800000; interrupted = 1;
     assert(helper_main(6,tap) == 7 && sent == 2 && releases == 5);
-    const char *bad_hold[] = {"0", "1001", "nan", "inf", "800suffix"};
+    tap[5] = "0";
+    reset(); interrupted = 1;
+    assert(helper_main(6,tap) == 0 && sent == 2 && releases == 5 && sleep_calls == 0);
+    const char *bad_hold[] = {"-1", "1001", "nan", "inf", "800suffix"};
     for (unsigned i = 0; i < sizeof(bad_hold)/sizeof(bad_hold[0]); i++) {
         reset(); tap[5] = (char *)bad_hold[i]; assert(helper_main(6,tap) == 2 && allocations == 0 && sent == 0);
     }

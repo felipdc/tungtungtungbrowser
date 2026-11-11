@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
     if (!check && (argc != 6 || !equal(argv[1], "tap") ||
         !number(argv[2], &nx, 0, 1) || !number(argv[3], &ny, 0, 1) ||
         !number(argv[4], &radius, 0.000001, 0.05) ||
-        !number(argv[5], &hold, 1, 1000))) return failure("arguments", 2);
+        !number(argv[5], &hold, 0, 1000))) return failure("arguments", 2);
 
     void *io = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", 2);
     void *cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", 2);
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     U64 now = mach_absolute_time();
     setTime(hands[0], now); setTime(fingers[0], now);
     dispatch(client, hands[0]);
-    int slept = usleep((unsigned int)(hold * 1000)) == 0;
+    int slept = hold == 0 || usleep((unsigned int)(hold * 1000)) == 0;
     now = mach_absolute_time();
     setTime(hands[1], now); setTime(fingers[1], now);
     dispatch(client, hands[1]);

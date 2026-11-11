@@ -60,6 +60,17 @@ class NativeAddressResolutionTests(unittest.TestCase):
             self.assertEqual(self.inputs(), ['cmd+l'])
             self.assertEqual(len(self.taps()), 1)
             self.assertEqual((self.reader.resolved, self.reader.fresh), (1,1))
+    def test_configured_zero_reaches_address_focus_contact(self):
+        from tungtungtungbrowser.guest import Guest
+        self.guest.tap = lambda x, y, **options: Guest.tap(self.guest, x, y, **options)
+        reader = Reader(self.guest, self.discovered())
+        browser = Browser(guest=self.guest, address_field_reader=reader,
+                          input_settle=0, touch_hold_ms=0)
+        self.assertEqual(browser._focus_address_field(FG)['source'], 'ax_first_responder')
+        self.assertEqual(len(self.taps()), 1)
+        self.assertEqual(self.taps()[0]['events'][0]['delay_ms'], 0)
+        self.assertEqual((reader.resolved, reader.fresh), (1, 1))
+
     def test_uncertain_shortcut_stops_before_read_or_tap(self):
         original = self.guest.call
         for ack in [None, {'key': 'cmd+l', 'dispatched': False}, GuestError('Lost reply')]:

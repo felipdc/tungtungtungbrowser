@@ -95,8 +95,8 @@ def web_url(value):
 
 
 def contact_hold_ms(value):
-    if type(value) is not int or not 1 <= value <= 1000:
-        raise ValueError("Contact hold must be an integer between 1 and 1000 milliseconds")
+    if type(value) is not int or not 0 <= value <= 1000:
+        raise ValueError("Contact hold must be an integer between 0 and 1000 milliseconds")
     return value
 
 

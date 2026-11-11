@@ -81,13 +81,28 @@ result = browser.tap(x, y, hold_ms=800)
 ```
 
 The CLI equivalent is `tap X Y --hold-ms 800`. `hold_ms` accepts an integer
-from 1 to 1000; the default remains 50. The installed helper already supports
-that bounded duration, so this option does not require replacing its binary.
-The default daemon-backed tap uses the same requested hold in its balanced
-touch sequence. An 800 ms helper-backed hold has opened Safari's tab-overview
-context menu in a live trial. Other durations, controls and the daemon-backed
-long hold still require native UI validation; accepting the argument does not
-establish gesture recognition.
+from 0 to 1000; the default remains 50. Rebuild and install the helper before
+using zero: older binaries reject that argument before dispatching input.
+Zero skips the voluntary wait between press and release. Scheduling and HID
+dispatch can still delay release, so it does not guarantee a contact duration.
+
+Configure a browser's default for taps, Inspector selector clicks and native
+address-focus contacts with `touch_hold_ms`:
+
+```python
+browser = Browser(touch_helper_sha256=installation['helper_sha256'], touch_hold_ms=0)
+browser.tap(x, y)               # Uses the configured zero hold.
+browser.tap(x, y, hold_ms=800)  # Explicit duration overrides the configuration.
+```
+
+A targeted warm trial with the rebuilt helper passed trusted selector clicks,
+native address focus/navigation, visible page captures and owned-tab cleanup
+with all four contacts requesting zero. Earlier diagnostic contacts also
+showed that requested nonzero sleeps could substantially overrun. These checks
+do not establish cold-start or sustained rendering reliability. An 800 ms
+helper-backed hold has separately opened Safari's tab-overview context menu.
+The daemon-backed sequence receives the same requested duration; its zero and
+long holds still require native UI qualification.
 
 Coordinates are native screen points. The backend reads `device.screen`,
 requires the tested unlocked portrait geometry, validates the point, and

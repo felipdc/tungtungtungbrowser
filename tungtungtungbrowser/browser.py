@@ -13,6 +13,7 @@ from .guest import Guest, GuestError, contact_hold_ms, web_url
 from .display import capture_display
 
 SAFARI = 'com.apple.mobilesafari'
+_CONFIGURED_TOUCH_HOLD = object()
 # Native accessibility kAXIsEditingTrait. See docs/native-control-audit.md.
 _AX_IS_EDITING = 1 << 21
 
@@ -107,13 +108,14 @@ class Browser:
     """
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
                  qmp_socket=None, display_timeout=15, touch_helper_sha256=None,
-                 address_field_reader=None):
+                 address_field_reader=None, touch_hold_ms=50):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         if guest is not None and touch_helper_sha256 is not None:
             raise ValueError('Configure the touch helper on the supplied Guest instead')
         self.guest = guest if guest is not None else Guest(cid, timeout, touch_helper_sha256=touch_helper_sha256)
         self.input_settle = input_settle
+        self.touch_hold_ms = contact_hold_ms(touch_hold_ms)
         self.qmp_socket = qmp_socket
         self.display_timeout = display_timeout
         if address_field_reader is not None and not callable(address_field_reader):
@@ -263,7 +265,7 @@ class Browser:
             center = (x + width / 2, y + height / 2)
             if not all(math.isfinite(v) for v in center):
                 raise GuestError('Safari address field has invalid focus geometry; text not sent')
-            self.guest.tap(*center)
+            self.tap(*center)
             time.sleep(self.input_settle)
             field = self._address_field(foreground)
         return field
@@ -312,7 +314,7 @@ class Browser:
                 or current.get('bundle_id') != SAFARI or type(current.get('pid')) is not int
                 or current['pid'] != foreground['pid']):
             raise GuestError('Safari foreground changed; focus tap not sent')
-        self.guest.tap(x + width / 2, y + height / 2)
+        self.tap(x + width / 2, y + height / 2)
         time.sleep(self.input_settle)
         return self._address_field(current)
 
@@ -368,12 +370,15 @@ class Browser:
                 result.save(path, overwrite=overwrite)
             return result
 
-    def tap(self, x, y, *, hold_ms=50):
+    def tap(self, x, y, *, hold_ms=_CONFIGURED_TOUCH_HOLD):
         """Send one balanced native contact; a longer hold can open context menus.
 
-        The requested hold is 1–1000 ms, not a total operation deadline or a
-        guarantee that the application recognized the gesture.
+        Omitting hold_ms uses this Browser's touch_hold_ms (default 50). An explicit
+        integer 0–1000 overrides it. Zero skips the voluntary hold; dispatch
+        can still delay release. Delivery and gesture recognition are unverified.
         """
+        if hold_ms is _CONFIGURED_TOUCH_HOLD:
+            hold_ms = self.touch_hold_ms
         contact_hold_ms(hold_ms)
         with self._lock:
             # Preserve the existing call contract for custom tap-only guests.
