@@ -141,3 +141,10 @@ seconds, followed by native address navigation in 32.9 seconds. Native and host
 images showed the click result and settled fixture. This is an explicit fault
 injection result, not a naturally recovered transport failure or a fresh cold
 qualification. The two original failed attempts remain failed.
+
+A subsequent [public profile qualification](inspector-api.md#reusable-profile-qualification-2026-11-11)
+passed its cold CSS click in 28.6 seconds, then milestone CSS/XPath clicks in
+12.6/12.0 seconds on the same warm guest. Native and host captures showed the
+resulting fixture state, and owned cleanup passed. The cold click recorded zero
+capture-read retries; these successes do not establish recovery from a natural
+screenshot disconnect. The action deadline was explicitly 120 seconds.

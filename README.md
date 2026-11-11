@@ -19,14 +19,19 @@ under development. The current cold-start target is roughly 300 seconds;
 repeatable startup and warm navigation take priority over reducing that time
 further. This is a development target, not a startup guarantee.
 
-Current performance is provisionally accepted for API development. A native
-workflow has exercised owned-session creation, navigation across sites, DOM
+Current performance is provisionally accepted for API development. An image
+built from published commit `25cb749` passed one cold startup and three targeted
+warm session/native-focus/navigation/cleanup cycles on the same guest, using
+the explicit experimental settings below. Safari reached foreground in 229.8
+seconds; warm session creation ranged from 17.6 to 107.5 seconds and the three
+warm navigation calls took 33.7–34.9 seconds. These are individual observations,
+not latency guarantees or general startup qualification.
+
+The browser API has exercised owned sessions, navigation across sites, DOM
 conditions, original/rendered HTML, JSON response capture, CSS/XPath clicks,
-native screenshots and verified owned-tab cleanup. That run used the explicit
-experimental settings below. Repeated cold startup, native focus and warm
-session reliability still need qualification; one successful workflow is not a
-general reliability guarantee. See the [Inspector API](docs/inspector-api.md)
-and [roadmap](docs/roadmap.md) for the evidence and remaining limits.
+native screenshots and verified owned-tab cleanup. See the
+[qualification record](docs/inspector-api.md#reusable-profile-qualification-2026-11-11)
+and [roadmap](docs/roadmap.md) for measured scope and remaining limits.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.
@@ -245,6 +250,13 @@ establish Metal fidelity. A DOM or WebKit
 snapshot can succeed while the composed device image is blank. Review native
 captures independently, and retain failed attempts. Keep the device warm for
 targeted fixes; reserve complete workflows for milestones.
+
+A separate census-disabled trial of the same image reached Safari foreground
+in 243.0 seconds. Its local fixture was blank at the first capture and visibly
+painted at the later capture, after roughly a minute. This assesses local
+document rendering only: no Inspector session, selector action, page-script
+completion or external workflow was qualified without census. The experimental
+profile therefore retains its explicit census setting.
 
 ## Python and native control
 

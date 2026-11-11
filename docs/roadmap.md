@@ -57,6 +57,14 @@ pages, visible native captures, CSS/XPath actions, timeout recovery and preserve
 owned cleanup. Keep validation targeted between milestones; broader runtime
 repeatability and the experimental profile's limits remain separate work.
 
+The reusable profile and README setup/API guide are now published. An
+[image built from public sources](inspector-api.md#reusable-profile-qualification-2026-11-11)
+subsequently passed one cold startup, three targeted warm session/native-focus/
+navigation/cleanup cycles, and another full milestone on the same guest. Treat
+that bounded batch as measured progress; repeated cold boots, sustained session
+creation and wider action coverage remain open. Continue prioritizing failures
+in session startup and native focus over isolated speed improvements.
+
 ## Runtime baseline and recorded experiments
 
 The recorded runtime targets are reliable cold startup, responsive use of warmed

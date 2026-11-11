@@ -424,7 +424,6 @@ editing-URL read authorized the first close key and closed only the owned tab.
 This remains a failed visual and original-cleanup case. The address-resolution
 change does not increase that restoration-reply timeout or qualify rendering.
 
-
 A separate restoration-reply fix increases only the final pipe receive window
 from four to ten seconds. At that stage the main query alarm remained 20 seconds
 and the guard command wait remained 22 seconds; the latter is not a hard process
@@ -470,7 +469,6 @@ production native helper and succeeded on its first resolution read; the
 controlled comparison separately exercised recovery. Cold Inspector startup
 still failed, and the revised reader has not yet passed a first-focus test on
 a fresh boot. No full external-site workflow was repeated.
-
 
 ## Completed first-responder error (2026-11-09, trial 139)
 
@@ -670,7 +668,6 @@ The native batch helper remains experimental; the production native helper,
 phase alarms, accepted query budget and two-query limit are unchanged. The full
 product workflow was not run because the cold focus gate failed.
 
-
 ## Installation-check deadline (2026-11-09, trials 157–158)
 
 A cold installation uploaded and verified the native helper, then failed at the
@@ -784,3 +781,14 @@ in 32.2 seconds, rendered the fixture and verified owned cleanup. The warm
 navigation used direct address discovery, so it does not establish that the new
 partial-scan recovery was exercised natively. Fresh cold qualification remains
 necessary; the original cold failure is retained.
+
+### Public profile follow-up (2026-11-11)
+
+The subsequent [profile qualification](inspector-api.md#reusable-profile-qualification-2026-11-11)
+used an image built from published commit `25cb749`. Its cold session and three
+warm sessions passed native navigation and owned cleanup on one guest. Cold
+focus encountered a restored zero-candidate partial scan and obtained a valid
+responder from the one permitted fresh query. The warm cases used direct
+address discovery. This supplies a fresh cold success, but the one-candidate
+branch above remains protocol-tested rather than natively exercised by this
+batch. The earlier cold failure remains retained.

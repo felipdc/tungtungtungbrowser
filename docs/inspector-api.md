@@ -184,7 +184,6 @@ import os
 
 from tungtungtungbrowser import Browser, InspectorSession
 
-
 async def main():
     browser = Browser()
     async with InspectorSession(browser=browser, url=os.environ['TTT_PAGE_URL']) as page:
@@ -200,7 +199,6 @@ async def main():
                'status': response.value.status})
         # Captures stay in the caller's private workspace.
         await page.screenshot(os.environ['TTT_SCREENSHOT_PATH'])
-
 
 asyncio.run(main())
 ```
@@ -638,7 +636,6 @@ termination; parent overlays, parent cache and six original baseline files were
 unchanged. Neither the experimental helper nor this disposable guest state was
 promoted.
 
-
 ### Native DOM focus and concurrent reads
 
 A later iOS 26.6.2 fixture run reproduced two selector problems. Native
@@ -669,7 +666,6 @@ experiment. The probe is not part of the public SDK. A later
 visible-target CSS/XPath clicks. Broad action qualification,
 background-tab identity checks and coverage/occlusion checks remain open.
 
-
 ### Paired captures after warm navigation
 
 A subsequent owned-session trial reached a second local fixture page and then
@@ -698,7 +694,6 @@ predicate and a malformed native key request. One failed cleanup rejected a
 URL mismatch while navigation was committing; a later ownership-checked recovery
 closed that tab. The corrected run above used a fresh owned tab and completed
 without cleanup errors.
-
 
 The same boot reached foreground Safari in 255.04 seconds, within the approximate
 300-second budget, but its initial capture had blank content. This qualifies
@@ -1287,3 +1282,72 @@ blank-page cause is not established by this result. Initial product captures
 still preceded complete painting; later native captures showed the expected
 content. DOM readiness alone therefore remains insufficient for a visual pass.
 External URLs, page content and acceptance artifacts remain private.
+
+### Reusable profile qualification (2026-11-11)
+
+An image built from published commit `25cb749` used the public experimental
+Compose profile, Mesa `26.1.6-1~bpo13+1`, the separately built native-FP QEMU
+candidate (native FP on, TLB experiment off), and census enabled. No legacy
+application or Mesa bind mount supplied private runtime code. The public helper
+builder and installer produced a deployment profile for `BrowserProfile`.
+This is a source-built image qualification, not a published registry image.
+
+One cold startup reached Safari foreground in 229.8 seconds. The first owned
+session and three subsequent sessions ran on that same guest without rebooting:
+
+| Case | Session creation | Native navigation | Owned cleanup |
+| --- | ---: | ---: | --- |
+| Cold | 68.8 s | 57.7 s | Passed |
+| Warm 1 | 107.5 s | 34.9 s | Passed |
+| Warm 2 | 17.6 s | 34.1 s | Passed |
+| Warm 3 | 20.8 s | 33.7 s | Passed |
+
+The cold CSS click took 28.6 seconds with no screenshot-read recovery. Native
+and host captures showed the fixture and click result. Each session closed its
+owned tab once; settled database observations preserved every original tab
+through 60 seconds, and the 120-second keyboard recordings completed without
+overflow. Independent audits found both accessibility settings restored off
+and no surviving owned focus helper. Cleanup times include the observation
+window and should not be interpreted as close-shortcut latency.
+
+Cold focus used one restored zero-candidate partial scan followed by a valid
+fresh responder; the warm cases used direct address discovery. This batch did
+not exercise the one-candidate recovery branch natively. The disconnected
+highlight recovery remains covered by protocol tests and the earlier explicit
+native fault injection; no naturally recovered screenshot disconnect occurred
+in this batch’s cold or milestone clicks. Earlier failed attempts remain failed
+and retained.
+
+After those four cycles passed, the same guest completed the external-product
+milestone in 472.3 seconds, including the cleanup observation window. It captured
+an HTTP 200 application JSON response, both pages' expected DOM content, rendered
+HTML, the second page's original response, and native/host screenshots. The
+second page's initial image was still loading; a later passive capture showed
+its product image and title. Back on the fixture, CSS and XPath clicks took 12.6
+and 12.0 seconds, the JSON/DOM conditions passed, and a deliberate one-second
+selector timeout was followed by a successful read. The fifth owned tab closed
+once with the same preservation, keyboard-recording and independent state audits.
+
+This is one cold boot and three targeted warm cycles followed by one milestone,
+not repeated cold-boot or sustained workload qualification. Session creation
+varied considerably. Keep the guest warm during targeted fixes and reserve the
+full workflow for milestones. Native captures remain required alongside DOM
+conditions; successful HTML or JSON alone does not establish visible painting.
+
+The completed compatibility batch recorded a 9.50-GiB container memory peak
+under its 10-GiB limit, with no memory-limit/OOM events or CPU quota throttling.
+No fragment-interlock refusals, renderer execution faults or GPU restart
+messages were recorded. The guest shut down cleanly, the bridge stopped, and
+the parent disk/cache hashes were unchanged. These measurements
+do not justify reducing the recommended host memory.
+
+A separate preserved child then ran the same image, QEMU candidate and resource
+settings with `TTT_RENDER_DIAGNOSTICS_DIR=''` and `REIMS_VGPU_STRICT` unset.
+Safari foreground readiness passed in 243.0 seconds. One native URL-open request
+was followed by passive native/host captures: the first pair had blank white
+content, while the later pair showed the local fixture heading, controls and
+original-document text. Both checkpoints remain in the evidence. This supports
+later local document painting without census, not immediate readiness. The
+fixture still showed its initial input/response state; script/JSON completion
+was not established. No Inspector session, action, external workflow or strict
+Metal-fidelity qualification was performed in this separate assessment.
