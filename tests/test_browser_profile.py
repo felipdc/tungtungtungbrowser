@@ -55,7 +55,15 @@ class ProfileTests(unittest.TestCase):
 
     def test_existing_defaults_remain_unchanged(self):
         self.assertEqual((Browser().input_settle, Browser().touch_hold_ms), (2, 50))
+        self.assertEqual(Browser().address_focus, 'auto')
+        self.assertEqual(BrowserProfile(self.directory).browser().address_focus, 'auto')
         self.assertEqual(InspectorSession().timeout, 30)
+
+    def test_profile_can_select_shortcut_focus_without_sending_input(self):
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            browser = BrowserProfile(self.directory).browser(address_focus='shortcut')
+        self.assertEqual(browser.address_focus, 'shortcut')
+        self.assertEqual(browser.guest.keyboard_helper_sha256, SHA)
 
     def test_failed_bundle_is_not_usable(self):
         self.write('profile.json', version=1, name='api-experimental', cid=3, status='failed')

@@ -108,7 +108,7 @@ class Browser:
     """
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
                  qmp_socket=None, display_timeout=15, touch_helper_sha256=None,
-                 address_field_reader=None, touch_hold_ms=50):
+                 address_field_reader=None, touch_hold_ms=50, address_focus='auto'):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         if guest is not None and touch_helper_sha256 is not None:
@@ -120,7 +120,10 @@ class Browser:
         self.display_timeout = display_timeout
         if address_field_reader is not None and not callable(address_field_reader):
             raise ValueError('address_field_reader must be callable')
+        if address_focus not in ('auto', 'shortcut'):
+            raise ValueError('address_focus must be auto or shortcut')
         self.address_field_reader = address_field_reader
+        self.address_focus = address_focus
         self._lock = threading.RLock()
 
     def health(self):
@@ -243,6 +246,16 @@ class Browser:
                     'method': method, 'navigation_verified': False}
 
     def _focus_address_field(self, foreground):
+        if self.address_focus == 'shortcut':
+            if self.address_field_reader is None:
+                raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
+            ack = self.guest.call('input.key', name='cmd+l')
+            if not isinstance(ack, dict) or ack.get('key') != 'cmd+l' or ack.get('dispatched') is not True:
+                raise GuestError('Native address shortcut not acknowledged; outcome is unknown')
+            time.sleep(self.input_settle)
+            # An acknowledged shortcut is not editing focus. Require a fresh
+            # owned first responder; never add a contact or repeat the shortcut.
+            return self._address_field(foreground)
         if getattr(self.address_field_reader, 'supports_address_resolution', False) is True:
             return self._resolve_address_field(foreground)
         if self.address_field_reader is None:

@@ -64,7 +64,38 @@ A retained deployment can be checked again after a guest reboot. Rebuild and
 install a new helper to get the guard; an older deployment does not acquire it
 by updating the Python package alone.
 
-## Navigation behavior and limits
+## Experimental shortcut address focus
+
+Select `address_focus="shortcut"` to focus the address bar with one Command-L
+and require a fresh native first-responder read before proceeding:
+
+```python
+browser = profile.browser(address_focus="shortcut")
+```
+
+Here `profile` is a configured `BrowserProfile`, including the native keyboard
+and focus helpers. The option is also available on `Browser`. The default
+`"auto"` preserves the discovery behavior described below.
+
+Shortcut mode requires the expected Safari process, the `URL` identifier and
+the editing trait. Navigation still checks the current tab's expected address
+and reads back pasted text before Return; cleanup checks the expected address
+before Command-W. Failed acknowledgement, missing focus or rejected ownership
+stops the operation without repeating the shortcut or adding a focus tap.
+
+This option permits testing address focus without a touch contact, which can
+be recognized as a long press if release is delayed. It does not establish
+keyboard delivery or successful focus from the shortcut acknowledgement alone.
+Concurrent browsing qualification remains separate from selecting the option.
+
+A warm comparison on four concurrent phones passed owned-session creation,
+shortcut navigation, visible native and host captures, and cleanup. Independent
+tab-state copies retained every pre-existing tab through 60 seconds; each
+cleanup observer recorded one Command-L and one Command-W with their releases.
+The original address-context-menu failure remains recorded. This bounded local
+fixture check does not qualify cold setup or sustained external browsing.
+
+## Automatic navigation behavior and limits
 
 New helper builds advertise `address_resolution: "guarded-v1"` in their native
 capability check. `from_deployment` enables the combined resolver only when the
