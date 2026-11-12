@@ -42,7 +42,9 @@ def install(build_directory, output, *, cid=3):
                 module.install(Guest(cid=cid, timeout=bridge.RPC_TIMEOUT_SECONDS), data, digest,
                                output / name, lambda: asyncio.run(bridge.health(cid)), launch_mode='process')
             else:
-                module.install(Guest(cid=cid, timeout=60), data, digest, output / name)
+                # Leave transport headroom beyond the 60-second input-free
+                # touch/focus checks. No installation or input is replayed.
+                module.install(Guest(cid=cid, timeout=70), data, digest, output / name)
             report['completed'].append(name)
         report['status'] = 'complete'
     except BaseException as error:

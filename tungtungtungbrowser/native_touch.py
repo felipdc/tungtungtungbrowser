@@ -20,7 +20,9 @@ def invoke(guest, sha256, arguments):
     # Both callers below build arguments from a fixed operation and validated
     # numbers. JSON serialization is for the admin expression, never a shell.
     source = 'proc.run(' + json.dumps(helper_path(sha256)) + ', ' + json.dumps(arguments) + ', "")'
-    answer = guest._rpc('script.eval', source=source, timeout=30)
+    # Cold HID initialization can outlast the input deadline under concurrent
+    # startup. Only the input-free capability check gets the longer allowance.
+    answer = guest._rpc('script.eval', source=source, timeout=60 if arguments == ['check'] else 30)
     error = GuestError('Native touch helper did not complete successfully; input is not repeated')
     error.native_script_response = answer
     if (not isinstance(answer, dict) or answer.get('ok') is not True

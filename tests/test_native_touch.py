@@ -164,6 +164,15 @@ class NativeTouchTests(unittest.TestCase):
         check_helper(self.guest, SHA)
         self.assertEqual(len(self.calls), 1)
         self.assertIn('["check"]', self.calls[0]['params']['source'])
+        self.assertEqual(self.calls[0]['params']['timeout'], 60)
+
+    def test_cold_check_failure_is_preserved_without_replay(self):
+        self.answer = GuestTransportError('receive_headers', TimeoutError('timeout'))
+        with self.assertRaises(GuestTransportError) as caught:
+            check_helper(self.guest, SHA)
+        self.assertIs(caught.exception, self.answer)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]['params']['timeout'], 60)
 
     def test_browser_accepts_explicit_helper_and_custom_guest_remains_explicit(self):
         self.assertEqual(Browser(touch_helper_sha256=SHA).guest.touch_helper_sha256, SHA)
