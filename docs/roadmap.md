@@ -38,6 +38,12 @@ result. The earlier [graphics accounting](graphics-memory.md),
 [backing reclamation](lavapipe-memory.md) and translation-cache experiments
 remain evidence, not demonstrated whole-browser savings.
 
+The [compressed-memory trial](multiple-phones.md#compressed-memory-trial-four-phone-startup-remains-unqualified)
+contained four phone cgroups within their 6 GiB limits, but three concurrent
+boots failed readiness on eight CPU cores. Compare sixteen CPU cores with the
+same 32 GiB host RAM before adopting that profile; the concurrent browser
+acceptance workload remains required.
+
 ## Completed workflow milestones and remaining API work
 
 The completed milestones established this developer workflow. Preserve its

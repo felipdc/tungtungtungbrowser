@@ -290,3 +290,31 @@ does not qualify a maximum density, sustained load, concurrent proxy egress,
 mutually untrusted tenants or renderer-census-disabled operation. Keep guests
 warm during a batch and validate each change with a targeted check; repeat a
 full browser workflow at milestones.
+
+### Compressed-memory trial: four-phone startup remains unqualified
+
+A subsequent experiment retained 3 GiB guest RAM and used a 6 GiB cgroup RAM
+limit, 4 GiB of logical swap capacity and a 1.5 GiB zswap limit per phone.
+Host zswap used zstd, and per-phone disk writeback was disabled before QEMU
+started. Compressed memory remained part of the cgroup charge.
+
+One phone reached foreground Safari in 246 seconds and passed CSS/XPath clicks,
+native navigation, application JSON capture and settled visible rendering.
+A post-close forensic download was truncated. Two later bounded database reads
+confirmed the owned tab was absent and original tabs were preserved, without
+another close input. The original failed audit was retained; this was not an
+uninterrupted full-workflow pass.
+
+With that phone warm, three additional phones booted concurrently on an
+eight-core, 32 GiB host. Sampled RAM peaked at **24.00 GiB for the four phones**
+and **24.07 GiB including their proxies**; minimum host available memory was
+5.67 GiB. No phone recorded an OOM, and no disk swap I/O occurred. However, all
+three new phones failed their original 600-second Safari readiness checks.
+Each phone used about 1.9 CPU cores on average, including the warm phone, while
+memory stall time stayed below 0.34%. CPU contention is therefore the next
+hypothesis to test on **16 CPU cores with the same 32 GiB RAM**.
+
+All four guests subsequently shut down natively; parent disks and cache stayed
+unchanged. This experiment demonstrates memory containment, not four working
+browsers. The compressed profile remains unqualified until startup, native
+focus, rendering, API capture and cleanup pass under sustained concurrent use.
