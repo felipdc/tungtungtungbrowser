@@ -1,0 +1,166 @@
+--- a/include/tcg/startup.h
++++ b/include/tcg/startup.h
+@@ -37,6 +37,15 @@
+ void tcg_init(size_t tb_size, int splitwx, unsigned max_threads);
+ 
+ /**
++ * tcg_code_reclaim_init: Configure optional discard after a full TB flush.
++ * @enabled: release obsolete translated-code backing pages
++ *
++ * Call once after tcg_init(), before any vCPU starts. Enabling requires
++ * Linux private anonymous code mappings; split W^X mappings are rejected.
++ */
++void tcg_code_reclaim_init(bool enabled);
++
++/**
+  * tcg_register_thread: Register this thread with the TCG runtime
+  *
+  * All TCG threads except the parent (i.e. the one that called the TCG
+--- a/accel/tcg/tcg-all.c
++++ b/accel/tcg/tcg-all.c
+@@ -50,6 +50,7 @@
+ 
+     OnOffAuto mttcg_enabled;
+     bool one_insn_per_tb;
++    bool tb_reclaim;
+     int splitwx_enabled;
+     unsigned long tb_size;
+ };
+@@ -144,6 +145,7 @@
+     page_init();
+     tb_htable_init();
+     tcg_init(s->tb_size * MiB, s->splitwx_enabled, max_threads);
++    tcg_code_reclaim_init(s->tb_reclaim);
+ 
+ #if defined(CONFIG_SOFTMMU)
+     /*
+@@ -216,6 +218,20 @@
+     s->splitwx_enabled = value;
+ }
+ 
++static bool tcg_get_tb_reclaim(Object *obj, Error **errp)
++{
++    return TCG_STATE(obj)->tb_reclaim;
++}
++
++static void tcg_set_tb_reclaim(Object *obj, bool value, Error **errp)
++{
++    if (tcg_allowed) {
++        error_setg(errp, "tb-reclaim must be set before machine initialization");
++        return;
++    }
++    TCG_STATE(obj)->tb_reclaim = value;
++}
++
+ static bool tcg_get_one_insn_per_tb(Object *obj, Error **errp)
+ {
+     TCGState *s = TCG_STATE(obj);
+@@ -271,6 +287,11 @@
+     object_class_property_set_description(oc, "split-wx",
+         "Map jit pages into separate RW and RX regions");
+ 
++    object_class_property_add_bool(oc, "tb-reclaim",
++        tcg_get_tb_reclaim, tcg_set_tb_reclaim);
++    object_class_property_set_description(oc, "tb-reclaim",
++        "Discard obsolete code backing after a full TB flush (Linux, split-wx=off)");
++
+     object_class_property_add_bool(oc, "one-insn-per-tb",
+                                    tcg_get_one_insn_per_tb,
+                                    tcg_set_one_insn_per_tb);
+--- a/tcg/region.c
++++ b/tcg/region.c
+@@ -30,6 +30,8 @@
+ #include "qemu/cacheinfo.h"
+ #include "qemu/qtree.h"
+ #include "qapi/error.h"
++#include "qemu/error-report.h"
++#include "tcg/startup.h"
+ #include "tcg/tcg.h"
+ #include "exec/translation-block.h"
+ #include "tcg-internal.h"
+@@ -75,6 +77,22 @@
+ };
+ 
+ static struct tcg_region_state region;
++/* Set once before vCPU execution. Disabled unless explicitly requested. */
++static bool code_reclaim;
++
++void tcg_code_reclaim_init(bool enabled)
++{
++    if (enabled) {
++#if !defined(CONFIG_LINUX) || !defined(CONFIG_MADVISE)
++        error_setg(&error_fatal, "tb-reclaim requires Linux madvise and private anonymous mappings");
++#else
++        if (tcg_splitwx_diff) {
++            error_setg(&error_fatal, "tb-reclaim is incompatible with split-wx");
++        }
++#endif
++    }
++    code_reclaim = enabled;
++}
+ 
+ /*
+  * This is an array of struct tcg_region_tree's, with padding.
+@@ -403,6 +421,38 @@
+     qemu_mutex_unlock(&region.lock);
+ }
+ 
++/*
++ * Only after all TB metadata has been destroyed, while no translated code
++ * can execute. Private anonymous mappings are zero-filled on their next
++ * use. Keep every page containing the permanent prologue/pools, and leave
++ * guard pages and the virtual cache capacity unchanged.
++ */
++static void tcg_region_discard_code(void)
++{
++#ifdef CONFIG_LINUX
++    const size_t page_size = qemu_real_host_page_size();
++
++    if (!code_reclaim) {
++        return;
++    }
++    assert(tcg_splitwx_diff == 0);
++    for (size_t i = 0; i < region.n; i++) {
++        void *start, *end;
++        uintptr_t first, last;
++
++        tcg_region_bounds(i, &start, &end);
++        first = QEMU_ALIGN_UP((uintptr_t)start, page_size);
++        last = QEMU_ALIGN_DOWN((uintptr_t)end, page_size);
++        if (first < last &&
++            qemu_madvise((void *)first, last - first, QEMU_MADV_DONTNEED)) {
++            /* Failed advice retains valid stale bytes; never unmap them. */
++            warn_report_once("tb-reclaim: could not discard obsolete code: %s",
++                             strerror(errno));
++        }
++    }
++#endif
++}
++
+ /* Call from a safe-work context */
+ void tcg_region_reset_all(void)
+ {
+@@ -420,6 +470,7 @@
+     qemu_mutex_unlock(&region.lock);
+ 
+     tcg_region_tree_reset_all();
++    tcg_region_discard_code();
+ }
+ 
+ static size_t tcg_n_regions(size_t tb_size, unsigned max_threads)
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -1026,8 +1026,13 @@
+             if (tb == NULL) {
+                 CPUJumpCache *jc;
+                 uint32_t h;
++                unsigned int flush_count = qatomic_read(&tb_ctx.tb_flush_count);
+ 
+                 tb = tb_gen_code(cpu, s);
++                /* An inline serial flush invalidates the previous caller too. */
++                if (flush_count != qatomic_read(&tb_ctx.tb_flush_count)) {
++                    last_tb = NULL;
++                }
+ 
+                 /*
+                  * We add the TB in the virtual pc hash table

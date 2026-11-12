@@ -1,5 +1,10 @@
 # Pinned runtime patches
 
+`qemu-tcg-reclaim.patch` optionally discards obsolete translated-code backing
+after safe full flushes, retaining cache capacity. It is disabled by default
+and omitted from the default build. See the [disk-free check, native memory
+observations and qualification failures](../docs/tcg-reclamation.md).
+
 `qemu-display-refresh-toggle.patch` is an optional, default-off display
 experiment on the traced QEMU `14c9913d` source. Its host QOM boolean permits
 comparisons within an already warmed guest, with changes rejected during an
