@@ -10,8 +10,9 @@ Start with **8 CPU cores, 32 GiB host RAM and storage for two complete VM copies
 The experimental profile allows each phone four CPU cores and 10 GiB container
 memory, including its shared memory. This is a starting configuration, not a
 measured maximum phone density. Allow additional storage for retained failures.
-The previous single-phone batch peaked at 9.50 GiB; the 3-GiB guest setting is
-not the total memory cost of a phone. Current performance remains provisional.
+The two-phone trial reached 19.38 GiB combined sampled container memory, and one
+phone reached its 10-GiB limit. The 3-GiB guest setting is not the total memory
+cost of a phone. Current performance remains provisional.
 
 ## Prepare independent bundles
 
@@ -193,5 +194,59 @@ remove the shared lease volume while another instance is running.
 
 Protocol and process tests cover duplicate CID rejection, disk aliases, inherited
 leases, separate copy writes, partial-copy failure, per-instance environment
-selection and mixed-controller rejection. Concurrent native browser qualification
-is recorded separately once the two-instance trial completes.
+selection and mixed-controller rejection.
+
+A two-phone trial on 2026-11-12 used one Debian 13 x86_64 host with eight CPU
+cores and 32 GiB RAM, Linux 6.12, Mesa 26.1.6, independent raw bundles and ordinary
+Docker networks. Both used the experimental resource profile, native-FP candidate
+and renderer census. The image was built from `4a47305`; host orchestration used
+`3dccac7`, whose package and launcher sources matched the running containers.
+
+| Observation | Phone A | Phone B |
+| --- | ---: | ---: |
+| Cold launch to verified Safari foreground | 315.7 s | 268.6 s |
+| Concurrent owned-session creation | 43.1 s | 20.2 s |
+| Native external-navigation request | 52.3 s | 53.7 s |
+
+Both browsers exercised CSS and XPath clicks, per-phone JSON responses, DOM
+conditions, independent local storage and external HTTPS navigation concurrently.
+Native JPEG and host PNG captures visibly showed each phone's own fixture and
+the external page. Namespace, disk-inode and CID checks passed; a duplicate-CID
+launch was rejected before QEMU started, without disrupting either guest.
+
+The external-page test initially assumed an `h1` that the returned mobile HTML
+did not contain. Those timeout records were retained. Read-only follow-up on the
+same tab identities verified the exact URLs, actual HTML and visible content;
+navigation was not repeated. Prefer a controlled fixture with explicit DOM
+conditions for repeatable tests instead of assumptions about third-party markup.
+
+Ownership-checked cleanup closed one test tab per guest, with one observed
+Command-W sequence each. Two database copies at the settled checkpoint retained
+every original tab, and independent audits found accessibility settings restored
+and no owned focus helper left running.
+
+Stopping A took 17.0 seconds and left B's native daemon and Inspector bridge
+identities unchanged. A's CID lease was released while B's stayed held. Without
+restarting B, a further session opened in 17.3 seconds, retained B's local-storage
+marker, performed both selector clicks and navigated to a second fixture document
+in 30.8 seconds. Its first content assertion raced the navigation because the
+same DOM predicate matched the old document. A read-only follow-up waited for the
+destination URL and verified the new document and paired captures. This failure
+was retained too; the navigation request was not repeated.
+
+The surviving session's owned tab was then closed once, with its original tabs
+preserved. Both guests shut down cleanly without forced termination; the source
+VM disks and cache remained unchanged. Neither console recorded
+`RasterOrderGroups`, `exec-fault` or `Restarting GPU` during this trial.
+
+One-second cgroup sampling recorded a maximum combined memory usage of 19.38 GiB
+while both guests were running. Per-container peaks over the complete batch were
+10.00 GiB and 9.90 GiB. There were no OOM events, but A recorded 501 `memory.max`
+events at its limit. Allow headroom and measure your own workloads; 10 GiB is not
+a comfortable per-phone memory guarantee.
+
+This qualifies two concurrent browsers for the described targeted checks. It
+does not qualify a maximum density, sustained load, concurrent proxy egress,
+mutually untrusted tenants or renderer-census-disabled operation. Keep guests
+warm during a batch and validate each change with a targeted check; repeat a
+full browser workflow at milestones.

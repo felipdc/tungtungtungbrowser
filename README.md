@@ -33,6 +33,11 @@ native screenshots and verified owned-tab cleanup. See the
 [qualification record](docs/inspector-api.md#reusable-profile-qualification-2026-11-11)
 and [roadmap](docs/roadmap.md) for measured scope and remaining limits.
 
+Two independent Docker phones have also booted and exercised Safari concurrently
+on one eight-core, 32-GiB Linux host. The [multi-phone guide](docs/multiple-phones.md)
+covers cloning prepared bundles, unique control addresses, per-phone API profiles,
+resource settings and measured validation limits.
+
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.
 An ARM64 build booted iOS, but its initial Safari window and local-page checks
@@ -501,7 +506,7 @@ XPath can currently appear as no match.
 | Lookup | `query_selector(selector, strategy='css')`; returns first node ID or `None`. |
 | Conditions | `wait_for_selector(..., state='attached'/'detached')`; presence is not visibility. `wait_for_url()` accepts a case-sensitive URL glob. |
 | CSS/XPath action | `click(..., timeout=120)` uses native touch. `focus()` uses native DOM focus and does not establish keyboard ownership. |
-| Navigation | `goto('https://example.com/')` verifies the owned/active native address field. `reload()` requests one native reload. Follow either with a page condition. |
+| Navigation | `goto('https://example.com/')` verifies the owned/active native address field. Wait for the destination URL and a condition specific to the new document. `reload()` requests one native reload; verify a fresh-document condition afterward. |
 | Network observation | `expect_request()` / `expect_response()` accept a URL glob or synchronous predicate. Register before the action. Headers/status/URLs are available on the retained records. |
 | Response content | `await response.body()`, `.text()`, `.json()` after loading finishes; default limit 16 MiB. No streaming/interception/fulfillment. |
 | Device image | `screenshot()` uses native JPEG by default; configuring `Browser(qmp_socket=...)` selects a host display PNG. Includes browser UI. |
