@@ -65,6 +65,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(browser.address_focus, 'shortcut')
         self.assertEqual(browser.guest.keyboard_helper_sha256, SHA)
 
+    def test_focus_read_bound_is_explicit_and_does_not_send_input(self):
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            profile = BrowserProfile(self.directory)
+            self.assertEqual(profile.browser().address_field_reader.max_read_attempts, 2)
+            self.assertEqual(profile.browser(focus_read_attempts=3).address_field_reader.max_read_attempts, 3)
+            for invalid in (0, 4, True, 2.5):
+                with self.assertRaises(ValueError): profile.browser(focus_read_attempts=invalid)
+
     def test_native_blank_profile_keeps_endpoint_and_rejects_conflicting_url(self):
         with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
             profile = BrowserProfile(self.directory)

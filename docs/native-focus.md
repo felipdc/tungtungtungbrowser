@@ -843,3 +843,22 @@ identifier, editing state and unchanged value, with an independently returned
 nonempty placeholder exactly matching that value. It never accepts placeholder
 evidence for an HTTP(S) address or substitutes it for exact pasted-text readback.
 Malformed evidence, unavailable queries and unrestored settings prevent input.
+
+## Unavailable cold attribute batches
+
+A cold concurrent trial returned an owned first responder whose complete
+five-attribute batch timed out: every value, including geometry, was null with
+AX error `-25216`. The reader now discards that response and permits a fresh
+guarded read within its existing attempt bound. It requires matching ownership,
+restored settings and the exact failed batch metadata; partial values, other
+errors, malformed metadata and transport failures remain terminal. No input
+comes from the failed batch.
+
+`BrowserProfile.browser(focus_read_attempts=3)` explicitly allows up to three
+eligible read attempts for both direct focus and address resolution. The
+default remains two. A separate cold trial exhausted two resolution reads after
+complete absence followed by missing identity attributes. The optional third
+read supports testing that transition without repeating the address shortcut
+or accepting incomplete identity. Each native execution remains bounded, and
+the enclosing session deadline still applies. This option alone does not
+establish cold reliability.

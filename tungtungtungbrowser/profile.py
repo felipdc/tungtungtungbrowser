@@ -45,7 +45,7 @@ class BrowserProfile:
             raise ValueError('Browser profile contains an incomplete record: ' + name)
         return value
 
-    def browser(self, *, qmp_socket=None, guest=None, address_focus='auto'):
+    def browser(self, *, qmp_socket=None, guest=None, address_focus='auto', focus_read_attempts=2):
         """Create one controller; leave qmp_socket unset for native device JPEGs."""
         if guest is None:
             guest = Guest(cid=self.cid, timeout=120,
@@ -59,7 +59,8 @@ class BrowserProfile:
                 raise ValueError('Supplied Guest differs from the deployment profile')
         return Browser(guest=guest, input_settle=5, touch_hold_ms=0, qmp_socket=qmp_socket,
                        address_focus=address_focus,
-                       address_field_reader=NativeFocusReader.from_deployment(guest, self.focus_path))
+                       address_field_reader=NativeFocusReader.from_deployment(
+                           guest, self.focus_path, max_read_attempts=focus_read_attempts))
 
     def session(self, *, browser, url=None, new_tab_url=None, new_tab=False):
         """Attach a tab, open a fixture, or request a native owned blank tab."""

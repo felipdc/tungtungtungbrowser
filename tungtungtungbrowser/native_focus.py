@@ -117,7 +117,9 @@ class NativeFocusReader:
                 # Only a completed read with verified restoration may be read
                 # again. A timeout, process failure or missing state cannot
                 # establish restoration. This repeats no key, tap or paste.
-                if not getattr(error, 'retryable_focus_read', False) or attempt + 1 == self.max_read_attempts:
+                retryable = (getattr(error, 'retryable_focus_read', False)
+                             or getattr(error, 'retryable_focus_batch', False))
+                if not retryable or attempt + 1 == self.max_read_attempts:
                     raise
             else:
                 record['status'] = 'absent' if field is None else 'read'
@@ -244,12 +246,14 @@ class NativeFocusReader:
             field['enabled'] = True
         return field
 
-    def resolve_address_field(self, pid, *, max_attempts=2):
-        """Allow one fresh query after verified restored absence/unavailability."""
+    def resolve_address_field(self, pid, *, max_attempts=None):
+        """Read within the configured bound after verified restored unavailability."""
         if type(pid) is not int or not 1 < pid <= 2147483647:
             raise ValueError('Focus resolution requires a valid native process ID')
-        if type(max_attempts) is not int or not 1 <= max_attempts <= 2:
-            raise ValueError('Resolution max_attempts must be 1 or 2')
+        if max_attempts is None:
+            max_attempts = self.max_read_attempts
+        if type(max_attempts) is not int or not 1 <= max_attempts <= 3:
+            raise ValueError('Resolution max_attempts must be an integer between 1 and 3')
         self.last_resolution_attempts = []
         for attempt in range(max_attempts):
             try:
@@ -450,6 +454,25 @@ class NativeFocusReader:
         if any(not isinstance(v, dict) or type(v.get('error')) is not int or v['error'] != 0
                or 'value' not in v for v in attributes.values()):
             error = GuestError('Native focused-element attribute read failed')
+            batch = element.get('attribute_batch')
+            unavailable_batch = (
+                source == 'ax_first_responder'
+                and all(isinstance(v, dict) and set(v) == {'error', 'value'}
+                        and type(v['error']) is int and v['error'] == -25216
+                        and v['value'] is None for v in attributes.values())
+                and isinstance(batch, dict) and set(batch) == {'error', 'count', 'seconds'}
+                and type(batch['error']) is int and batch['error'] == -25216
+                and type(batch['count']) is int and batch['count'] == 5
+                and type(batch['seconds']) in (int, float)
+                and math.isfinite(batch['seconds']) and 0 <= batch['seconds'] < 20)
+            if unavailable_batch:
+                # A cold AX batch can time out with all five values absent.
+                # Ownership and restoration are already verified. Discard the
+                # responder and permit one fresh read within the existing bound;
+                # no identity, geometry or input is derived from this batch.
+                error.native_helper_response = result
+                error.retryable_focus_batch = True
+                error.retryable_focus_attributes = True
             frame = attributes.get('frame')
             geometry = frame.get('value') if isinstance(frame, dict) else None
             unavailable = all(isinstance(attributes[k], dict)

@@ -71,6 +71,6 @@ class ResolutionRecoveryTests(unittest.TestCase):
         self.assertEqual(reader.resolve_address_field(301)['source'],'ax_first_responder')
         guest._rpc.assert_called_once()
         guest.reset_mock()
-        for invalid in (0,3,True,1.0,None):
+        for invalid in (0,4,True,1.0):
             with self.assertRaises(ValueError):reader.resolve_address_field(301,max_attempts=invalid)
         guest._rpc.assert_not_called()
