@@ -414,3 +414,14 @@ Safari toolbar. All four VMs shut down cleanly, with unchanged parent disks and
 cache and restored host swap settings. Keep the smaller-cache density profile
 experimental until a fresh cold batch also passes the product, focus, rendering
 and cleanup requirements.
+
+A fresh batch with all four caches set to 768 MiB also failed cold qualification.
+Three phones reached foreground Safari in 297.1–357.2 seconds, then encountered
+two native address-field failures and one session-creation transport timeout.
+The fourth phone's guest daemon never became reachable within the original
+600-second readiness deadline. No product navigation ran. During 14 minutes
+of concurrent residency, no OOM or disk swap I/O occurred. Three phones shut
+down natively; the unreachable phone required the existing forced-stop fallback
+after its 90-second grace period. Parent disks and cache stayed unchanged, and
+host swap settings were restored. These observations reject that batch; they
+do not isolate the smaller cache as the cause of its failures.
