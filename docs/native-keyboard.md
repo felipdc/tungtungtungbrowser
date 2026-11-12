@@ -150,3 +150,19 @@ establish the cause of trial 162's tab loss or resolve intermittent cleanup
 reliability. The existing no-replay policy and tab-preservation checks remain
 necessary. The earlier held-key tab-creation comparison was inconclusive because
 both the unchanged control and the candidate created one tab.
+
+## Later preservation failure with no-repeat enabled (trial 197)
+
+During the four-phone reclamation comparison, a disabled control lost an
+original tab as well as its owned tab after one close chord; a new blank tab
+appeared. The independent HID observer recorded exactly four keyboard events,
+including both releases, without overflow. Read-only database snapshots
+confirmed the original tab's loss. No close or recovery input was repeated.
+
+The observer received the W key's down and up callbacks 1.816 seconds apart.
+The corresponding gaps in two successful cleanup cases were 0.097 and
+0.136 milliseconds. These are callback timings, not measurements of Safari's
+handling. The private case tracer omitted the native helper's dispatch receipt,
+so this run cannot distinguish dispatch delay from observer scheduling or
+establish a repeat cause. The next diagnostic must retain those receipts and
+observe the first new-tab chord as well as cleanup.

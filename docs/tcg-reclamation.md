@@ -75,7 +75,10 @@ reclamation on/off/on/off, 1024 MiB caches, 3 GiB guests and 6 GiB whole-contain
 limits. At one warm snapshot, executable-code PSS was 299/988/565/955 MiB.
 The enabled guests had completed 15 and 14 full flushes. These snapshots show
 discard taking effect in native guests; their differing workload histories
-prevent a causal whole-container or graphics-memory comparison.
+prevent a causal whole-container or graphics-memory comparison. At the final
+snapshot, enabled code PSS had refilled to 782/739 MiB, versus 961/953 MiB for
+the controls. All four containers were again near their 6 GiB limits; lower
+code residency did not establish a lower whole-container peak.
 
 Cold qualification failed: one enabled and one disabled guest failed native
 address discovery, another enabled guest created two tabs after one acknowledged
@@ -89,3 +92,11 @@ an original tab during cleanup after one observed close chord. The enabled
 guest's separate cleanup and the other control's shortcut recovery preserved
 their original tabs through 60 seconds. These outcomes do not establish a
 reclamation-related cause or fix for the input failures.
+
+The guests ran concurrently for 32.2 minutes. Sampled phone RAM peaked at
+24.00 GiB, or 24.10 GiB including the four proxies; minimum host available RAM
+was 5.29 GiB. No OOM occurred. Host swap counters increased by one page in and
+zero pages out, and zswap reported zero written-back pages. All four guests
+stopped natively without forced termination, with unchanged parent images and
+cache. The complete evidence archive was downloaded and verified. This was
+a failed qualification run, not sustained browsing validation.
