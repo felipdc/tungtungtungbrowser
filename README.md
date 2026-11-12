@@ -138,6 +138,7 @@ ttt_compose() {
     -f runtime/compose.yaml "$@"
 }
 ttt_compose build
+docker volume create tungtungtungbrowser-runtime-leases
 # Confirm the QEMU executable loads before opening guest disks.
 ttt_compose run --rm --no-deps \
   --entrypoint /runtime/qemu/build/qemu-system-aarch64 iphone --version

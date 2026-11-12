@@ -119,9 +119,13 @@ def main():
             result = read_instance(args.registry, args.name)
         else:
             command, env = compose_command(args.registry, args.name, args.action, args.arguments)
+            if args.action in ('up', 'run'):
+                # Host-wide ownership: per-project down -v must not remove it.
+                subprocess.run(['docker', 'volume', 'create', 'tungtungtungbrowser-runtime-leases'],
+                               env=env, stdout=subprocess.DEVNULL, check=True)
             raise SystemExit(subprocess.call(command, env=env))
         print(json.dumps(result, indent=2))
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'Instance operation stopped: {error}\n')
 
 

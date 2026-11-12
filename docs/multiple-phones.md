@@ -72,7 +72,10 @@ egress container/network namespace, even when both use the same proxy provider.
 No host TCP ports are published by these Compose files.
 
 The base Compose file also accepts `TTT_VM_CID` (default 3). All phone projects
-share the fixed Docker volume `tungtungtungbrowser-runtime-leases`. The launcher
+share the external Docker volume `tungtungtungbrowser-runtime-leases`. The instance
+command creates it idempotently before `up` or `run`; direct Compose users must
+first run `docker volume create tungtungtungbrowser-runtime-leases`. A project's
+`down -v` leaves this external volume intact. The launcher
 holds a CID lease before starting QEMU or clock control, plus locks on the VM
 bundle and writable disk inodes. Another cooperating launcher with the same CID
 fails before guest input. Locks survive into QEMU and are released on process

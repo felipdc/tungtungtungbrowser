@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.clone_vm import clone
-from scripts.phone_instance import register, compose_command
+from scripts.phone_instance import register, compose_command, main as instance_main
 from scripts.run_vm import check_vm_access
 from tungtungtungbrowser import Browser, InspectorSession
 from tungtungtungbrowser.guest import Guest
@@ -145,6 +145,21 @@ class InstanceIsolationTests(unittest.TestCase):
         a = register(self.registry, 'phone', vm=self.a, runtime=self.runtime, cid=41)
         b = register(self.root / 'other-registry', 'phone', vm=self.b, runtime=self.runtime, cid=42)
         self.assertNotEqual(a['project'], b['project'])
+
+    def test_cli_creates_external_registry_before_start_but_config_is_read_only(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41)
+        for action in ('up', 'config'):
+            events = []
+            with self.subTest(action=action), patch.object(sys, 'argv',
+                    ['phone_instance.py', '--registry', str(self.registry), 'compose', 'a', action]), \
+                    patch('scripts.phone_instance.subprocess.run', side_effect=lambda *a, **k: events.append('volume')) as create, \
+                    patch('scripts.phone_instance.subprocess.call', side_effect=lambda *a, **k: events.append('compose') or 0):
+                with self.assertRaises(SystemExit) as stopped:
+                    instance_main()
+                self.assertEqual(stopped.exception.code, 0)
+                self.assertEqual(events, ['volume', 'compose'] if action == 'up' else ['compose'])
+                if action == 'up':
+                    self.assertEqual(create.call_args.args[0], ['docker', 'volume', 'create', 'tungtungtungbrowser-runtime-leases'])
 
     def test_inspector_inherits_native_browser_cid_and_rejects_mixed_endpoints(self):
         a, b = Browser(cid=41), Browser(cid=42)
