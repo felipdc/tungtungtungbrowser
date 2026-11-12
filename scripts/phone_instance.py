@@ -4,6 +4,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -11,6 +12,31 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
+RESOURCE_OPTIONS = {
+    'guest_memory_gib': ('TTT_VM_MEMORY_GIB', int, 2, 8, ''),
+    'guest_cpus': ('TTT_VM_CPUS', int, 1, 8, ''),
+    'container_memory_mib': ('TTT_CONTAINER_MEMORY', int, 1024, 65536, 'm'),
+    'container_cpus': ('TTT_CONTAINER_CPUS', float, 0.25, 64, ''),
+    'tcg_cache_mib': ('TTT_TCG_CACHE_MIB', int, 256, 2048, ''),
+    'render_threads': ('TTT_RENDER_THREADS', int, 1, 4, ''),
+    'shm_mib': ('TTT_SHM_SIZE', int, 1024, 65536, 'm'),
+}
+
+
+def resource_environment(resources):
+    """Only registered resource controls may override the default profile."""
+    if not isinstance(resources, dict) or resources.keys() - RESOURCE_OPTIONS.keys():
+        raise ValueError('Unknown instance resource setting')
+    environment = {}
+    for name, value in resources.items():
+        variable, kind, minimum, maximum, suffix = RESOURCE_OPTIONS[name]
+        types = (int,) if kind is int else (int, float)
+        if type(value) not in types or not minimum <= value <= maximum or not math.isfinite(value):
+            raise ValueError(f'Invalid resource setting: {name}')
+        if name == 'tcg_cache_mib' and value not in (256, 512, 1024, 2048):
+            raise ValueError('TCG cache must be 256, 512, 1024 or 2048 MiB')
+        environment[variable] = str(value) + suffix
+    return environment
 
 
 def read_instance(registry, name):
@@ -23,11 +49,13 @@ def read_instance(registry, name):
 
 
 def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu',
-             qemu=None, proxy=None):
+             qemu=None, proxy=None, resources=None):
     if not NAME.fullmatch(name):
         raise ValueError('Invalid instance name')
     if type(cid) is not int or not 3 <= cid < 2**32 - 1:
         raise ValueError('CID must be between 3 and 4294967294')
+    resources = {} if resources is None else dict(resources)
+    resource_environment(resources)
     registry = Path(registry).resolve()
     vm, runtime = Path(vm).resolve(strict=True), Path(runtime).resolve(strict=True)
     if any(p.is_relative_to(ROOT) for p in (registry, vm)):
@@ -63,7 +91,7 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
         namespace = hashlib.sha256(os.fsencode(registry)).hexdigest()[:12]
         record = {'version': 1, 'name': name, 'project': f'ttt-phone-{name}-{namespace}',
                   'cid': cid, 'vm': str(vm), 'runtime': str(runtime),
-                  'image': image, 'qemu': qemu, 'proxy': proxy}
+                  'image': image, 'qemu': qemu, 'proxy': proxy, 'resources': resources}
         # Use JSON for paths and values; never interpolate a shell command or .env file.
         (destination / 'image.json').write_text(json.dumps({'services': {'iphone': {'image': image}}}, indent=2))
         (destination / 'instance.json').write_text(json.dumps(record, indent=2) + '\n')
@@ -77,6 +105,7 @@ def compose_command(registry, name, action, arguments):
     # A shell configured for another phone must not redirect this one's disks,
     # CID, proxy or resource profile. Docker client credentials remain inherited.
     env = {k: v for k, v in os.environ.items() if not k.startswith(('TTT_', 'COMPOSE_'))}
+    env.update(resource_environment(record.get('resources', {})))
     env.update(TTT_VM_DIR=record['vm'], TTT_CACHE_DIR=str(Path(record['vm']) / 'cache'),
                TTT_RUNTIME_DIR=record['runtime'], TTT_VM_CID=str(record['cid']))
     command = ['docker', 'compose', '--project-name', record['project'],
@@ -104,6 +133,9 @@ def main():
     init.add_argument('--image', default='tungtungtungbrowser:cpu')
     init.add_argument('--qemu', help='Optional qualified native-FP executable path inside the container')
     init.add_argument('--proxy', type=Path)
+    for name, (_, kind, minimum, maximum, _) in RESOURCE_OPTIONS.items():
+        init.add_argument('--' + name.replace('_', '-'), type=kind,
+                          help=f'Record this resource override ({minimum}–{maximum}); otherwise use the default profile')
     show = commands.add_parser('show')
     show.add_argument('name')
     compose = commands.add_parser('compose', help='Run Compose for exactly one registered phone')
@@ -114,7 +146,9 @@ def main():
     try:
         if args.command == 'init':
             result = register(args.registry, args.name, vm=args.vm, runtime=args.runtime,
-                              cid=args.cid, image=args.image, qemu=args.qemu, proxy=args.proxy)
+                              cid=args.cid, image=args.image, qemu=args.qemu, proxy=args.proxy,
+                              resources={name: getattr(args, name) for name in RESOURCE_OPTIONS
+                                         if getattr(args, name) is not None})
         elif args.command == 'show':
             result = read_instance(args.registry, args.name)
         else:

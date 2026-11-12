@@ -64,6 +64,21 @@ clears inherited `TTT_*` and `COMPOSE_*` settings before supplying the selected
 instance's paths and CID, so a shell configured for another phone cannot silently
 redirect it. Resource settings come from `runtime/api-experimental.env`.
 
+For measured resource experiments, record overrides when registering each phone:
+
+```sh
+phone init gamma --vm /srv/phones/gamma --runtime /srv/vphone-linux --cid 43 \
+  --guest-memory-gib 2 --guest-cpus 2 --container-memory-mib 6144 \
+  --container-cpus 4 --tcg-cache-mib 1024 --render-threads 1
+```
+
+These values are stored in the instance record and override the default profile
+and inherited shell variables. `--shm-mib` also controls shared-memory capacity;
+used shared memory remains charged to the container. This example requests a
+6-GiB container limit, not a validated density profile. Inspect `phone show gamma`
+and `phone compose gamma config` before starting. Existing registrations retain
+their settings; use a fresh copied bundle and registration for comparisons.
+
 Add `--image YOUR_IMAGE` at registration to select a source-built image. For the
 separately prepared [native-FP candidate](native-fp.md), add
 `--qemu /runtime/path/to/candidate` or `/vm/path/to/candidate`. This opts into the

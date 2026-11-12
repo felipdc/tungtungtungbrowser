@@ -127,6 +127,38 @@ class InstanceIsolationTests(unittest.TestCase):
             register(self.registry, 'b', vm=self.b, runtime=self.runtime, cid=42)
         self.assertFalse((self.registry / 'b').exists())
 
+    def test_registered_resources_survive_conflicting_shell_settings(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
+                 resources={'guest_memory_gib': 2, 'container_memory_mib': 6144,
+                            'container_cpus': 3.5, 'tcg_cache_mib': 1024})
+        register(self.registry, 'b', vm=self.b, runtime=self.runtime, cid=42)
+        with patch.dict(os.environ, {'TTT_VM_MEMORY_GIB': '8', 'TTT_CONTAINER_MEMORY': '20g'}):
+            _, a = compose_command(self.registry, 'a', 'config', [])
+            _, b = compose_command(self.registry, 'b', 'config', [])
+        self.assertEqual(a['TTT_VM_MEMORY_GIB'], '2')
+        self.assertEqual(a['TTT_CONTAINER_MEMORY'], '6144m')
+        self.assertEqual(a['TTT_CONTAINER_CPUS'], '3.5')
+        self.assertEqual(a['TTT_TCG_CACHE_MIB'], '1024')
+        self.assertNotIn('TTT_CONTAINER_MEMORY', b)
+        self.assertNotIn('TTT_VM_MEMORY_GIB', b)
+        self.assertEqual(b['TTT_VM_CID'], '42')
+
+    def test_resource_errors_fail_before_registering_or_running_compose(self):
+        for resources in ({'cid': 42}, {'guest_memory_gib': True},
+                          {'container_memory_mib': 0}, {'container_cpus': float('nan')},
+                          {'container_cpus': float('inf')}, {'tcg_cache_mib': 513}):
+            with self.subTest(resources=resources), self.assertRaises(ValueError):
+                register(self.registry, 'a', vm=self.a, runtime=self.runtime,
+                         cid=41, resources=resources)
+            self.assertFalse((self.registry / 'a').exists())
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41)
+        path = self.registry / 'a/instance.json'
+        record = json.loads(path.read_text())
+        record['resources'] = {'TTT_VM_CID': 42}
+        path.write_text(json.dumps(record))
+        with self.assertRaises(ValueError):
+            compose_command(self.registry, 'a', 'up', [])
+
     def test_compose_ignores_another_phones_environment_and_rejects_scaling(self):
         register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41)
         with patch.dict(os.environ, {'TTT_VM_CID': '42', 'TTT_VM_DIR': '/wrong',
