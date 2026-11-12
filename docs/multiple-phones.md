@@ -369,3 +369,48 @@ pages reduce resident pressure; this trial does not establish a reduction in
 emulator or graphics allocation retention. Keep the density profile experimental
 until the remaining startup and cleanup failures are resolved. The 4 GiB
 stretch target remains unqualified.
+
+### Smaller translation-cache experiment
+
+A later four-phone comparison kept the sixteen-core, 32-GiB host and the same
+6-GiB RAM, compressed-memory and native display settings. Two phones used a
+1024-MiB translation cache and two used the explicit 768-MiB option. The smaller
+cache reduced QEMU's anonymous executable PSS at each observed phase:
+
+| Observation | 1024-MiB cache, mean of two phones | 768-MiB cache, mean of two phones |
+| --- | ---: | ---: |
+| Foreground Safari ready | 992.8 MiB | 747.7 MiB |
+| First external case cleaned up | 980.6 MiB | 739.6 MiB |
+| Final settled state | 987.0 MiB | 746.1 MiB |
+
+QEMU reported translation-buffer capacities of 1,073,618,944 and 805,183,488
+bytes respectively. This demonstrates approximately 241 MiB less executable
+residency per phone after browsing. It does not establish a reduction in graphics
+allocation retention or the whole-container peak: all four retained the same
+6-GiB RAM limit. The smaller caches flushed more often. Controls started about
+seven minutes earlier, and their recovery histories differed, so this comparison
+does not isolate a startup or throughput effect.
+
+The four phones ran together for 45.6 minutes. Sampled combined RAM peaked at
+24.00 GiB for phones and 24.15 GiB including proxies; minimum host available
+memory was 5.29 GiB. There were no host or phone OOM events and no disk swap I/O.
+Full memory stalls were below 0.30% per phone. The largest individual sampled
+overshoot above the configured limit was 472 KiB; the kernel peak counter
+recorded up to 564 KiB above it.
+
+This batch did not qualify cold browsing or the external product target. The
+original cold sequence retained helper-check and focus-read failures. Separate
+warm recovery reached all four external pages and intercepted their API
+responses, but every response required login. Allowing one login outcome does
+not turn that result into a three-of-four product pass. A subsequent warm native
+navigation test closed an inner test tab while preserving a second test tab on
+all four phones, then closed that second tab and preserved the original session.
+The test used one Inspector connection at a time; an earlier harness attempt
+with overlapping connections timed out before sending its inner-tab input.
+
+Native page bodies and host captures were readable. Some immediate native
+captures retained the previously observed overlapping translation hint in the
+Safari toolbar. All four VMs shut down cleanly, with unchanged parent disks and
+cache and restored host swap settings. Keep the smaller-cache density profile
+experimental until a fresh cold batch also passes the product, focus, rendering
+and cleanup requirements.
