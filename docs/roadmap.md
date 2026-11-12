@@ -38,11 +38,20 @@ result. The earlier [graphics accounting](graphics-memory.md),
 [backing reclamation](lavapipe-memory.md) and translation-cache experiments
 remain evidence, not demonstrated whole-browser savings.
 
+For external acceptance, record product responses and site login requirements
+separately. The target workload allows occasional login walls (approximately
+70% product success is acceptable); these are expected site outcomes, not
+valid product data. Every phone must still pass native control, visible
+rendering, memory and cleanup checks, including after a login outcome. Preserve
+the response and original outcome rather than retrying until every phone returns
+product data. A small passing batch does not establish a long-run success rate.
+
 The [compressed-memory trial](multiple-phones.md#compressed-memory-trial-four-phone-startup-remains-unqualified)
 contained four phone cgroups within their 6 GiB limits, but three concurrent
-boots failed readiness on eight CPU cores. Compare sixteen CPU cores with the
-same 32 GiB host RAM before adopting that profile; the concurrent browser
-acceptance workload remains required.
+boots failed readiness on eight CPU cores. The [sixteen-core follow-up](multiple-phones.md#sixteen-core-compressed-memory-follow-up)
+brought all four to foreground Safari and passed warm native-tab checks within
+the same memory configuration. Cold setup failures and intermittent bootstrap-tab
+loss remain unresolved, so the density profile is still experimental.
 
 ## Completed workflow milestones and remaining API work
 

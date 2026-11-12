@@ -318,3 +318,54 @@ All four guests subsequently shut down natively; parent disks and cache stayed
 unchanged. This experiment demonstrates memory containment, not four working
 browsers. The compressed profile remains unqualified until startup, native
 focus, rendering, API capture and cleanup pass under sustained concurrent use.
+
+### Sixteen-core compressed-memory follow-up
+
+A subsequent trial on a sixteen-core host with the same 32 GiB RAM and
+compressed-memory limits brought all four phones to verified foreground Safari
+in 278.5, 279.7, 297.3 and 291.3 seconds. Each retained 3 GiB guest RAM, two
+guest CPUs, a four-core host CPU quota and a 1 GiB translation cache. Native
+resolution, one lavapipe worker and the interlock-capable Mesa driver were
+unchanged. Independent writable child disks shared a stopped, immutable parent.
+
+The first recorded hour peaked at **24.00 GiB for the phone cgroups** and
+**24.23 GiB including proxies**, with at least **5.32 GiB host available memory**.
+No OOM events or disk swap I/O occurred. Full memory stall time remained below
+0.32% per phone. The configured limit was exactly 6 GiB; a few kernel samples
+exceeded it by at most 36 KiB, so this is not a claim that every raw observation
+was mathematically below that boundary. Across the complete 162-minute record,
+the same combined peaks held and minimum available host memory was 5.24 GiB.
+No host or phone OOM events and no disk swap I/O occurred. Full memory stalls
+were below 0.14% per phone. The largest sampled per-phone overshoot was 904 KiB;
+the kernel peak counter recorded up to 1.77 MiB above the configured limit.
+
+The original cold setup sequence still failed: one forensic read observed a
+changing database file size, and three native touch-helper checks timed out
+after verified installation. Reconciliation retained those failures, verified
+the installed bytes and reran input-free checks before continuing warm. All
+four subsequently passed concurrent local native navigation and cleanup.
+The first external batch returned valid application product JSON and visible
+product content on three phones; the fourth reached a login requirement. Login
+outcomes are accepted separately from valid product data.
+
+A later external batch exposed a real preservation failure: one close removed
+its owned tab and a pre-existing test tab. Two database copies confirmed the
+loss, while the native observer recorded only one address chord and one close
+chord. This does not establish a key-repeat cause. Other login and product-to-
+login outcomes were retained and their owned tabs were closed separately after
+verifying identity.
+
+The new native blank-tab path independently verifies both WebKit's empty Start
+Page document and the native address placeholder. A four-phone warm follow-up
+completed creation, two destination-verified navigations, readable native and
+host captures, and one observed close per phone, preserving every pre-existing tab through the settled database audit.
+This targeted success does not explain the earlier bootstrap-tab loss or
+qualify an uninterrupted cold setup and external workflow with the new path.
+
+All four guests later shut down natively, without forced termination, after
+roughly 162 minutes of uptime. Parent disks and cache remained unchanged, and
+the host's original swap/compression configuration was restored. Compressed
+pages reduce resident pressure; this trial does not establish a reduction in
+emulator or graphics allocation retention. Keep the density profile experimental
+until the remaining startup and cleanup failures are resolved. The 4 GiB
+stretch target remains unqualified.
