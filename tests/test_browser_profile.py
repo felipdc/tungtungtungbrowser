@@ -81,6 +81,14 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'differs'):
             BrowserProfile(self.directory).browser(guest=Guest())
 
+    def test_profile_rejects_another_guests_browser_even_with_matching_helpers(self):
+        profile = BrowserProfile(self.directory)
+        wrong = Guest(cid=8, touch_helper_sha256=SHA, keyboard_helper_sha256=SHA)
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            profile.browser(guest=wrong)
+        with self.assertRaisesRegex(ValueError, 'different guest CIDs'):
+            profile.session(browser=Browser(guest=wrong), new_tab_url='http://example.test/')
+
 
 class BundleInstallerTests(unittest.TestCase):
     def setUp(self):

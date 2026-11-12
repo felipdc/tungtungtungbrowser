@@ -177,7 +177,12 @@ class InspectorSession:
         for limit in (max_requests, max_events):
             if type(limit) is not int or not 1 <= limit <= 4096:
                 raise ValueError('Retention limits must be integers between 1 and 4096')
-        self.transport = transport or InspectorTransport(timeout=timeout)
+        browser_cid = getattr(getattr(browser, 'guest', None), 'cid', None)
+        self.transport = transport or InspectorTransport(
+            cid=browser_cid if browser_cid is not None else 3, timeout=timeout)
+        transport_cid = getattr(self.transport, 'cid', None)
+        if browser_cid is not None and transport_cid is not None and browser_cid != transport_cid:
+            raise ValueError('Browser and Inspector transport target different guest CIDs')
         self.browser, self.url = browser, url
         if type(new_tab) is not bool:
             raise ValueError('new_tab must be a boolean')

@@ -41,6 +41,9 @@ class InspectorTransport:
     carries native Inspector frames directly; EOF closes the guest service socket.
     """
     def __init__(self, *, cid=3, timeout=30, bridge_socket=None, max_open_attempts=3):
+        if type(cid) is not int or not 3 <= cid < 2**32 - 1:
+            raise ValueError('Guest CID must be between 3 and 4294967294')
+        self.cid = cid
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 300:
             raise ValueError('timeout must be between 0 and 300 seconds')
         if type(max_open_attempts) is not int or not 1 <= max_open_attempts <= 4:

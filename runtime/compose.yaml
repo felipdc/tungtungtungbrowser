@@ -21,9 +21,13 @@ services:
     tmpfs:
       - /tmp:size=64m
     environment:
+      TTT_RUNTIME_LEASE_DIR: /run/ttt-leases
       REIMS_VGPU_CENSUS_DIR: ${TTT_RENDER_DIAGNOSTICS_DIR:-}
       TTT_CLOCK_INTERVAL_SECONDS: ${TTT_CLOCK_INTERVAL_SECONDS:-0}
     volumes:
+      # CID allocation is host-wide on the supported kernels. This fixed-name
+      # volume is deliberately shared across Compose projects on one Docker host.
+      - runtime-leases:/run/ttt-leases
       - type: bind
         source: ${TTT_VM_DIR:?Set TTT_VM_DIR to a prepared iOS bundle}
         target: /vm
@@ -38,6 +42,8 @@ services:
       - /vm
       - --source
       - /runtime
+      - --cid
+      - "${TTT_VM_CID:-3}"
       - --memory-gib
       - "${TTT_VM_MEMORY_GIB:-3}"
       - --cpus
@@ -51,3 +57,7 @@ services:
     labels:
       app: tungtungtungbrowser
       renderer: cpu-only
+
+volumes:
+  runtime-leases:
+    name: tungtungtungbrowser-runtime-leases

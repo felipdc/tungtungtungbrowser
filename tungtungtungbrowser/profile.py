@@ -53,7 +53,8 @@ class BrowserProfile:
                           keyboard_helper_sha256=self.keyboard['helper_sha256'])
         else:
             # The caller owns a custom transport's endpoint; preserve helper selection.
-            if (guest.touch_helper_sha256 != self.touch['helper_sha256']
+            if (guest.cid != self.cid
+                    or guest.touch_helper_sha256 != self.touch['helper_sha256']
                     or guest.keyboard_helper_sha256 != self.keyboard['helper_sha256']):
                 raise ValueError('Supplied Guest differs from the deployment profile')
         return Browser(guest=guest, input_settle=5, touch_hold_ms=0, qmp_socket=qmp_socket,
@@ -61,6 +62,8 @@ class BrowserProfile:
 
     def session(self, *, browser, url=None, new_tab_url=None):
         """Attach an existing tab or create one using a caller-owned fixture URL."""
+        if browser.guest.cid != self.cid:
+            raise ValueError('Browser and deployment profile target different guest CIDs')
         return InspectorSession(browser=browser, url=url, new_tab_url=new_tab_url, timeout=300,
                                 transport=InspectorTransport(cid=self.cid, timeout=240,
                                                              max_open_attempts=4))

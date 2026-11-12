@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Run one headless CPU-rendered iOS guest. Holds the disk lease until QEMU exits."""
 import argparse
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -15,6 +14,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
+from tungtungtungbrowser.vm_lease import lease_vm
 from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECONDS,
                                      HEALTH_RPC_TIMEOUT_SECONDS)
 
@@ -24,6 +24,9 @@ def check_vm_access(vm, source):
     operation = 'inspect'
     path = vm
     try:
+        clone_record = vm / 'clone.json'
+        if clone_record.exists() and json.loads(clone_record.read_text()).get('status') != 'complete':
+            raise ValueError('VM copy is incomplete; retain it and use a completed bundle')
         for name, writable, required in (
                 ('Disk.img', True, True), ('nvram.bin', True, True),
                 ('ecid', False, True), ('config.plist', False, True),
@@ -100,6 +103,8 @@ def main():
     parser.add_argument("--render-threads", type=int, choices=range(1, 5), default=1)
     parser.add_argument("--tcg-cache-mib", type=int, choices=(256, 512, 1024, 2048), default=1024)
     parser.add_argument("--cid", type=int, default=3)
+    parser.add_argument('--lease-dir', type=Path, default=os.environ.get('TTT_RUNTIME_LEASE_DIR'),
+                        help='Shared host CID lease directory; Compose mounts one across all projects')
     parser.add_argument("--shutdown-timeout-seconds", type=float, default=90)
     parser.add_argument("--clock-interval-seconds", type=float,
                         default=os.environ.get('TTT_CLOCK_INTERVAL_SECONDS', '0'),
@@ -152,11 +157,7 @@ def main():
         parser.error("VM path is too long for a QMP Unix socket")
     # Advisory lock shared by this project's host/container entry point. Upstream's raw
     # run-vphone.sh does not honor it: never start that launcher on this live bundle.
-    with (vm / '.tungtungtungbrowser.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            parser.error("This VM bundle already has a tungtungtungbrowser process")
+    with lease_vm(vm, cid=args.cid, registry=args.lease_dir) as lease_fds:
         with (vm / 'console.log').open('ab', buffering=0) as log:
             stop_requested = False
 
@@ -182,7 +183,7 @@ def main():
                                         'ctrl_vlan=off,ctrl_rx_extra=off,ctrl_mac_addr=off,'
                                         'ctrl_guest_offloads=off,guest_announce=off'],
                                        cwd=source, env=env, stdout=log, stderr=log,
-                                       pass_fds=(lock.fileno(),))
+                                       pass_fds=lease_fds)
             started = {"pid": process.pid, "started_unix": start_wall,
                        "started_monotonic": start_clock,
                        "pid_start_ticks": Path(f'/proc/{process.pid}/stat').read_text().rsplit(')', 1)[1].split()[19],
@@ -200,7 +201,8 @@ def main():
                            "health_timeout_seconds": HEALTH_RPC_TIMEOUT_SECONDS,
                            "offer_timeout_seconds": CLOCK_RPC_TIMEOUT_SECONDS,
                            "state_file": str(clock.path) if clock is not None else None},
-                       "cid": args.cid, "qmp": str(qmp), "safari_ready": False}
+                       "cid": args.cid, "qmp": str(qmp), "safari_ready": False,
+                       "cid_lease_directory": str(args.lease_dir) if args.lease_dir else None}
             (vm / 'launch.json').write_text(json.dumps(started, indent=2))
             print(json.dumps(started), flush=True)
             if clock is not None:

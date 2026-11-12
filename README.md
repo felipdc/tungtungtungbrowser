@@ -186,6 +186,10 @@ shutdown. Preserve the stopped VM bundle before investigating a failed shutdown.
 
 ## Recommended experimental settings
 
+For multiple phones on one host, use the [multi-instance guide](docs/multiple-phones.md).
+It provides separate Compose projects, VM bundles, caches, CIDs and API deployment
+records. Do not scale a single phone service against one writable VM bundle.
+
 Use [runtime/api-experimental.env](runtime/api-experimental.env) as a starting
 profile for API development. Environment variables already exported in your
 shell override Compose's env-file values; inspect `ttt_compose config` and the

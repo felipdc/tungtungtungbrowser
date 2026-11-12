@@ -34,7 +34,7 @@ class GuestTransportError(GuestError):
 
 class VsockHTTPConnection(http.client.HTTPConnection):
     def __init__(self, cid=3, timeout=30):
-        if not 3 <= cid < 2**32 - 1:
+        if type(cid) is not int or not 3 <= cid < 2**32 - 1:
             raise ValueError("Guest CID must be between 3 and 4294967294")
         super().__init__("localhost", port=1339, timeout=timeout)
         self.cid = cid
@@ -103,6 +103,10 @@ def contact_hold_ms(value):
 class Guest:
     def __init__(self, cid=3, timeout=30, connection_factory=None, *, touch_helper_sha256=None,
                  keyboard_helper_sha256=None):
+        if type(cid) is not int or not 3 <= cid < 2**32 - 1:
+            raise ValueError('Guest CID must be between 3 and 4294967294')
+        # Custom factories must declare the CID of the endpoint they reach too.
+        self.cid = cid
         if touch_helper_sha256 is not None:
             from .native_touch import helper_path
             helper_path(touch_helper_sha256)
