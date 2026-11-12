@@ -96,6 +96,18 @@ class NativeKeyboardTests(unittest.TestCase):
             check_helper(self.guest, SHA)
         self.assertEqual(len(self.calls), 1)
 
+    def test_cold_check_has_bounded_headroom_without_replaying_failure(self):
+        self.answer = envelope({'protocol': 1, 'status': 'ready', 'dispatch_count': 0})
+        check_helper(self.guest, SHA)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]['params']['timeout'], 60)
+        self.calls.clear()
+        self.answer = GuestTransportError('read_body', TimeoutError('lost check reply'))
+        with self.assertRaises(GuestTransportError) as raised:
+            check_helper(self.guest, SHA)
+        self.assertIs(raised.exception, self.answer)
+        self.assertEqual(len(self.calls), 1)
+
     def test_process_failure_retains_evidence_and_never_replays(self):
         for changes in [{'status': 7}, {'signal': 15}, {'stderr': 'failed'},
                         {'stdout': 'partial'}, {'status': False}]:

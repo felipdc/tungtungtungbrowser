@@ -37,6 +37,11 @@ the HID client without sending input. Failure evidence and staging files remain
 available for inspection. Select an existing installation by hash rather than
 reinstalling it before each key.
 
+The input-free check has a 60-second script deadline, with 70 seconds of HTTP
+headroom in the installer. A cold four-phone trial timed out at the former
+30-second check after verified upload and rename. Key dispatch keeps its
+30-second deadline; neither path automatically repeats a failed invocation.
+
 The helper requires platform and HID dispatch entitlements supported by the
 tested custom firmware.
 

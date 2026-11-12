@@ -15,7 +15,10 @@ def helper_path(sha256):
 
 def invoke(guest, sha256, arguments):
     source = 'proc.run(' + json.dumps(helper_path(sha256)) + ', ' + json.dumps(arguments) + ', "")'
-    answer = guest._rpc('script.eval', source=source, timeout=30)
+    # Loading the native frameworks can be slower on a cold guest. The check
+    # dispatches no events; navigation keys retain their original deadline.
+    timeout = 60 if arguments == ['check'] else 30
+    answer = guest._rpc('script.eval', source=source, timeout=timeout)
     error = GuestError('Native keyboard helper did not complete successfully; input is not repeated')
     error.native_script_response = answer
     if (not isinstance(answer, dict) or answer.get('ok') is not True

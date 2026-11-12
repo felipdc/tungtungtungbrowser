@@ -107,7 +107,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         data, digest = read_build(args.build_directory)
-        result = install(Guest(cid=args.cid, timeout=60), data, digest, args.output)
+        result = install(Guest(cid=args.cid, timeout=70), data, digest, args.output)
     except (OSError, ValueError, GuestError, KeyError) as exc:
         parser.exit(1, f'Helper installation failed: {exc}. No input was requested; evidence and staging files were retained.\n')
     print(json.dumps(result, indent=2))
