@@ -5,10 +5,43 @@ provider-neutral and validate them against native Safari. Deployment details,
 credentials, external-site acceptance tests and captured content stay outside
 this repository.
 
-## Current priority: complete browser API workflow
+## Current priority: four phones within a 32 GiB host
 
-Accept the current performance provisionally. Build and verify the complete
-developer workflow before pursuing additional standalone runtime optimization:
+Target four independent Safari phones, each within a **6 GiB whole-container
+limit**, with reliable startup, native focus, visible rendering, application
+API response capture and owned-session cleanup during concurrent browsing.
+Reserve the remaining host memory for proxy sidecars and host services.
+Treat **4 GiB per phone as a stretch target**, not a supported profile.
+
+The [two-phone milestone](multiple-phones.md#validation-scope) established basic
+isolation, but reached 19.38 GiB combined sampled container memory. The
+[per-instance resource overrides](multiple-phones.md) can enforce smaller
+limits; they do not establish successful browsing at those limits.
+
+1. Profile a successful, repeatable workload with raw cgroup memory, pressure
+   and OOM counters, plus process and graphics allocation breakdowns. Account
+   for proxy containers and host memory separately. Shared memory is part of
+   the container charge; guest RAM and Docker's cache-adjusted display are
+   insufficient measures of total cost.
+2. Compare a smaller guest and measured emulator/graphics retention changes
+   against the same stopped parent, cache and browser state. Keep failed
+   trials and adopt only changes that retain browser correctness.
+3. Validate four independent phones concurrently under their hard limits,
+   including sustained external navigation, native request/response capture
+   through each configured proxy, visible pages and preserved cleanup.
+4. Publish the measured density profile and its limits, then evaluate the
+   4 GiB stretch target against the same acceptance workload.
+
+Keep guests warm during a batch and use targeted checks for each fix. Run the
+full browser workflow at milestones; lower memory alone is not a passing
+result. The earlier [graphics accounting](graphics-memory.md),
+[backing reclamation](lavapipe-memory.md) and translation-cache experiments
+remain evidence, not demonstrated whole-browser savings.
+
+## Completed workflow milestones and remaining API work
+
+The completed milestones established this developer workflow. Preserve its
+behavior when evaluating memory changes and extending the API:
 
 1. Create an owned browser session and attach native inspection before navigation.
 2. Navigate and wait for an explicit page condition.
@@ -24,9 +57,9 @@ developer workflow before pursuing additional standalone runtime optimization:
 
 Use portable local fixtures for API contract tests and keep the real external
 acceptance workflow private. Reuse suitable existing selector/protocol libraries
-where they preserve native Safari behavior. Optimizations now need a failure or
-measured bottleneck in this API workflow; the observations below remain evidence,
-not prerequisites that must all be solved before API work starts.
+where they preserve native Safari behavior. Prioritize optimizations using
+measured bottlenecks in this workflow. The observations below retain earlier
+failures and milestones; they do not qualify the new four-phone target.
 
 The [paired-capture trials](inspector-api.md#paired-captures-after-warm-navigation)
 have completed native navigation, DOM/network reads and automatic cleanup, while
