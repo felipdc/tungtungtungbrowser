@@ -304,6 +304,12 @@ Set `max_read_attempts=1` in `NativeFocusReader` or `from_deployment` to disable
 read recovery; the supported limit is one to three attempts. The bounded
 `reader.last_read_attempts` list records the most recent query's outcomes and
 durations, including a failed first read when the next succeeds.
+When a completed first-responder observation fails validation, its raw helper
+response is retained as `native` in that attempt and as
+`error.native_helper_response`. This includes rejected ownership and switch
+restoration evidence. Recording it does not change the retry rules or permit
+input. Transport and process failures cannot supply a completed native
+observation.
 
 A guarded native workflow returned `-25216` followed by valid absent focus after
 Command-L. Navigation stopped before sending text; subsequent owned-tab cleanup

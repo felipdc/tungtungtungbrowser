@@ -108,6 +108,8 @@ class NativeFocusReader:
                 record['status'] = 'failed'
                 result = getattr(error, 'native_helper_response', {})
                 record['ax_error'] = result.get('error')
+                if hasattr(error, 'native_helper_response'):
+                    record['native'] = result
                 # Only a completed read with verified restoration may be read
                 # again. A timeout, process failure or missing state cannot
                 # establish restoration. This repeats no key, tap or paste.
@@ -122,7 +124,13 @@ class NativeFocusReader:
 
     def _read_once(self, pid):
         result = self._invoke(['pid', str(pid)])
-        return self._read_result(result, pid, 'ax_first_responder')
+        try:
+            return self._read_result(result, pid, 'ax_first_responder')
+        except GuestError as error:
+            # Preserve the completed observation even when ownership or guard
+            # validation rejects it. Evidence alone grants no retry permission.
+            error.native_helper_response = result
+            raise
 
     def find_address_field(self, pid):
         """Find one native URL field; this does not establish keyboard focus."""

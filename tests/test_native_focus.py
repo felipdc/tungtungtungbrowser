@@ -136,6 +136,38 @@ class NativeFocusTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 NativeFocusReader(Mock(), sha256=SHA, deployment_id=TOKEN, max_read_attempts=invalid)
 
+    def test_rejected_completed_observation_preserves_evidence_without_retry(self):
+        cases = []
+        for key, value in [('pid', 302), ('pid_error', -1), ('timeout_error', -1)]:
+            result = native_result()
+            result['element'][key] = value
+            cases.append(result)
+        cases.append({**native_result(), 'guard_restored': False})
+        for result in cases:
+            with self.subTest(result=result):
+                guest = Mock()
+                guest._rpc.return_value = answer(result)
+                reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+                with self.assertRaises(GuestError) as caught:
+                    reader(301)
+                guest._rpc.assert_called_once()
+                self.assertEqual(caught.exception.native_helper_response, result)
+                self.assertFalse(getattr(caught.exception, 'retryable_focus_read', False))
+                self.assertEqual(reader.last_read_attempts[0]['native'], result)
+                self.assertEqual(reader.last_read_attempts[0]['ax_error'], 0)
+
+    def test_later_transport_failure_does_not_inherit_completed_read_evidence(self):
+        failed = {**native_result(), 'error': -25216, 'element': None}
+        guest = Mock()
+        guest._rpc.side_effect = [answer(failed), GuestError('Transport failed')]
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        with self.assertRaisesRegex(GuestError, 'Transport failed'):
+            reader(301)
+        self.assertEqual(guest._rpc.call_count, 2)
+        self.assertEqual(reader.last_read_attempts[0]['native'], failed)
+        self.assertNotIn('native', reader.last_read_attempts[1])
+        self.assertIsNone(reader.last_read_attempts[1]['ax_error'])
+
     def test_no_focus_is_distinct_from_query_failure_or_missing_result(self):
         guest = Mock()
         reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
