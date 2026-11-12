@@ -187,6 +187,31 @@ accurately declare the CID of the guest they reach. Keep one controlling Browser
 per guest; concurrency across guests does not authorize overlapping actions on
 one guest.
 
+## Measure each phone
+
+Run the recorder on the Docker host for each phone and its proxy container:
+
+```sh
+python3 scripts/sample_resources.py CONTAINER_NAME --seconds 600 --interval 1 \
+  --host-memory --cpu-pressure --output /srv/phones/resources-001.jsonl
+python3 scripts/summarize_resources.py /srv/phones/resources-001.jsonl
+```
+
+`memory_bytes` measures the whole container cgroup, including renderer processes
+and shared memory. Each raw sample also records `swap_memory.logical_bytes`,
+`swap_memory.compressed_bytes` and swap events. These distinguish logical swap
+usage from the RAM occupied by compressed pages. Compressed memory is already
+charged to the cgroup; do not add it to `memory_bytes`. Missing kernel interfaces
+produce `null`, not zero. The complete `memory_stat` record retains available
+compression activity counters, including `zswpwb`.
+
+The recorder also checks `memory.zswap.max` and `memory.zswap.writeback` for changes
+during measurement. It does not configure compression or establish that disk
+writeback is disabled: that also depends on the host's zswap state. Consult the
+[kernel zswap documentation](https://www.kernel.org/doc/html/v6.12/admin-guide/mm/zswap.html)
+before a compression experiment. The default phone profile still disables
+additional swap; a smaller memory limit requires its own browser validation.
+
 ## Stop one phone
 
 Close its API sessions and stop its bridge using that guest's deployment record

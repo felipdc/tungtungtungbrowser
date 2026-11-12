@@ -128,6 +128,42 @@ class ResourceSamplerTest(unittest.TestCase):
         self.run_collection()
         self.assertIsNone(self.records()[0]['cgroup_limits']['cpuset.cpus.effective'])
 
+    def test_compressed_swap_is_separate_from_logical_swap_and_host_memory(self):
+        self.write_host()
+        for name, value in {'memory.swap.current': '16000',
+                            'memory.zswap.current': '500',
+                            'memory.zswap.max': '1024',
+                            'memory.zswap.writeback': '0',
+                            'memory.swap.events': 'high 0\nmax 0\nfail 2'}.items():
+            (self.group / name).write_text(value + '\n')
+        self.run_collection(host_memory=True)
+        config, first, last, _ = self.records()
+        self.assertEqual(last['memory_bytes'], 2000)
+        self.assertEqual(last['swap_memory'], {
+            'logical_bytes': 16000, 'compressed_bytes': 500,
+            'events': {'high': 0, 'max': 0, 'fail': 2}})
+        self.assertEqual(last['host_memory']['memory_bytes']['MemTotal'], 8000 * 1024)
+        self.assertEqual(config['cgroup_limits']['memory.zswap.max'], '1024')
+        self.assertEqual(config['cgroup_limits']['memory.zswap.writeback'], '0')
+        self.assertTrue(summarize(self.records())['measurement_complete'])
+
+    def test_missing_swap_interfaces_are_not_zero_usage(self):
+        self.run_collection()
+        self.assertEqual(self.records()[1]['swap_memory'], {
+            'logical_bytes': None, 'compressed_bytes': None, 'events': None})
+        self.assertIsNone(self.records()[0]['cgroup_limits']['memory.zswap.writeback'])
+
+    def test_changed_writeback_policy_leaves_incomplete_measurement(self):
+        (self.group / 'memory.zswap.writeback').write_text('0\n')
+
+        def allow_writeback(seconds):
+            self.sleep(seconds)
+            (self.group / 'memory.zswap.writeback').write_text('1\n')
+
+        with self.assertRaisesRegex(RuntimeError, 'resource limits changed'):
+            self.run_collection(allow_writeback)
+        self.assertFalse(summarize(self.records())['measurement_complete'])
+
     def test_memory_stalls_are_recorded_even_without_oom(self):
         pressure = self.group / 'memory.pressure'
         pressure.write_text('some avg10=0.00 avg60=0.00 avg300=0.00 total=500000\n'

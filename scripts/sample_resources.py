@@ -42,6 +42,28 @@ def memory_pressure(group):
     return read_pressure(group / 'memory.pressure')
 
 
+def optional_counter(path):
+    """An unavailable kernel interface is not evidence of zero usage."""
+    try:
+        value = int(path.read_text())
+    except FileNotFoundError:
+        return None
+    if value < 0:
+        raise ValueError(f'Negative {path.name} counter')
+    return value
+
+
+def swap_memory(group):
+    """Keep logical swap separate from RAM occupied by compressed pages."""
+    try:
+        events = counters(group / 'memory.swap.events')
+    except FileNotFoundError:
+        events = None
+    return {'logical_bytes': optional_counter(group / 'memory.swap.current'),
+            'compressed_bytes': optional_counter(group / 'memory.zswap.current'),
+            'events': events}
+
+
 def host_memory(proc_root):
     """Read host headroom separately from the container's memory accounting."""
     wanted = {'MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree'}
@@ -65,7 +87,8 @@ def host_memory(proc_root):
 def runtime_limits(group):
     """Keep kernel values distinct from Docker's requested configuration."""
     result = {}
-    for name in ('cpu.max', 'cpuset.cpus.effective', 'memory.max', 'memory.swap.max'):
+    for name in ('cpu.max', 'cpuset.cpus.effective', 'memory.max', 'memory.swap.max',
+                 'memory.zswap.max', 'memory.zswap.writeback'):
         try:
             result[name] = (group / name).read_text().strip()
         except FileNotFoundError:
@@ -127,6 +150,7 @@ def collect(container, output_path, *, seconds, interval, include_host_memory=Fa
                       'monotonic_ns': now_ns,
                       'elapsed_seconds': (now_ns - started_ns) / 1e9,
                       'memory_bytes': memory,
+                      'swap_memory': swap_memory(group),
                       'memory_stat': counters(group / 'memory.stat'), 'cpu_stat': cpu,
                       'memory_pressure_usec': memory_pressure(group),
                       'memory_events': counters(group / 'memory.events')}
