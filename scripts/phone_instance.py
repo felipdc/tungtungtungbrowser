@@ -33,8 +33,8 @@ def resource_environment(resources):
         types = (int,) if kind is int else (int, float)
         if type(value) not in types or not minimum <= value <= maximum or not math.isfinite(value):
             raise ValueError(f'Invalid resource setting: {name}')
-        if name == 'tcg_cache_mib' and value not in (256, 512, 1024, 2048):
-            raise ValueError('TCG cache must be 256, 512, 1024 or 2048 MiB')
+        if name == 'tcg_cache_mib' and value not in (256, 512, 768, 1024, 2048):
+            raise ValueError('TCG cache must be 256, 512, 768, 1024 or 2048 MiB')
         environment[variable] = str(value) + suffix
     return environment
 

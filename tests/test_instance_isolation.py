@@ -159,6 +159,19 @@ class InstanceIsolationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compose_command(self.registry, 'a', 'up', [])
 
+    def test_registered_intermediate_cache_passes_runtime_preflight(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
+                 resources={'tcg_cache_mib': 768})
+        _, env = compose_command(self.registry, 'a', 'config', [])
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/run_vm.py'),
+             str(self.a), '--source', str(self.runtime), '--check-access',
+             '--tcg-cache-mib', env['TTT_TCG_CACHE_MIB']],
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(env['TTT_TCG_CACHE_MIB'], '768')
+        self.assertFalse(json.loads(result.stdout)['guest_started'])
+
     def test_compose_ignores_another_phones_environment_and_rejects_scaling(self):
         register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41)
         with patch.dict(os.environ, {'TTT_VM_CID': '42', 'TTT_VM_DIR': '/wrong',

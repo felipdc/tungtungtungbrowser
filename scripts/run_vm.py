@@ -101,7 +101,7 @@ def main():
     parser.add_argument("--memory-gib", type=int, choices=range(2, 9), default=3)
     parser.add_argument("--cpus", type=int, choices=range(1, 9), default=4)
     parser.add_argument("--render-threads", type=int, choices=range(1, 5), default=1)
-    parser.add_argument("--tcg-cache-mib", type=int, choices=(256, 512, 1024, 2048), default=1024)
+    parser.add_argument("--tcg-cache-mib", type=int, choices=(256, 512, 768, 1024, 2048), default=1024)
     parser.add_argument("--cid", type=int, default=3)
     parser.add_argument('--lease-dir', type=Path, default=os.environ.get('TTT_RUNTIME_LEASE_DIR'),
                         help='Shared host CID lease directory; Compose mounts one across all projects')
