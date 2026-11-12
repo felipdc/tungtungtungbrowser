@@ -829,3 +829,17 @@ responder from the one permitted fresh query. The warm cases used direct
 address discovery. This supplies a fresh cold success, but the one-candidate
 branch above remains protocol-tested rather than natively exercised by this
 batch. The earlier cold failure remains retained.
+
+## Native Start Page placeholder readback
+
+The helper advertises optional `placeholder_value: guarded-v1` capability and
+supports `pid-placeholder PID`. That mode reads attribute 5043 from the owned
+first responder inside the existing restoration guard, alongside the usual five
+attributes. Ordinary focus queries do not incur that extra native read.
+
+For an expected `about:blank` address only, Browser may request this read when
+the normal editing value comparison fails. It requires the same process, URL
+identifier, editing state and unchanged value, with an independently returned
+nonempty placeholder exactly matching that value. It never accepts placeholder
+evidence for an HTTP(S) address or substitutes it for exact pasted-text readback.
+Malformed evidence, unavailable queries and unrestored settings prevent input.

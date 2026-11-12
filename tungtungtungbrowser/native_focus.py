@@ -38,6 +38,7 @@ class NativeFocusReader:
         self.last_resolution = None
         self.last_resolution_attempts = []
         self.supports_address_resolution = False
+        self.supports_placeholder_read = False
         self._query_script_timeout = 30
 
     @classmethod
@@ -85,9 +86,12 @@ class NativeFocusReader:
         if (not isinstance(result, dict) or type(result.get('protocol')) is not int
                 or result.get('ui_input_sent') is not False or result.get('ax_queried') is not False
                 or result not in (expected, {**expected, 'address_resolution': 'guarded-v1'},
-                              {**expected, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1'})):
+                              {**expected, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1'},
+                              {**expected, 'address_resolution': 'guarded-v1', 'query_timing': 'phased-v1',
+                               'placeholder_value': 'guarded-v1'})):
             raise GuestError('Native focus helper returned invalid capability evidence')
         self.supports_address_resolution = result.get('address_resolution') == 'guarded-v1'
+        self.supports_placeholder_read = result.get('placeholder_value') == 'guarded-v1'
         self._query_script_timeout = 60 if result.get('query_timing') == 'phased-v1' else 30
         return result
 
@@ -129,6 +133,30 @@ class NativeFocusReader:
         except GuestError as error:
             # Preserve the completed observation even when ownership or guard
             # validation rejects it. Evidence alone grants no retry permission.
+            error.native_helper_response = result
+            raise
+
+    def read_placeholder(self, pid):
+        """Read the focused field and its native placeholder without UI input."""
+        if type(pid) is not int or not 1 < pid <= 2147483647:
+            raise ValueError('Focus query requires a valid native process ID')
+        if not self.supports_placeholder_read:
+            raise GuestError('Native focus helper does not support placeholder readback')
+        result = self._invoke(['pid-placeholder', str(pid)])
+        try:
+            field = self._read_result(result, pid, 'ax_first_responder')
+            if field is None:
+                return None
+            placeholder = result['element'].get('placeholder')
+            if (not isinstance(placeholder, dict) or set(placeholder) != {'error', 'value'}
+                    or type(placeholder['error']) is not int):
+                raise GuestError('Native placeholder evidence is malformed')
+            if placeholder['error'] == 0 and isinstance(placeholder['value'], str):
+                field['placeholder'] = placeholder['value']
+            elif placeholder['error'] not in (-25205, -25212) or placeholder['value'] is not None:
+                raise GuestError('Native placeholder read did not complete')
+            return field
+        except GuestError as error:
             error.native_helper_response = result
             raise
 

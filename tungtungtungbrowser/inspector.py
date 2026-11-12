@@ -193,6 +193,7 @@ class InspectorSession:
             self.url = 'about:blank'
         self.new_tab = new_tab
         self._blank_open_acknowledged = False
+        self._blank_navigation_attempted = False
         self._bootstrap_blank_requested = False
         self._bootstrap_blank_id = None
         if new_tab_url is not None:
@@ -1067,12 +1068,39 @@ class InspectorSession:
             pages = await self._fresh_pages(self._app.id_)
             target, generation, document = await self._document()
             document_url = document['root'].get('documentURL')
+            initial_blank = False
+            if document_url == '' and self.new_tab and self._blank_open_acknowledged:
+                # Safari's native Start Page can be listed as about:blank while
+                # WebKit reports an empty URL in both its DOM and main frame.
+                # Only our acknowledged, still-blank new tab may use this path.
+                root = document['root']
+                listed = pages.get(self._page.id_)
+                if (self._blank_navigation_attempted or generation != 0
+                        or not self.tab_cleanup['owned']
+                        or self.tab_cleanup.get('page_id') != self._page.id_
+                        or listed is None or listed.web_url != 'about:blank'
+                        or root.get('nodeType') != 9 or root.get('baseURL') != ''
+                        or not isinstance(root.get('frameId'), str) or not root['frameId']):
+                    raise InspectorError('New blank document identity is unavailable')
+                tree = await self._command('Page.getResourceTree', target=target)
+                self._same_document(target, generation)
+                frame_tree = tree.get('frameTree') if isinstance(tree, dict) else None
+                frame = frame_tree.get('frame') if isinstance(frame_tree, dict) else None
+                if not isinstance(frame, dict):
+                    raise InspectorError('New blank main frame could not be verified')
+                if (frame.get('id') != root['frameId'] or frame.get('url') != ''
+                        or frame.get('securityOrigin') != '' or frame.get('mimeType') != 'text/html'
+                        or frame_tree.get('resources') != [] or frame_tree.get('childFrames', []) != []):
+                    raise InspectorError('New blank main frame could not be verified')
+                document_url, initial_blank = 'about:blank', True
             if not isinstance(document_url, str) or not document_url:
                 raise InspectorError('Inspected document URL is unavailable')
             expected_url = self._tab_address(pages, document_url)
             def navigate():
                 with self.browser._lock:
                     self._same_document(target, generation)
+                    if initial_blank:
+                        self._blank_navigation_attempted = True
                     # Browser.goto verifies foreground and PID after unlock.
                     result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
                                                expected_pid=self._app.pid)

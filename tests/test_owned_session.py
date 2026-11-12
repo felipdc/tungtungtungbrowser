@@ -32,6 +32,7 @@ class TabFixture(NativeProtocolFixture):
         self.open_mode = 'new'
         self.close_mode = 'close'
         self.document_url = None
+        self.document_root_override = None
         self.connect = AsyncMock()
         self.close = AsyncMock()
         self._get_connected_applications = AsyncMock()
@@ -103,6 +104,8 @@ class TabFixture(NativeProtocolFixture):
         self.results['DOM.getDocument'] = {'root': {
             'nodeId': 1, 'documentURL': (self.document_url if self.document_url is not None
                                       else self.pages.get('2', self.pages['1']).web_url)}}
+        if self.document_root_override is not None:
+            self.results['DOM.getDocument'] = {'root': self.document_root_override}
         await super().send_socket_data(*args)
 
 
@@ -250,6 +253,88 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(native.events, ['new_blank', 'attach', 'detach', 'close'])
         self.assertEqual(set(native.pages), {'1'})
         self.assertEqual(session.tab_cleanup['status'], 'closed')
+
+    async def test_native_start_page_empty_document_url_navigates_owned_blank(self):
+        session, native, guest = fixture(new_tab=True)
+        native.document_root_override = {'nodeId': 1, 'nodeType': 9, 'frameId': 'main',
+                                         'documentURL': '', 'baseURL': ''}
+        native.results['Page.getResourceTree'] = {'frameTree': {'frame': {
+            'id': 'main', 'url': '', 'securityOrigin': '', 'mimeType': 'text/html'}, 'resources': []}}
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                await session.goto('https://destination.invalid/')
+                self.assertTrue(session._blank_navigation_attempted)
+                self.assertEqual(native.pages['2'].web_url, 'https://destination.invalid/')
+        self.assertEqual(set(native.pages), {'1'})
+
+    async def test_empty_document_does_not_authorize_an_unverified_or_used_blank(self):
+        for fault in ('unowned', 'used', 'navigated', 'wrong_frame', 'url', 'origin', 'resources', 'children'):
+            with self.subTest(fault=fault):
+                session, native, guest = fixture(new_tab=True)
+                native.document_root_override = {'nodeId': 1, 'nodeType': 9, 'frameId': 'main',
+                                                 'documentURL': '', 'baseURL': ''}
+                frame = {'id': 'main', 'url': '', 'securityOrigin': '', 'mimeType': 'text/html'}
+                tree = {'frame': frame, 'resources': []}
+                native.results['Page.getResourceTree'] = {'frameTree': tree}
+                with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+                    async with session:
+                        if fault == 'unowned': session.tab_cleanup['owned'] = False
+                        if fault == 'used': session._blank_navigation_attempted = True
+                        if fault == 'navigated': session.document_generation += 1
+                        if fault == 'wrong_frame': frame['id'] = 'other'
+                        if fault == 'url': frame['url'] = 'https://other.invalid/'
+                        if fault == 'origin': frame['securityOrigin'] = 'https://other.invalid'
+                        if fault == 'resources': tree['resources'] = [{'url': 'https://other.invalid/a'}]
+                        if fault == 'children': tree['childFrames'] = [{'frame': {'id': 'child'}}]
+                        before = len(guest.calls)
+                        with self.assertRaises(InspectorError):
+                            await session.goto('https://destination.invalid/')
+                        self.assertEqual(len(guest.calls), before)
+                        session.tab_cleanup['owned'] = True
+
+    async def test_unknown_empty_document_in_existing_tab_is_not_a_blank_fallback(self):
+        session, native, guest = fixture()
+        native.document_url = ''
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                before = len(guest.calls)
+                with self.assertRaisesRegex(InspectorError, 'document URL is unavailable'):
+                    await session.goto('https://destination.invalid/')
+                self.assertEqual(len(guest.calls), before)
+
+    async def test_blank_navigation_lost_reply_cannot_reuse_empty_url_fallback(self):
+        session, native, guest = fixture(new_tab=True)
+        native.document_root_override = {'nodeId': 1, 'nodeType': 9, 'frameId': 'main',
+                                         'documentURL': '', 'baseURL': ''}
+        native.results['Page.getResourceTree'] = {'frameTree': {'frame': {
+            'id': 'main', 'url': '', 'securityOrigin': '', 'mimeType': 'text/html'}, 'resources': []}}
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                with patch.object(session.browser, 'goto', side_effect=InspectorError('Lost reply')) as navigate:
+                    with self.assertRaisesRegex(InspectorError, 'Lost reply'):
+                        await session.goto('https://destination.invalid/')
+                    with self.assertRaisesRegex(InspectorError, 'blank document identity'):
+                        await session.goto('https://destination.invalid/')
+                    navigate.assert_called_once()
+
+    async def test_blank_frame_read_rejects_document_change_before_input(self):
+        session, native, guest = fixture(new_tab=True)
+        native.document_root_override = {'nodeId': 1, 'nodeType': 9, 'frameId': 'main',
+                                         'documentURL': '', 'baseURL': ''}
+        original = session._command
+        async def changed(method, **kwargs):
+            if method == 'Page.getResourceTree':
+                session.document_generation += 1
+                return {'frameTree': {'frame': {'id': 'main', 'url': '', 'securityOrigin': '',
+                                               'mimeType': 'text/html'}, 'resources': []}}
+            return await original(method, **kwargs)
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                before = len(guest.calls)
+                with patch.object(session, '_command', side_effect=changed):
+                    with self.assertRaisesRegex(InspectorError, 'Document changed'):
+                        await session.goto('https://destination.invalid/')
+                self.assertEqual(len(guest.calls), before)
 
     async def test_preexisting_blank_is_rejected_before_native_input(self):
         for address in ('about:blank', ''):

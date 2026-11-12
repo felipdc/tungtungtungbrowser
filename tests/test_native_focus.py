@@ -29,6 +29,31 @@ def answer(result):
 
 
 class NativeFocusTests(unittest.TestCase):
+    def test_placeholder_read_requires_capability_owned_field_and_restoration(self):
+        guest = Mock()
+        reader = NativeFocusReader(guest, sha256=SHA, deployment_id=TOKEN)
+        with self.assertRaises(GuestError): reader.read_placeholder(301)
+        guest._rpc.assert_not_called()
+        reader._accept_check({'protocol': 1, 'status': 'ready', 'ui_input_sent': False,
+                              'ax_queried': False, 'address_resolution': 'guarded-v1',
+                              'query_timing': 'phased-v1', 'placeholder_value': 'guarded-v1'})
+        result = native_result()
+        result['element']['placeholder'] = {'error': 0, 'value': 'Buscar ou digitar site'}
+        guest._rpc.return_value = answer(result)
+        self.assertEqual(reader.read_placeholder(301)['placeholder'], 'Buscar ou digitar site')
+        self.assertIn('["pid-placeholder", "301"]', guest._rpc.call_args.kwargs['source'])
+        bad = []
+        for value in (None, {}, {'error': True, 'value': 'text'}, {'error': 0, 'value': None},
+                      {'error': -25216, 'value': None}, {'error': -25212, 'value': 'text'}):
+            candidate = copy.deepcopy(result); candidate['element']['placeholder'] = value; bad.append(candidate)
+        bad.append({**result, 'guard_restored': False})
+        candidate = copy.deepcopy(result); candidate['element']['pid'] = 302; bad.append(candidate)
+        for candidate in bad:
+            with self.subTest(candidate=candidate):
+                guest.reset_mock(); guest._rpc.return_value = answer(candidate)
+                with self.assertRaises(GuestError): reader.read_placeholder(301)
+                guest._rpc.assert_called_once()
+
     def test_address_lookup_requires_complete_unique_enabled_result_and_restoration(self):
         result = {**native_result(), 'lookup': 'address', 'disabled_trait': 1 << 8,
                   'scan': {'complete': True, 'elements': 4, 'visited': 4, 'matches': 1, 'foreign': 0}}

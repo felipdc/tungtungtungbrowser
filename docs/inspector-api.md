@@ -216,8 +216,9 @@ Command-T, verifies a new `about:blank` tab ID and preservation of the existing
 tabs, then attaches inspection before the first navigation. Supply the native
 `browser` configured with address-field readback as above. Safari must already
 be warmed and verified in the foreground. This mode does not need a bootstrap
-server. Local protocol tests cover the ownership and cleanup behavior, but the
-native end-to-end workflow is not qualified.
+server. A four-phone warm trial passed creation, two destination-verified
+navigations, visible native/host captures and settled cleanup. Cold setup and
+external-site qualification with this path remain open.
 
 Configure the reader after installing the [native focus helper](native-focus.md):
 
@@ -235,6 +236,7 @@ browser = Browser(guest=guest, address_field_reader=NativeFocusReader.from_deplo
 async with InspectorSession(browser=browser, new_tab=True, timeout=90) as page:
     async with page.expect_response(os.environ['TTT_DESTINATION_URL'], timeout=90) as response:
         await page.goto(os.environ['TTT_DESTINATION_URL'])
+    await page.wait_for_url(os.environ['TTT_DESTINATION_URL'], timeout=90)
     await page.wait_for_selector('body', timeout=90)
     rendered_html = await page.content()
 ```
@@ -244,8 +246,20 @@ cannot be distinguished by their native editing addresses. Multiple newly
 appearing tabs or a missing input acknowledgement also prevent ownership from
 being claimed. The SDK sends Command-T once and reports an uncertain result;
 it does not retry the key or close an unowned tab. For a uniquely owned blank tab,
-the expected native editing address is exactly empty or `about:blank`.
+the expected native editing address is empty, `about:blank`, or a placeholder
+independently returned by the guarded native focus helper. The placeholder must
+exactly match the value of the same editing URL field; localized text alone is
+insufficient. Older helper deployments retain the empty/exact-blank behavior.
 Navigation destinations still must be HTTP(S) URLs.
+
+Safari can list its native Start Page as `about:blank` while the DOM and main
+frame report empty URLs. The first navigation accepts that state only for an
+acknowledged owned new tab, before a prior navigation attempt, with matching
+main-frame identity, empty origin and no resources or child frames. A failed
+native navigation does not permit reusing this exception. Wait for the destination
+URL before querying destination nodes; submitting navigation does not establish
+that the new document is ready. `BrowserProfile.session(new_tab=True)` exposes
+the same experimental mode.
 
 For existing-tab identity, Safari's native address field can display Unicode
 characters while Inspector reports their percent-encoded UTF-8 bytes. The SDK
@@ -268,14 +282,16 @@ In the first native trial, the initial inspection connection failed before
 input. A later attempt created a distinct blank tab and preserved the previous
 tab, but inspection initialization exceeded its deadline. Cleanup then failed
 on incomplete native address-field attributes. A subsequent read identified the
-address field and returned localized placeholder text as its value. That text
-is deliberately not treated as a verified empty address. No destination URL was
+address field and returned localized placeholder text as its value. That text alone
+was not sufficient evidence of an empty address. No destination URL was
 submitted and tab closure was not established. This option remains experimental
 while native empty-field identification and initialization are being qualified.
 A later recovery used retained ownership evidence and the exact native
 placeholder reviewed in that guest to close the tab and verify preservation of
 the original tab. That private recovery does not qualify general SDK cleanup
-from an empty field.
+from an empty field. The later guarded placeholder read described above
+removes the need to recognize localized text in the caller. Its fresh four-phone
+warm trial preserved every original tab after one observed close per phone.
 
 The experimental `new_tab_url` option opens a new native Safari tab and owns its
 cleanup. Safari must already be warmed and verified in the foreground. Supply a

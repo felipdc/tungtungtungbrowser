@@ -227,7 +227,7 @@ class Browser:
                 if expected_pid is not None and pid != expected_pid:
                     raise GuestError('Safari process changed; navigation not submitted')
                 field = self._focus_address_field(foreground)
-                if expected_url is not None and not _matches_active_url(field.get('value'), expected_url):
+                if expected_url is not None and not self._matches_address(field, expected_url, foreground):
                     raise GuestError('Active Safari tab does not contain the expected URL; navigation not submitted')
                 self.guest.call('input.key', name='cmd+a')
                 time.sleep(self.input_settle)
@@ -352,17 +352,32 @@ class Browser:
                     or foreground.get('bundle_id') != SAFARI
                     or type(foreground.get('pid')) is not int or foreground['pid'] != expected_pid):
                 raise GuestError('Expected Safari tab is not in the foreground; tab not closed')
-            if not _matches_active_url(self._focus_address_field(foreground).get('value'), expected_url):
+            if not self._matches_address(self._focus_address_field(foreground), expected_url, foreground):
                 raise GuestError('Active Safari tab does not contain the expected URL; tab not closed')
             result = self.guest.call('input.key', name='cmd+w')
             if not isinstance(result, dict) or result.get('key') != 'cmd+w' or result.get('dispatched') is not True:
                 raise GuestError('Native tab close was not acknowledged; outcome is unknown')
             return {'requested': True, 'method': 'native_close_tab', 'tab_closed_verified': False}
 
-    def _address_field(self, foreground, *, require_editing=True):
+    def _matches_address(self, field, expected_url, foreground):
+        if _matches_active_url(field.get('value'), expected_url):
+            return True
+        if (expected_url != 'about:blank'
+                or getattr(self.address_field_reader, 'supports_placeholder_read', False) is not True):
+            return False
+        # Safari exposes the localized Start Page placeholder as the AX value.
+        # Require an independent native placeholder read from the same editing
+        # URL responder, rather than recognizing localized text as an address.
+        current = self._address_field(foreground, include_placeholder=True)
+        placeholder = current.get('placeholder')
+        return (isinstance(placeholder, str) and bool(placeholder)
+                and current.get('value') == field.get('value') == placeholder)
+
+    def _address_field(self, foreground, *, require_editing=True, include_placeholder=False):
         if self.address_field_reader is None:
             raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
-        field = self.address_field_reader(foreground['pid'])
+        reader = self.address_field_reader.read_placeholder if include_placeholder else self.address_field_reader
+        field = reader(foreground['pid'])
         if field is not None:
             if (not isinstance(field, dict) or field.get('source') != 'ax_first_responder'
                     or type(field.get('pid')) is not int or field['pid'] != foreground['pid']):

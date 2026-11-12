@@ -66,6 +66,33 @@ def controlled_browser(*, guest, **options):
 
 
 class BrowserContractTest(unittest.TestCase):
+    def test_blank_placeholder_requires_independent_matching_native_editing_field(self):
+        for expected, change, accepted in [
+                ('about:blank', {}, True),
+                ('https://other.invalid/', {}, False),
+                ('about:blank', {'placeholder': ''}, False),
+                ('about:blank', {'placeholder': 'different'}, False),
+                ('about:blank', {'value': 'different'}, False),
+                ('about:blank', {'pid': 302}, False),
+                ('about:blank', {'identifier': 'page-input'}, False),
+                ('about:blank', {'traits': 0}, False)]:
+            with self.subTest(expected=expected, change=change):
+                guest = NativeFixture(); guest.address_value = 'Buscar ou digitar site'
+                reader = Mock(side_effect=guest.focused_field)
+                reader.supports_placeholder_read = True
+                reader.read_placeholder.side_effect = lambda pid: {
+                    **guest.focused_field(pid), 'placeholder': 'Buscar ou digitar site', **change}
+                browser = controlled_browser(guest=guest, address_field_reader=reader,
+                                             input_settle=0, address_focus='shortcut')
+                if accepted:
+                    browser.goto('https://next.invalid/', reuse_tab=True, expected_pid=301, expected_url=expected)
+                    self.assertEqual(guest.calls[-1], ('input.key', {'name': 'return'}))
+                else:
+                    with self.assertRaises(GuestError):
+                        browser.goto('https://next.invalid/', reuse_tab=True, expected_pid=301, expected_url=expected)
+                    self.assertNotIn('input.paste', [m for m, _ in guest.calls])
+                self.assertEqual(reader.read_placeholder.call_count, int(expected == 'about:blank'))
+
     def test_new_tab_requires_exact_foreground_process_and_one_acknowledged_key(self):
         guest = NativeFixture()
         result = controlled_browser(guest=guest).new_tab(expected_pid=301)

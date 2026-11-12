@@ -50,7 +50,8 @@ int main(int argc,char **argv){
  int check=argc==2&&!strcmp(argv[1],"check");
  int address_mode=argc==3&&!strcmp(argv[1],"address");
  int resolve_mode=argc==3&&!strcmp(argv[1],"resolve");
- int pid=argc==3&&(!strcmp(argv[1],"pid")||address_mode||resolve_mode)?valid_pid(argv[2]):0;
+ int placeholder_mode=argc==3&&!strcmp(argv[1],"pid-placeholder");
+ int pid=argc==3&&(!strcmp(argv[1],"pid")||address_mode||resolve_mode||placeholder_mode)?valid_pid(argv[2]):0;
  if(!check&&!pid&&!guard_mode)return 2;
  struct FocusGuard guard={0,-1,-1};
  /* Spawn while still privileged: the immutable executable is root-owned.
@@ -88,7 +89,7 @@ int main(int argc,char **argv){
   if(!finder.array_type||!finder.count||!finder.at||!finder.retain||!disabled||!*disabled)return 5;
   disabled_trait=*disabled;
  }
- if(check){printf("{\"protocol\":1,\"status\":\"ready\",\"ui_input_sent\":false,\"ax_queried\":false,\"address_resolution\":\"guarded-v1\",\"query_timing\":\"phased-v1\"}\n");fflush(0);return 0;}
+ if(check){printf("{\"protocol\":1,\"status\":\"ready\",\"ui_input_sent\":false,\"ax_queried\":false,\"address_resolution\":\"guarded-v1\",\"query_timing\":\"phased-v1\",\"placeholder_value\":\"guarded-v1\"}\n");fflush(0);return 0;}
  struct FocusGuardState initial={0},restored={0};
  if(!focus_guard_begin(&guard,&initial))return 9;
  focus_deadline_query();
@@ -112,7 +113,11 @@ int main(int argc,char **argv){
   struct FocusAttributeResult attributes={0};double started=focus_guard_now();focus_attributes_read(&batch,focused,&attributes);double seconds=focus_guard_now()-started;
  const char*names[]={"label","value","identifier","traits","frame"};
  for(unsigned i=0;i<5;i++){CF v=0;int error=focus_attribute_value(&batch,&attributes,i,&v);if(i)printf(",");quoted(names[i]);printf(":");attr_value(error,v);}
- printf("},\"attribute_batch\":{\"error\":%d,\"count\":5,\"seconds\":%.6f}}",attributes.error,seconds);
+ printf("},\"attribute_batch\":{\"error\":%d,\"count\":5,\"seconds\":%.6f}",attributes.error,seconds);
+ /* Native placeholder attribute, independently observed on iOS 26.6.2.
+  * Query only when requested; ordinary address reads retain their cost. */
+ if(placeholder_mode){CF value=0;int error=copyAttr(focused,(CF)5043,&value);printf(",\"placeholder\":");attr_value(error,value);if(value)release(value);}
+ printf("}");
  if(attributes.values)release(attributes.values);
  }else printf("null");
  if(focused)release(focused);if(root)release(root);

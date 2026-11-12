@@ -65,6 +65,16 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(browser.address_focus, 'shortcut')
         self.assertEqual(browser.guest.keyboard_helper_sha256, SHA)
 
+    def test_native_blank_profile_keeps_endpoint_and_rejects_conflicting_url(self):
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            profile = BrowserProfile(self.directory)
+            browser = profile.browser()
+            page = profile.session(browser=browser, new_tab=True)
+            self.assertTrue(page.new_tab)
+            self.assertEqual((page.transport.cid, page.url), (7, 'about:blank'))
+            with self.assertRaises(ValueError):
+                profile.session(browser=browser, new_tab=True, new_tab_url='https://example.test/')
+
     def test_failed_bundle_is_not_usable(self):
         self.write('profile.json', version=1, name='api-experimental', cid=3, status='failed')
         with self.assertRaisesRegex(ValueError, 'incomplete'):
