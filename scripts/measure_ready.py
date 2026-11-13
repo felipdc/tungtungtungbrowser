@@ -69,7 +69,14 @@ def main(argv=None):
     parser.add_argument('--bounded-foreground', action='store_true',
                         help='Experimental: observe foreground through a native session that '
                              'the daemon stops at its deadline; never repeats browser input')
+    parser.add_argument('--bounded-launch', action='store_true',
+                        help='Experimental: send apps.launch once in a bounded native session; '
+                             'enables bounded foreground reconciliation after confirmed stop')
     args = parser.parse_args(argv)
+    if args.bounded_launch:
+        if args.initial_url is not None:
+            parser.error('--bounded-launch cannot be combined with --initial-url')
+        args.bounded_foreground = True
     if args.initial_url is not None:
         try:
             web_url(args.initial_url)
@@ -97,6 +104,9 @@ def main(argv=None):
     if args.bounded_foreground:
         result.update(foreground_mode='bounded_native_session', foreground_observations=[],
                       foreground_transport_timeout_ceiling_seconds=120)
+    if args.bounded_launch:
+        result.update(launch_mode='bounded_native_session',
+                      launch_transport_timeout_ceiling_seconds=180)
     if args.initial_url is not None:
         result.update(initial_url=args.initial_url, startup_method='native_open_url',
                       initial_url_content_verified=False)
@@ -227,6 +237,60 @@ def main(argv=None):
         checkpoint()
         print(json.dumps({'stage': 'screen_unlocked',
                           'seconds': result['screen_unlocked_seconds']}), flush=True)
+
+    def launch_safari(guest):
+        if not args.bounded_launch:
+            return guest.call('apps.launch', bundle_id='com.apple.mobilesafari')
+        remaining = deadline - time.monotonic()
+        if remaining <= 31:
+            raise TimeoutError('Insufficient startup budget for a bounded Safari launch')
+        native_timeout = min(90, remaining - 30)
+        observation = result['launch_observation'] = {
+            'started_unix': time.time(), 'native_timeout_seconds': native_timeout,
+            'native_stop_confirmed': False,
+        }
+        checkpoint()
+        try:
+            # api() executes inside the disposable native session. This is one
+            # launch, not page JavaScript. The daemon kills and reaps this
+            # session before acknowledging its deadline; never launch again.
+            reply = guest._rpc('script.eval',
+                               source='api("apps.launch", {bundle_id: "com.apple.mobilesafari"})',
+                               timeout=native_timeout)
+            observation['reply'] = reply
+            if (not isinstance(reply, dict) or reply.get('ok') is not True
+                    or reply.get('crashed') is not False or reply.get('output') != ''
+                    or not isinstance(reply.get('result'), str)):
+                raise RuntimeError('Invalid bounded launch session response')
+            try:
+                response = json.loads(reply['result'])
+            except ValueError as exc:
+                raise RuntimeError('Invalid bounded launch result') from exc
+            if (not isinstance(response, dict) or type(response.get('pid')) is not int
+                    or not 0 <= response['pid'] <= 2147483647
+                    or type(response.get('frontmost_verified')) is not bool
+                    or (response['frontmost_verified'] and response['pid'] <= 1)):
+                raise RuntimeError('Invalid bounded launch process identity')
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Bounded launch exceeded the original startup deadline')
+            return response
+        except GuestHTTPError as exc:
+            observation['http_error'] = {'status': exc.status, 'detail': exc.detail}
+            expected = (f'The script did not finish within {int(native_timeout)} '
+                        'seconds and was stopped')
+            if exc.status != 400 or exc.detail != expected:
+                raise RuntimeError('Bounded launch failed without confirmed native stop') from exc
+            observation['native_stop_confirmed'] = True
+            # The launch's effect may have occurred. Only observe its current
+            # postcondition, within the original deadline; send no more input.
+            # Re-raise so the once-only ledger retains the failed request.
+            raise
+        finally:
+            error = sys.exc_info()[1]
+            if error is not None:
+                observation['error'] = str(error)
+            observation['finished_unix'] = time.time()
+            checkpoint()
 
     def safari(guest, *, reconcile_refusal=False):
         if args.bounded_foreground:
@@ -392,14 +456,18 @@ def main(argv=None):
         else:
             try:
                 result['safari_launch_response'] = request_once(
-                    'apps.launch', min(120, remaining),
-                    lambda guest: guest.call('apps.launch', bundle_id='com.apple.mobilesafari'))
+                    'apps.launch', min(180 if args.bounded_launch else 120, remaining),
+                    launch_safari)
             except GuestHTTPError as exc:
-                if exc.status != 400 or exc.detail != 'launch refused: com.apple.mobilesafari':
+                stopped = (args.bounded_launch
+                           and result.get('launch_observation', {}).get('native_stop_confirmed') is True)
+                refused = (not args.bounded_launch and exc.status == 400
+                           and exc.detail == 'launch refused: com.apple.mobilesafari')
+                if not stopped and not refused:
                     raise
-                # This complete native rejection can accompany an already
-                # foreground Safari. Preserve the failed request and reconcile
-                # only its postcondition; never send another launch or unlock.
+                # A complete rejection or confirmed session stop can accompany
+                # an already foreground Safari. Preserve the failed request
+                # and reconcile its postcondition without more launch input.
                 result['safari_launch_error'] = {'status': exc.status, 'detail': exc.detail}
             result['safari_launch_request_seconds'] = time.monotonic() - start
             checkpoint()

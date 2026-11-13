@@ -63,8 +63,10 @@ class ReadinessTest(unittest.TestCase):
         }[method]
 
     def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None,
-                        wait_for_guest_ip=False, bounded_foreground=False):
+                        wait_for_guest_ip=False, bounded_foreground=False, bounded_launch=False):
         argv = [str(self.vm), '--output', str(self.output)]
+        if bounded_launch:
+            argv += ['--bounded-launch']
         if bounded_foreground:
             argv += ['--bounded-foreground']
         if wait_for_guest_ip:
@@ -85,6 +87,125 @@ class ReadinessTest(unittest.TestCase):
                       'pid': 301, 'source': 'runningboard'}
         foreground.update(overrides)
         return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(foreground)}
+
+    def launch_reply(self, **overrides):
+        response = {'pid': 301, 'frontmost_verified': True}
+        response.update(overrides)
+        return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(response)}
+
+    def test_bounded_launch_sends_one_native_launch_and_reuses_verified_identity(self):
+        timeouts = []
+        def launch(*args, **kwargs):
+            timeouts.append(self.factory.call_args.kwargs['timeout'])
+            return self.launch_reply()
+        self.guest._rpc.side_effect = launch
+        self.run_measurement(bounded_launch=True)
+        self.guest._rpc.assert_called_once_with('script.eval',
+            source='api("apps.launch", {bundle_id: "com.apple.mobilesafari"})', timeout=90)
+        self.assertEqual(timeouts, [180])
+        self.assertEqual([m for m, _ in self.calls], ['screen.unlock'])
+        report = self.report()
+        self.assertEqual(report['safari_foreground_source'], 'apps.launch')
+        self.assertTrue(report['safari_foreground_verified'])
+        self.assertFalse(report['launch_observation']['native_stop_confirmed'])
+        self.assertFalse(report['navigation_verified'])
+
+    def test_bounded_launch_confirmed_stop_reconciles_without_relaunch(self):
+        self.guest._rpc.side_effect = [
+            GuestHTTPError(400, 'The script did not finish within 90 seconds and was stopped'),
+            self.foreground_reply(),
+        ]
+        self.run_measurement(bounded_launch=True)
+        sources = [c.kwargs['source'] for c in self.guest._rpc.call_args_list]
+        self.assertEqual(sources, ['api("apps.launch", {bundle_id: "com.apple.mobilesafari"})',
+                                   'api("apps.foreground")'])
+        report = self.report()
+        self.assertTrue(report['launch_observation']['native_stop_confirmed'])
+        self.assertIn('was stopped', report['safari_launch_error']['detail'])
+        self.assertTrue(report['safari_foreground_verified'])
+        self.assertEqual([r['method'] for r in report['once_only_requests']],
+                         ['screen.unlock', 'apps.launch'])
+        self.assertEqual(report['once_only_requests'][-1]['status'], 'error')
+        self.assertIn('was stopped', report['once_only_requests'][-1]['error'])
+
+    def test_bounded_launch_transport_timeout_is_terminal_and_preserves_uncertainty(self):
+        self.guest._rpc.side_effect = GuestTransportError('receive_headers', TimeoutError('timed out'))
+        with self.assertRaises(GuestTransportError):
+            self.run_measurement(bounded_launch=True)
+        self.guest._rpc.assert_called_once()
+        report = self.report()
+        self.assertFalse(report['launch_observation']['native_stop_confirmed'])
+        self.assertFalse(report['safari_foreground_verified'])
+        self.assertEqual(report['foreground_observations'], [])
+        self.assertTrue(report['once_only_requests'][-1]['transport']['request_may_have_been_sent'])
+
+    def test_bounded_launch_wrong_stop_response_is_terminal(self):
+        for status, detail in [(400, 'The script did not finish within 45 seconds and was stopped'),
+                               (500, 'The script did not finish within 90 seconds and was stopped')]:
+            with self.subTest(status=status):
+                self.output = self.vm / f'wrong-stop-{status}.json'
+                self.guest._rpc.reset_mock()
+                self.guest._rpc.side_effect = GuestHTTPError(status, detail)
+                with self.assertRaisesRegex(RuntimeError, 'without confirmed native stop'):
+                    self.run_measurement(bounded_launch=True)
+                self.guest._rpc.assert_called_once()
+                self.assertFalse(self.report()['launch_observation']['native_stop_confirmed'])
+
+    def test_bounded_launch_unverified_reply_requires_fresh_foreground_observation(self):
+        self.guest._rpc.side_effect = [self.launch_reply(frontmost_verified=False), self.foreground_reply()]
+        self.run_measurement(bounded_launch=True)
+        self.assertEqual(self.guest._rpc.call_count, 2)
+        self.assertEqual(self.report()['safari_foreground_source'], 'apps.foreground')
+
+    def test_bounded_launch_rejects_invalid_response_without_further_native_work(self):
+        for index, reply in enumerate([self.launch_reply(pid=True), self.launch_reply(pid=0),
+                                      self.launch_reply(frontmost_verified=1),
+                                      {'ok': False, 'crashed': False, 'output': '', 'error': 'launch refused'},
+                                      {'ok': True, 'crashed': False, 'output': '', 'result': 'invalid'}]):
+            with self.subTest(reply=reply):
+                self.output = self.vm / f'invalid-launch-{index}.json'
+                self.guest._rpc.reset_mock()
+                self.guest._rpc.return_value = reply
+                with self.assertRaisesRegex(RuntimeError, 'Invalid bounded launch'):
+                    self.run_measurement(bounded_launch=True)
+                self.guest._rpc.assert_called_once()
+                self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_bounded_launch_retains_original_deadline_and_response_margin(self):
+        self.launch['started_monotonic'] = 450
+        (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+        self.guest._rpc.return_value = self.launch_reply()
+        with patch.object(measure_ready.time, 'monotonic', return_value=1000):
+            self.run_measurement(bounded_launch=True)
+        self.assertEqual(self.guest._rpc.call_args.kwargs['timeout'], 20)
+        self.assertEqual(self.report()['once_only_requests'][-1]['timeout_seconds'], 50)
+
+    def test_bounded_launch_refuses_insufficient_budget_without_launching(self):
+        self.launch['started_monotonic'] = 430
+        (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+        with patch.object(measure_ready.time, 'monotonic', return_value=1000):
+            with self.assertRaisesRegex(TimeoutError, 'Insufficient startup budget'):
+                self.run_measurement(bounded_launch=True)
+        self.guest._rpc.assert_not_called()
+        self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_bounded_launch_rejects_late_verified_reply(self):
+        clock = [self.launch['started_monotonic'] + 10]
+        def launch(*args, **kwargs):
+            clock[0] = self.launch['started_monotonic'] + 601
+            return self.launch_reply()
+        self.guest._rpc.side_effect = launch
+        with patch.object(measure_ready.time, 'monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(TimeoutError, 'original startup deadline'):
+                self.run_measurement(bounded_launch=True)
+        self.guest._rpc.assert_called_once()
+        self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_bounded_launch_rejects_url_mode_before_any_native_request(self):
+        with self.assertRaises(SystemExit):
+            self.run_measurement(bounded_launch=True, initial_url='https://example.org/')
+        self.factory.assert_not_called()
+        self.assertFalse(self.output.exists())
 
     def test_bounded_foreground_uses_only_a_native_read_after_one_url_open(self):
         transport_timeouts = []

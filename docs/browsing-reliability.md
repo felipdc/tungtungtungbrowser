@@ -322,6 +322,29 @@ startup. Host tests cover confirmed native cancellation, uncertain transport,
 invalid identity and the original deadline. The option remains disabled by
 default.
 
+### Experimental bounded application launch
+
+`--bounded-launch` sends the single `apps.launch` request inside a native daemon
+session and enables bounded foreground reads. It cannot be combined with
+`--initial-url`. The native session receives at most 90 seconds, with thirty
+seconds reserved in the remaining startup budget; the transport ceiling is
+180 seconds, also capped by that original budget. This option remains disabled
+by default and has not yet passed a fresh native cold trial.
+
+The pinned daemon executes the [session API call in the child process](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/VPhoneDaemon/Daemon/GuestScriptSession.swift).
+After its exact confirmed-stop response, readiness retains the failed launch
+request and observes current foreground state without launching again. A
+transport failure cannot establish cancellation and ends the measurement.
+Malformed replies and unverified process identities also prevent a successful
+launch claim. Native input is never repeated, and a late result cannot extend
+the original deadline. A verified launch still requires a display capture and
+separate visual review; it does not prove navigation.
+
+This addresses an observed uncertainty boundary: in a four-phone comparison
+using direct application launch, one original call exceeded its 120-second
+transport wait, while a later read-only capture showed Safari. That later image
+does not repair the original failure or validate the new bounded option.
+
 ### First native initial-URL observation
 
 The first run used the same stopped tab-cleanup parent, copied renderer cache,
