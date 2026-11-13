@@ -63,8 +63,10 @@ class ReadinessTest(unittest.TestCase):
         }[method]
 
     def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None,
-                        wait_for_guest_ip=False):
+                        wait_for_guest_ip=False, bounded_foreground=False):
         argv = [str(self.vm), '--output', str(self.output)]
+        if bounded_foreground:
+            argv += ['--bounded-foreground']
         if wait_for_guest_ip:
             argv += ['--wait-for-guest-ip']
         if initial_url is not None:
@@ -77,6 +79,71 @@ class ReadinessTest(unittest.TestCase):
 
     def report(self):
         return json.loads(self.output.read_text())
+
+    def foreground_reply(self, **overrides):
+        foreground = {'bundle_id': 'com.apple.mobilesafari', 'verified': True,
+                      'pid': 301, 'source': 'runningboard'}
+        foreground.update(overrides)
+        return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(foreground)}
+
+    def test_bounded_foreground_uses_only_a_native_read_after_one_url_open(self):
+        self.guest._rpc.return_value = self.foreground_reply()
+        self.run_measurement(initial_url='https://example.org/', bounded_foreground=True)
+        self.guest._rpc.assert_called_once_with('script.eval', source='api("apps.foreground")', timeout=45)
+        self.guest.open.assert_called_once_with('https://example.org/')
+        self.assertNotIn('apps.foreground', [method for method, _ in self.calls])
+        report = self.report()
+        self.assertTrue(report['safari_foreground_verified'])
+        self.assertEqual(report['foreground_mode'], 'bounded_native_session')
+        self.assertEqual(len(report['foreground_observations']), 1)
+        self.assertFalse(report['navigation_verified'])
+
+    def test_bounded_foreground_reobserves_only_after_confirmed_native_stop(self):
+        self.guest._rpc.side_effect = [
+            GuestHTTPError(400, 'The script did not finish within 45 seconds and was stopped'),
+            self.foreground_reply(),
+        ]
+        with patch.object(measure_ready.time, 'sleep'):
+            self.run_measurement(initial_url='https://example.org/', bounded_foreground=True)
+        self.assertEqual(self.guest._rpc.call_count, 2)
+        self.guest.open.assert_called_once_with('https://example.org/')
+        self.assertEqual([m for m, _ in self.calls].count('screen.unlock'), 1)
+        observations = self.report()['foreground_observations']
+        self.assertTrue(observations[0]['native_stop_confirmed'])
+        self.assertIn('was stopped', observations[0]['error'])
+        self.assertEqual(observations[1]['response']['pid'], 301)
+
+    def test_bounded_foreground_transport_loss_does_not_start_another_read(self):
+        self.guest._rpc.side_effect = GuestTransportError('receive_headers', TimeoutError('timed out'))
+        with self.assertRaisesRegex(RuntimeError, 'no new read is safe'):
+            self.run_measurement(initial_url='https://example.org/', bounded_foreground=True)
+        self.guest._rpc.assert_called_once()
+        self.guest.open.assert_called_once_with('https://example.org/')
+        self.assertFalse(self.report()['foreground_observations'][0]['native_stop_confirmed'])
+        self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_bounded_foreground_other_http_error_is_not_cancellation_proof(self):
+        self.guest._rpc.side_effect = GuestHTTPError(400, 'Could not start a session')
+        with self.assertRaisesRegex(RuntimeError, 'without confirmed cancellation'):
+            self.run_measurement(bounded_foreground=True)
+        self.guest._rpc.assert_called_once()
+        self.assertFalse(self.report()['foreground_observations'][0]['native_stop_confirmed'])
+
+    def test_bounded_foreground_native_budget_leaves_response_time_within_startup_deadline(self):
+        self.launch['started_monotonic'] = 450
+        (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+        self.guest._rpc.return_value = self.foreground_reply()
+        with patch.object(measure_ready.time, 'monotonic', return_value=1000):
+            self.run_measurement(bounded_foreground=True)
+        self.guest._rpc.assert_called_once_with('script.eval', source='api("apps.foreground")', timeout=40)
+        self.assertEqual(self.report()['foreground_observations'][0]['native_timeout_seconds'], 40)
+
+    def test_bounded_foreground_rejects_unverified_process_identity_without_read_replay(self):
+        self.guest._rpc.return_value = self.foreground_reply(pid=True)
+        with self.assertRaisesRegex(RuntimeError, 'Invalid bounded foreground identity'):
+            self.run_measurement(bounded_foreground=True)
+        self.guest._rpc.assert_called_once()
+        self.assertFalse(self.report()['safari_foreground_verified'])
 
     def test_ip_gate_accepts_private_addresses_without_claiming_connectivity(self):
         for value in ['10.0.2.15', '192.168.1.10', 'fd00::2', '2001:db8::2']:

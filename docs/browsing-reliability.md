@@ -288,6 +288,28 @@ and foreground timeouts. The first native observation below passed foreground
 verification and later warm browsing, but failed its initial page. Repeated
 qualification remains necessary. The default startup method is unchanged.
 
+### Experimental bounded foreground reads
+
+Add `--bounded-foreground` to observe `apps.foreground` inside a native daemon
+session. This is a guest-native read; it does not evaluate JavaScript in Safari.
+The session receives at most 45 seconds, with ten seconds reserved for its reply
+within the original startup deadline. The existing foreground identity and
+rendering checks still apply.
+
+The pinned daemon's [session evaluator](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/VPhoneDaemon/Native/vphoned_pty.c)
+kills and reaps its child before returning the explicit native deadline error.
+Only that complete, exact error permits a new foreground observation. Transport
+loss, an invalid reply or a different session error stops the measurement.
+Every observation and any confirmed stop remain in the readiness report.
+Unlock, URL open and application launch are never repeated by this option.
+
+This option bounds the native observation; it does not remove the foreground
+API's application scans or establish faster startup. A warm native probe
+returned a verified Safari process in four seconds. Host tests cover confirmed
+native cancellation, uncertain transport, invalid identity and the original
+deadline. Fresh cold validation remains outstanding, so the option is disabled
+by default.
+
 ### First native initial-URL observation
 
 The first run used the same stopped tab-cleanup parent, copied renderer cache,

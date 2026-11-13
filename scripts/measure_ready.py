@@ -66,6 +66,9 @@ def main(argv=None):
     parser.add_argument('--wait-for-guest-ip', action='store_true',
                         help='Experimental: wait for an assigned guest IP before native input; '
                              'does not verify routing or Safari page readiness')
+    parser.add_argument('--bounded-foreground', action='store_true',
+                        help='Experimental: observe foreground through a native session that '
+                             'the daemon stops at its deadline; never repeats browser input')
     args = parser.parse_args(argv)
     if args.initial_url is not None:
         try:
@@ -91,6 +94,8 @@ def main(argv=None):
               'safari_foreground_verified': False, 'screenshot_captured': False,
               'visual_review': 'pending', 'status': 'running', 'stage': 'starting',
               'once_only_requests': []}
+    if args.bounded_foreground:
+        result.update(foreground_mode='bounded_native_session', foreground_observations=[])
     if args.initial_url is not None:
         result.update(initial_url=args.initial_url, startup_method='native_open_url',
                       initial_url_content_verified=False)
@@ -223,7 +228,69 @@ def main(argv=None):
                           'seconds': result['screen_unlocked_seconds']}), flush=True)
 
     def safari(guest, *, reconcile_refusal=False):
-        foreground = guest.call('apps.foreground')
+        if args.bounded_foreground:
+            # The pinned daemon kills and reaps the native session before its
+            # explicit deadline response. A lost transport response provides
+            # no such proof: stop rather than overlap another foreground scan.
+            remaining = deadline - time.monotonic()
+            if remaining <= 11:
+                raise TimeoutError('Insufficient startup budget for a bounded foreground read')
+            native_timeout = min(45, remaining - 10)
+            observation = {'started_unix': time.time(),
+                           'native_timeout_seconds': native_timeout,
+                           'native_stop_confirmed': False}
+            result['foreground_observations'].append(observation)
+            checkpoint()
+            try:
+                reply = guest._rpc('script.eval', source='api("apps.foreground")',
+                                   timeout=native_timeout)
+                if (not isinstance(reply, dict) or reply.get('ok') is not True
+                        or reply.get('crashed') is not False or reply.get('output') != ''
+                        or not isinstance(reply.get('result'), str)):
+                    raise RuntimeError('Invalid bounded foreground session response')
+                try:
+                    foreground = json.loads(reply['result'])
+                except ValueError as exc:
+                    raise RuntimeError('Invalid bounded foreground result') from exc
+                if (not isinstance(foreground, dict)
+                        or not isinstance(foreground.get('bundle_id'), str)
+                        or type(foreground.get('verified')) is not bool
+                        or type(foreground.get('pid')) is not int
+                        or not 0 <= foreground['pid'] <= 2147483647):
+                    raise RuntimeError('Invalid bounded foreground identity')
+                if (foreground['verified'] is True
+                        and foreground['bundle_id'] == 'com.apple.mobilesafari'
+                        and foreground['pid'] <= 1):
+                    raise RuntimeError('Bounded foreground Safari process is not verified')
+                observation['response'] = foreground
+            except GuestHTTPError as exc:
+                observation['error'] = str(exc)
+                expected = (f'The script did not finish within {int(native_timeout)} '
+                            'seconds and was stopped')
+                if exc.status == 400 and exc.detail == expected:
+                    observation['native_stop_confirmed'] = True
+                    # This is a new read after confirmed native cancellation,
+                    # within the original startup deadline. No input is replayed.
+                    raise GuestError('Foreground observation reached its native deadline and was stopped') from exc
+                raise RuntimeError('Bounded foreground session failed without confirmed cancellation') from exc
+            except GuestError as exc:
+                observation['error'] = str(exc)
+                if isinstance(exc, GuestTransportError):
+                    observation['transport'] = {
+                        'phase': exc.phase, 'errno': exc.errno,
+                        'request_may_have_been_sent': exc.request_may_have_been_sent,
+                    }
+                raise RuntimeError('Bounded foreground exchange failed; no new read is safe') from exc
+            except RuntimeError as exc:
+                observation['error'] = str(exc)
+                raise
+            finally:
+                observation['finished_unix'] = time.time()
+                checkpoint()
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Bounded foreground exceeded the original startup deadline')
+        else:
+            foreground = guest.call('apps.foreground')
         if foreground.get('bundle_id') != 'com.apple.mobilesafari' or foreground.get('verified') is not True:
             raise GuestError('Safari is not the frontmost app')
         if reconcile_refusal:

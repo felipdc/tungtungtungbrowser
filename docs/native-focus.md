@@ -266,8 +266,12 @@ and transferring a JPEG solely to validate bounds. The pinned native
 [screen metadata](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Device/Device.swift)
 and [screenshot coordinates](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Input/Screen.swift)
 use the same oriented screen metrics. Rendering validation still requires
-explicit image captures. The bounds optimization has host regression coverage;
-fresh-guest native validation remains outstanding.
+explicit image captures. A fresh-guest fixture navigation exercised both native
+screen checks without a bounds-only JPEG, rendered the destination in native
+and host captures, and preserved the existing tabs through sixty seconds.
+That single passing fixture does not qualify four-phone cold startup; the same
+concurrent run had two foreground-read timeouts and one tab-persistence timing
+failure before navigation.
 
 `reader.resolve_address_field(pid, max_attempts=1)` disables the second complete
 resolution for a direct caller. Its default limit is two; this is separate from
