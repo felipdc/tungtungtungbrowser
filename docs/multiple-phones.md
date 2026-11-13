@@ -352,7 +352,7 @@ blank tab, restored accessibility settings and found no focus helpers.
 Two new opt-in candidates now cover [bounded application launch](browsing-reliability.md#experimental-bounded-application-launch)
 and a [read-only discovery wait](native-focus.md#optional-address-discovery-wait).
 All 702 host tests passed; the live comparison used the preceding build.
-Fresh cold validation of both candidates is still required.
+At that point, fresh cold validation of both candidates was still required.
 
 The four containers coexisted for 25.70 minutes with no OOMs or disk swap I/O.
 Sampled RAM peaked at 24.00 GiB for phones and 24.18 GiB including proxies;
@@ -367,6 +367,47 @@ resident memory per phone. Graphics mapping sizes grew by 110–594 MiB on the
 three phones with startup snapshots, even where their resident memory fell.
 These observations do not demonstrate reduced allocation retention or qualify
 the 4 GiB stretch target.
+
+### Bounded-launch trial and targeted LaunchServices follow-up
+
+The next four-phone trial enabled the bounded launch and a 30-second native
+address-discovery wait, with all resource settings unchanged. Every launch
+returned the exact 90-second native stop response. One phone subsequently
+verified Safari at 441.10 seconds within its original deadline; the other three
+exhausted their original startup budgets while remaining on the Home Screen.
+
+The passing phone rendered both local documents in native and host captures,
+reattached and preserved its retained tab through sixty seconds. Its first
+address scan was unavailable and the next completed scan found no address
+field; the existing guarded focus path then completed navigation. A separate
+default-close check sent exactly one close, removed only its owned tab and
+preserved all five baseline tabs through sixty seconds. These results do not
+isolate a causal benefit from the optional discovery wait.
+
+A separately reviewed warm diagnostic on one failed-start phone made a
+targeted native LaunchServices request. It was accepted in 3.88 seconds,
+followed by verified Safari foreground state and visible browser chrome. The
+page was still loading and no product JSON was measured. The original cold
+failure remains a failure. The new opt-in
+[`--launch-services` candidate](browsing-reliability.md#experimental-targeted-launchservices-launch)
+avoids broad app scans before requesting launch. All 709 host tests passed;
+fresh four-phone cold validation of this candidate remains outstanding.
+
+The four containers coexisted for 20.63 minutes with no OOMs or disk swap I/O.
+Sampled RAM peaked at 24.00 GiB for phones and 24.18 GiB including proxies;
+minimum host available memory was 5.38 GiB. Configured limits remained 6 GiB
+per phone. Maximum accounting overshoots were 24 KiB in samples and 496 KiB
+in kernel peak counters. This interval includes failed startups, diagnostics,
+single-phone local browsing and idle time, not sustained concurrent browsing.
+All final native audits passed and all guests shut down cleanly in
+17.29–18.05 seconds. Source disks and caches were unchanged; host swap settings
+were restored.
+
+Final anonymous executable PSS remained 919–979 MiB per QEMU. On the phone
+with the warm launch diagnostic, graphics mappings grew by 320 MiB while
+graphics PSS fell by about 198 MiB and compressed memory rose. The passing
+phone's graphics mapping size was nearly unchanged despite lower PSS. These
+observations do not demonstrate freed graphics allocations or qualify 4 GiB.
 
 ### Compressed-memory trial: four-phone startup remains unqualified
 

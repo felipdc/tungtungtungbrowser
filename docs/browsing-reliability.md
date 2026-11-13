@@ -329,7 +329,7 @@ session and enables bounded foreground reads. It cannot be combined with
 `--initial-url`. The native session receives at most 90 seconds, with thirty
 seconds reserved in the remaining startup budget; the transport ceiling is
 180 seconds, also capped by that original budget. This option remains disabled
-by default and has not yet passed a fresh native cold trial.
+by default and has not yet passed a fresh four-phone cold trial.
 
 The pinned daemon executes the [session API call in the child process](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/VPhoneDaemon/Daemon/GuestScriptSession.swift).
 After its exact confirmed-stop response, readiness retains the failed launch
