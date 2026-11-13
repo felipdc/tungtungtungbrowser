@@ -46,12 +46,15 @@ rendering, memory and cleanup checks, including after a login outcome. Preserve
 the response and original outcome rather than retrying until every phone returns
 product data. A small passing batch does not establish a long-run success rate.
 
-The [compressed-memory trial](multiple-phones.md#compressed-memory-trial-four-phone-startup-remains-unqualified)
-contained four phone cgroups within their 6 GiB limits, but three concurrent
-boots failed readiness on eight CPU cores. The [sixteen-core follow-up](multiple-phones.md#sixteen-core-compressed-memory-follow-up)
-brought all four to foreground Safari and passed warm native-tab checks within
-the same memory configuration. Cold setup failures and intermittent bootstrap-tab
-loss remain unresolved, so the density profile is still experimental.
+The latest [targeted-launch cohort](multiple-phones.md#targeted-launch-cold-cohort-and-two-product-rounds)
+passed all four original cold starts and two consecutive product rounds within
+the configured 6 GiB phone limits on sixteen cores and 32 GiB RAM. Each round
+returned three visible products with matching API data and one login. The
+two-round workload spanned 8.15 minutes; the longer 80.50-minute coexistence
+record includes idle time. The fixed safety timer stopped the host before the
+planned default-close check and final native audit. Longer browsing, repeated
+cold cohorts, complete cleanup qualification and demonstrated retention savings
+remain open, so the density profile stays experimental.
 
 ## Completed workflow milestones and remaining API work
 

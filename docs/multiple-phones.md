@@ -291,7 +291,51 @@ mutually untrusted tenants or renderer-census-disabled operation. Keep guests
 warm during a batch and validate each change with a targeted check; repeat a
 full browser workflow at milestones.
 
-### Latest four-phone product result
+### Targeted-launch cold cohort and two product rounds
+
+The latest trial passed all four original cold starts using the opt-in
+[targeted LaunchServices launch](browsing-reliability.md#experimental-targeted-launchservices-launch).
+It retained the sixteen-core, 32 GiB host, configured 6 GiB whole-container
+limits, 3 GiB guest RAM, three guest CPUs, one rendering worker, 1024 MiB
+translation cache and compressed-memory settings described below. Foreground
+readiness took 396.39–434.12 seconds. All four first local fixtures passed native
+and host rendering, reattachment and sixty-second tab retention.
+
+Two consecutive concurrent Shopee rounds each produced **three settled products
+with matching intercepted JSON and one visible login requirement**. The login
+occurred on different phones, so every phone returned valid product data in at
+least one round. Native and host captures showed each accepted product's image,
+title, price and seller, and its HTTP 200 API payload matched the expected item
+and shop IDs without an application error. A gray circular overlay remained
+over the product image; this is not a claim of perfect rendering. Every round
+preserved the existing tabs and restored accessibility settings. No page
+JavaScript was injected and no failed native input was automatically replayed.
+
+The two rounds spanned 8.15 minutes. The containers coexisted for 80.50 minutes,
+including startup, initialization, fixtures and substantial idle time. That
+longer interval is not continuous successful browsing. One-second sampling
+recorded 24.00 GiB peak phone RAM, 24.18 GiB including proxies and at least
+4.94 GiB host available memory. There were no host/container OOMs or disk swap
+I/O. The largest per-phone accounting overshoots above the configured limit
+were 60 KiB in samples and 512 KiB in the kernel peak counter.
+
+The session resumed after the fixed safety deadline. The timer had powered off
+the host, and all four guests completed native shutdown in 17.72–18.37 seconds
+without forced termination. A host-only recovery verified the evidence archive,
+unchanged source disks/caches and restored swap settings, then stopped the host.
+The planned separate default-close check, final native audit and further product
+rounds were not performed. The last completed round's state audit is preserved;
+it does not substitute for those missing checks.
+
+Memory snapshots through the first product round retained 977–995 MiB of
+anonymous executable PSS per QEMU. Graphics mapping sizes grew by 18–192 MiB
+from the cold snapshot even as graphics PSS fell and compressed memory grew.
+This does not demonstrate reduced graphics allocation retention. Longer
+concurrent browsing, repeated cold cohorts and complete cleanup qualification
+remain outstanding; the profile stays experimental and 4 GiB remains a stretch
+target.
+
+### Earlier four-product round
 
 A later run on sixteen physical cores and 32 GiB RAM returned **four visible
 Shopee product pages with matching intercepted product JSON** in one concurrent
@@ -391,7 +435,7 @@ page was still loading and no product JSON was measured. The original cold
 failure remains a failure. The new opt-in
 [`--launch-services` candidate](browsing-reliability.md#experimental-targeted-launchservices-launch)
 avoids broad app scans before requesting launch. All 709 host tests passed;
-fresh four-phone cold validation of this candidate remains outstanding.
+at that point, fresh four-phone cold validation was still outstanding.
 
 The four containers coexisted for 20.63 minutes with no OOMs or disk swap I/O.
 Sampled RAM peaked at 24.00 GiB for phones and 24.18 GiB including proxies;

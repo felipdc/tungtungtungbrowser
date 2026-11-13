@@ -33,10 +33,12 @@ native screenshots and verified owned-tab cleanup. See the
 [qualification record](docs/inspector-api.md#reusable-profile-qualification-2026-11-11)
 and [roadmap](docs/roadmap.md) for measured scope and remaining limits.
 
-Two independent Docker phones have also booted and exercised Safari concurrently
-on one eight-core, 32-GiB Linux host. The [multi-phone guide](docs/multiple-phones.md)
-covers cloning prepared bundles, unique control addresses, per-phone API profiles,
-resource settings and measured validation limits.
+Four independent Docker phones have passed one cold cohort and two concurrent
+product rounds on a sixteen-core, 32-GiB Linux host with configured 6-GiB
+container limits. Each round returned three visible products with matching API
+JSON and one login outcome, with no OOMs. Longer browsing and complete cleanup
+qualification remain open. The [multi-phone guide](docs/multiple-phones.md#targeted-launch-cold-cohort-and-two-product-rounds)
+records the measured scope and limitations, alongside cloning and resource setup.
 
 The validated host platform is **Linux x86_64 with Debian 13**, Docker Compose,
 and Mesa lavapipe. ARM hosts and other distributions need their own validation.

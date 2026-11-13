@@ -375,6 +375,16 @@ chrome. The page was still loading; no product API JSON was measured. That
 follow-up preserves the original cold failure and does not qualify this
 candidate for fresh four-phone startup.
 
+A subsequent fresh four-phone trial used this mode with the same 6 GiB
+container limits, 3 GiB guest RAM and three guest CPUs. Every original launch
+request was accepted once, in 12.34–43.04 seconds. Separate foreground readiness
+completed in 396.39–434.12 seconds, within the original 600-second measurement
+deadline. All four first native fixtures rendered both documents, reattached
+and retained their tabs through sixty seconds. No launch or failed input was
+replayed. This is one passing cold cohort; it exceeds the roughly 300-second
+target and does not establish general startup repeatability. See the
+[concurrent product results and remaining checks](multiple-phones.md#targeted-launch-cold-cohort-and-two-product-rounds).
+
 ### First native initial-URL observation
 
 The first run used the same stopped tab-cleanup parent, copied renderer cache,
