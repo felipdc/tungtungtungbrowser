@@ -73,6 +73,16 @@ class ProfileTests(unittest.TestCase):
             for invalid in (0, 4, True, 2.5):
                 with self.assertRaises(ValueError): profile.browser(focus_read_attempts=invalid)
 
+    def test_profile_forwards_optional_discovery_wait_without_native_work(self):
+        self.write('focus/install.json', helper_sha256=SHA, deployment_id=TOKEN,
+                   path=focus_path(SHA, TOKEN), native_check={
+                       'protocol': 1, 'status': 'ready', 'ui_input_sent': False,
+                       'ax_queried': False, 'address_resolution': 'guarded-v1'})
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            profile = BrowserProfile(self.directory)
+            self.assertEqual(profile.browser().address_discovery_timeout, 0)
+            self.assertEqual(profile.browser(address_discovery_timeout=30).address_discovery_timeout, 30)
+
     def test_native_blank_profile_keeps_endpoint_and_rejects_conflicting_url(self):
         with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
             profile = BrowserProfile(self.directory)

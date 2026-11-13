@@ -108,7 +108,8 @@ class Browser:
     """
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
                  qmp_socket=None, display_timeout=15, touch_helper_sha256=None,
-                 address_field_reader=None, touch_hold_ms=50, address_focus='auto'):
+                 address_field_reader=None, touch_hold_ms=50, address_focus='auto',
+                 address_discovery_timeout=0):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         if guest is not None and touch_helper_sha256 is not None:
@@ -122,8 +123,18 @@ class Browser:
             raise ValueError('address_field_reader must be callable')
         if address_focus not in ('auto', 'shortcut'):
             raise ValueError('address_focus must be auto or shortcut')
+        if (type(address_discovery_timeout) not in (int, float)
+                or not math.isfinite(address_discovery_timeout)
+                or not 0 <= address_discovery_timeout <= 120):
+            raise ValueError('address_discovery_timeout must be between 0 and 120 seconds')
+        if address_discovery_timeout and (
+                address_focus != 'auto'
+                or getattr(address_field_reader, 'supports_address_resolution', False) is not True
+                or not callable(getattr(address_field_reader, 'wait_for_address_field', None))):
+            raise ValueError('Address discovery wait requires a capable reader and automatic focus')
         self.address_field_reader = address_field_reader
         self.address_focus = address_focus
+        self.address_discovery_timeout = address_discovery_timeout
         self._lock = threading.RLock()
 
     def health(self):
@@ -294,7 +305,11 @@ class Browser:
         if not callable(resolver):
             raise GuestError('Native address resolver is not configured')
         discover = getattr(self.address_field_reader, 'discover_address_field', None)
-        field = discover(foreground['pid']) if callable(discover) else None
+        if self.address_discovery_timeout:
+            field = self.address_field_reader.wait_for_address_field(
+                foreground['pid'], timeout=self.address_discovery_timeout)
+        else:
+            field = discover(foreground['pid']) if callable(discover) else None
         if field is None:
             # A completed discovery can omit Safari's collapsed address bar.
             # Reveal it once, then require entirely fresh native focus evidence.

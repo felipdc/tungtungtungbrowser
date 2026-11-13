@@ -53,6 +53,7 @@ class DirectAddressDiscoveryTests(unittest.TestCase):
         with patch('tungtungtungbrowser.native_focus.time.sleep') as sleep:
             self.assertIsNone(reader.discover_address_field(301))
         self.assertEqual(guest._rpc.call_count, 1)
+
         self.assertEqual(reader.last_address_lookup['status'], 'absent')
         self.assertFalse(reader.last_address_lookup['retry_permitted'])
         sleep.assert_not_called()
@@ -114,3 +115,70 @@ class DirectAddressDiscoveryTests(unittest.TestCase):
         guest, reader = self.reader([answer(address(unavailable=True)), answer(address())])
         with self.assertRaises(GuestError): reader.discover_address_field(301, max_attempts=1)
         self.assertEqual(guest._rpc.call_count, 1)
+
+
+class AddressDiscoveryWaitTests(unittest.TestCase):
+    reader = DirectAddressDiscoveryTests.reader
+
+    def test_completed_unavailability_can_settle_without_any_ui_input(self):
+        partial = address(unavailable=True); partial['scan'].update(elements=21, visited=19)
+        guest, reader = self.reader([answer(address(unavailable=True)), answer(partial), answer(address())])
+        clock = [100.0]
+        with patch('tungtungtungbrowser.native_focus.time.monotonic', side_effect=lambda: clock[0]), \
+             patch('tungtungtungbrowser.native_focus.time.sleep', side_effect=lambda n: clock.__setitem__(0, clock[0] + n)):
+            field = reader.wait_for_address_field(301, timeout=30)
+        self.assertEqual(field['source'], 'ax_address_field')
+        self.assertEqual([r['status'] for r in reader.last_address_attempts], ['failed', 'failed', 'read'])
+        self.assertEqual(reader.last_address_wait, {'timeout_seconds': 30, 'status': 'read', 'seconds': 4})
+        self.assertEqual(guest._rpc.call_count, 3)
+        guest.call.assert_not_called()
+
+    def test_deadline_keeps_failures_and_prevents_next_query(self):
+        guest, reader = self.reader([answer(address(unavailable=True))] * 4)
+        clock = [100.0]
+        with patch('tungtungtungbrowser.native_focus.time.monotonic', side_effect=lambda: clock[0]), \
+             patch('tungtungtungbrowser.native_focus.time.sleep', side_effect=lambda n: clock.__setitem__(0, clock[0] + n)):
+            with self.assertRaisesRegex(GuestError, 'deadline exceeded'):
+                reader.wait_for_address_field(301, timeout=3)
+        self.assertEqual(guest._rpc.call_count, 2)
+        self.assertEqual(len(reader.last_address_attempts), 2)
+        self.assertEqual(reader.last_address_wait['status'], 'failed')
+
+    def test_late_complete_field_is_rejected(self):
+        clock = [100.0]
+        guest, reader = self.reader([])
+        def read(*args, **kwargs):
+            clock[0] += 31
+            return answer(address())
+        guest._rpc.side_effect = read
+        with patch('tungtungtungbrowser.native_focus.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(GuestError, 'deadline exceeded'):
+                reader.wait_for_address_field(301)
+        guest._rpc.assert_called_once()
+        self.assertEqual(reader.last_address_attempts[0]['status'], 'read')
+        self.assertEqual(reader.last_address_wait['status'], 'failed')
+
+    def test_uncertain_or_unrestored_query_is_never_repeated(self):
+        bad = address(unavailable=True); bad['guard_restored'] = False
+        partial = address(unavailable=True); partial['scan'].update(elements=21, visited=19, matches=1)
+        for reply in [GuestError('transport timed out'), {'ok': False}, answer(bad), answer(partial)]:
+            with self.subTest(reply=reply):
+                guest, reader = self.reader([reply, answer(address())])
+                with self.assertRaises(GuestError): reader.wait_for_address_field(301)
+                guest._rpc.assert_called_once()
+                guest.call.assert_not_called()
+
+    def test_complete_absence_still_returns_immediately(self):
+        guest, reader = self.reader([answer(address(absent=True)), answer(address())])
+        with patch('tungtungtungbrowser.native_focus.time.sleep') as sleep:
+            self.assertIsNone(reader.wait_for_address_field(301))
+        guest._rpc.assert_called_once(); sleep.assert_not_called()
+        self.assertEqual(reader.last_address_wait['status'], 'absent')
+
+    def test_invalid_deadline_or_pid_sends_no_query(self):
+        guest, reader = self.reader([])
+        for value in [0, -1, True, 121, None, float('inf'), float('nan')]:
+            with self.assertRaises(ValueError): reader.wait_for_address_field(301, timeout=value)
+        for pid in [1, True, 301.0, None]:
+            with self.assertRaises(ValueError): reader.wait_for_address_field(pid)
+        guest._rpc.assert_not_called()

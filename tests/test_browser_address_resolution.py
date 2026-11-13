@@ -129,6 +129,41 @@ class NativeAddressResolutionTests(unittest.TestCase):
         self.assertEqual(b._focus_address_field(FG)['source'], 'ax_first_responder')
         self.assertEqual((self.reader.resolved, self.reader.fresh), (1, 1))
         self.assertEqual(len(self.taps()), 1)
+
+    def test_explicit_discovery_wait_precedes_one_focus_tap(self):
+        reader = Reader(self.guest, self.discovered())
+        reader.wait_for_address_field = Mock(return_value=self.discovered())
+        browser = Browser(guest=self.guest, address_field_reader=reader,
+                          input_settle=0, address_discovery_timeout=30)
+        self.assertEqual(browser._focus_address_field(FG)['source'], 'ax_first_responder')
+        reader.wait_for_address_field.assert_called_once_with(301, timeout=30)
+        self.assertEqual(reader.resolved, 0)
+        self.assertEqual(len(self.taps()), 1)
+        self.assertEqual(self.inputs(), [])
+
+    def test_failed_discovery_wait_does_not_fall_back_to_input(self):
+        reader = Reader(self.guest, self.discovered())
+        reader.wait_for_address_field = Mock(side_effect=GuestError('Discovery deadline exceeded'))
+        browser = Browser(guest=self.guest, address_field_reader=reader,
+                          input_settle=0, address_discovery_timeout=30)
+        with self.assertRaisesRegex(GuestError, 'deadline exceeded'):
+            browser._focus_address_field(FG)
+        reader.wait_for_address_field.assert_called_once()
+        self.assertEqual((reader.resolved, reader.fresh), (0, 0))
+        self.assertEqual(self.guest.calls, [])
+
+    def test_discovery_wait_rejects_invalid_configuration_without_input(self):
+        reader = Reader(self.guest, self.discovered())
+        for value in [-1, True, 121, float('nan'), float('inf'), None]:
+            with self.assertRaises(ValueError):
+                Browser(guest=self.guest, address_field_reader=reader, address_discovery_timeout=value)
+        with self.assertRaises(ValueError):
+            Browser(guest=self.guest, address_field_reader=reader, address_discovery_timeout=30)
+        reader.wait_for_address_field = Mock()
+        with self.assertRaises(ValueError):
+            Browser(guest=self.guest, address_field_reader=reader,
+                    address_focus='shortcut', address_discovery_timeout=30)
+        self.assertEqual(self.guest.calls, [])
     def test_bad_resolution_cannot_cause_tap_or_navigation_input(self):
         fields = [GuestError('Failed guard'), {**self.field, 'pid': 302},
                   {**self.field, 'source': 'other'}, {**self.field, 'identifier': 'Other'},

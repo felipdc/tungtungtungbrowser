@@ -35,6 +35,7 @@ class NativeFocusReader:
         self.last_read_attempts = []
         self.last_address_lookup = None
         self.last_address_attempts = []
+        self.last_address_wait = None
         self.last_resolution = None
         self.last_resolution_attempts = []
         self.supports_address_resolution = False
@@ -188,6 +189,46 @@ class NativeFocusReader:
                 # An optional scan must not replace it with a later failure.
                 return field
             time.sleep(0.1)
+
+    def wait_for_address_field(self, pid, *, timeout=30):
+        """Wait through completed unavailable scans, without sending UI input.
+
+        Each native query must finish and restore its guard before another may
+        begin. The deadline prevents new queries and rejects late results; an
+        in-flight query keeps its own timeout so restoration is not interrupted.
+        A complete absence remains actionable and returns immediately.
+        """
+        if type(pid) is not int or not 1 < pid <= 2147483647:
+            raise ValueError('Address lookup requires a valid native process ID')
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 120:
+            raise ValueError('Address discovery timeout must be between 0 and 120 seconds')
+        started = time.monotonic()
+        deadline = started + timeout
+        self.last_address_attempts = []
+        self.last_address_wait = {'timeout_seconds': timeout, 'status': 'waiting'}
+        try:
+            while True:
+                if time.monotonic() >= deadline:
+                    raise GuestError('Native address discovery deadline exceeded; input not sent')
+                try:
+                    field = self._find_address_field_once(pid)
+                except GuestError:
+                    if self.last_address_lookup['retry_permitted'] is not True:
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise GuestError('Native address discovery deadline exceeded; input not sent')
+                    time.sleep(min(2, remaining))
+                else:
+                    if time.monotonic() >= deadline:
+                        raise GuestError('Native address discovery deadline exceeded; input not sent')
+                    self.last_address_wait['status'] = 'absent' if field is None else 'read'
+                    return field
+        except BaseException as error:
+            self.last_address_wait.update(status='failed', error=str(error))
+            raise
+        finally:
+            self.last_address_wait['seconds'] = time.monotonic() - started
 
     def _find_address_field_once(self, pid):
         record = self.last_address_lookup = {

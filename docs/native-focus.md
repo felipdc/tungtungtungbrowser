@@ -876,3 +876,26 @@ read supports testing that transition without repeating the address shortcut
 or accepting incomplete identity. Each native execution remains bounded, and
 the enclosing session deadline still applies. This option alone does not
 establish cold reliability.
+
+## Optional address discovery wait
+
+`BrowserProfile.browser(address_discovery_timeout=30)` selects a deadline for
+read-only discovery before the first focus input. The default, zero, preserves
+the existing two-query discovery bound. Positive values up to 120 seconds
+require the guarded address-resolution capability and automatic focus mode.
+
+The wait repeats only completed unavailable scans that already satisfy the
+reader's ownership, empty-candidate and settings-restoration checks. Each
+eligible failure is retained, with up to two seconds between fresh queries.
+A completed absence returns immediately; uncertain transport, malformed data,
+partial candidate evidence or un-restored settings stop the operation. The
+deadline prevents further queries and rejects late results. An in-flight
+native query retains its own timeout so its restoration guard can finish.
+No shortcut, tap, paste or Return is repeated by the wait.
+
+This is an experimental response to three concurrent first blank-tab
+navigations that exhausted discovery with AX error `-25216` before any URL
+input. A later separate read found the native address control, and a separately
+reviewed tap established an editing first responder. Command-L alone did not.
+These observations motivate waiting for valid discovery; they do not establish
+that the new option fixes cold startup. Fresh native validation remains needed.
