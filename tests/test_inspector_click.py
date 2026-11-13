@@ -84,6 +84,16 @@ class InspectorClickTests(unittest.IsolatedAsyncioTestCase):
             await session.click('button')
         self.assertEqual(len(self.inputs), 1)
 
+    async def test_invalidated_document_root_fails_before_pointer_input(self):
+        session = self.fixture()
+        session._inspector.errors['DOM.querySelectorAll'] = [
+            {'code': -32000, 'message': 'Missing node for given nodeId'}]
+        with self.assertRaises(DocumentChangedError):
+            await session.click('button')
+        self.assertEqual(self.inputs, [])
+        self.assertEqual(session._inspector.commands.count('DOM.querySelectorAll'), 1)
+        self.assertNotIn('DOM.setInspectModeEnabled', session._inspector.commands)
+
     async def test_missing_ambiguous_disabled_and_wrong_foreground_send_no_input(self):
         for failure in ['missing', 'ambiguous', 'disabled', 'wrong_app', 'wrong_pid']:
             session = self.fixture()

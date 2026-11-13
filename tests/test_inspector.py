@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from tungtungtungbrowser.inspector import InspectorSession, InspectorError
+from tungtungtungbrowser.inspector import InspectorSession, InspectorError, DocumentChangedError
 from tungtungtungbrowser.inspector_transport import InspectorTransport
 
 
@@ -16,6 +16,7 @@ class NativeProtocolFixture:
         self.session = session
         self.commands = []
         self.results = {}
+        self.errors = {}
         self.silent = False
         self.outer_error = False
 
@@ -35,6 +36,12 @@ class NativeProtocolFixture:
         # Deliver an immediate reply, before the sender resumes; this catches
         # registration-after-send races without timing-dependent sleeps.
         self.session._receive(session_id, {'id': message['id'], 'result': {}})
+        errors = self.errors.get(nested['method'], [])
+        if errors:
+            self.session._receive(session_id, {
+                'method': 'Target.dispatchMessageFromTarget', 'params': {
+                    'targetId': target, 'message': json.dumps({'id': nested['id'], 'error': errors.pop(0)})}})
+            return
         result = self.results.get(nested['method'], {})
         self.reply(nested['id'], target, result)
 
@@ -201,6 +208,57 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         s = session_fixture()
         s._inspector.results['DOM.getDocument'] = {'root': {'nodeId': 1}}
         self.assertIsNone(await s.query_selector('.missing'))
+
+    async def test_selector_wait_reads_fresh_root_after_missing_node_reply_without_navigation_event(self):
+        for state, result, expected in [('attached', {'nodeId': 9}, 9), ('detached', {}, None)]:
+            with self.subTest(state=state):
+                s = session_fixture()
+                s._inspector.results = {'DOM.getDocument': {'root': {'nodeId': 1}},
+                                        'DOM.querySelector': result}
+                s._inspector.errors['DOM.querySelector'] = [{
+                    'code': -32000, 'message': 'Missing node for given nodeId',
+                    'data': [{'code': -32000, 'message': 'Missing node for given nodeId'}]}]
+                self.assertEqual(await s.wait_for_selector('button', state=state, interval=0.05), expected)
+                self.assertEqual(s._inspector.commands, ['DOM.getDocument', 'DOM.querySelector'] * 2)
+                self.assertEqual(s.document_generation, 0)
+                self.assertFalse(s._pending)
+
+    async def test_missing_root_query_and_focus_fail_without_repeating_or_sending_input(self):
+        for action, method in [('query_selector', 'DOM.querySelector'), ('focus', 'DOM.querySelectorAll')]:
+            with self.subTest(action=action):
+                s = session_fixture()
+                s._page.web_url = 'https://fixture.invalid/'
+                s._inspector.results['DOM.getDocument'] = {
+                    'root': {'nodeId': 1, 'documentURL': s._page.web_url}}
+                s._inspector.errors[method] = [{'code': -32000, 'message': 'Missing node for given nodeId'}]
+                with self.assertRaises(DocumentChangedError):
+                    await getattr(s, action)('button')
+                self.assertEqual(s._inspector.commands, ['DOM.getDocument', method])
+                self.assertIsNone(s._document_address)
+
+    async def test_selector_wait_preserves_unrelated_protocol_errors(self):
+        for error in [{'code': -32001, 'message': 'Missing node for given nodeId'},
+                      {'code': -32000, 'message': 'Invalid selector'},
+                      'Missing node for given nodeId']:
+            with self.subTest(error=error):
+                s = session_fixture()
+                s._inspector.results['DOM.getDocument'] = {'root': {'nodeId': 1}}
+                s._inspector.errors['DOM.querySelector'] = [error]
+                with self.assertRaises(InspectorError) as caught:
+                    await s.wait_for_selector('button', interval=0.05)
+                self.assertNotIsInstance(caught.exception, DocumentChangedError)
+                self.assertEqual(s._inspector.commands, ['DOM.getDocument', 'DOM.querySelector'])
+
+    async def test_missing_root_polling_keeps_original_wait_deadline(self):
+        s = session_fixture()
+        s._inspector.results['DOM.getDocument'] = {'root': {'nodeId': 1}}
+        s._inspector.errors['DOM.querySelector'] = [
+            {'code': -32000, 'message': 'Missing node for given nodeId'}] * 100
+        with self.assertRaises(TimeoutError):
+            await s.wait_for_selector('button', timeout=0.12, interval=0.05)
+        self.assertGreaterEqual(s._inspector.commands.count('DOM.querySelector'), 2)
+        self.assertLess(s._inspector.commands.count('DOM.querySelector'), 10)
+        self.assertFalse(s._pending)
 
     async def test_xpath_expression_does_not_fall_through_to_css_or_ordinary_text(self):
         s = session_fixture()

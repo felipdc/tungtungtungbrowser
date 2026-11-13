@@ -584,7 +584,7 @@ class InspectorSession:
             if 'error' in message and inner in self._pending:
                 _, future = self._pending[inner]
                 if not future.done():
-                    future.set_exception(InspectorError(str(message['error'])))
+                    future.set_exception(_ProtocolCommandError(message['error']))
             return
         method, params = message.get('method'), message.get('params', {})
         if method == 'Target.targetCreated':
@@ -620,7 +620,7 @@ class InspectorSession:
                 pending = self._pending.get(content['id'])
                 if pending and pending[0] == target and not pending[1].done():
                     if 'error' in content:
-                        pending[1].set_exception(InspectorError(str(content['error'])))
+                        pending[1].set_exception(_ProtocolCommandError(content['error']))
                     else:
                         pending[1].set_result(content['result'])
             else:
@@ -810,7 +810,17 @@ class InspectorSession:
         target, generation, document = await self._document()
         if strategy == 'css':
             method = 'DOM.querySelectorAll' if strict else 'DOM.querySelector'
-            result = await self._command(method, target=target, nodeId=document['root']['nodeId'], selector=selector)
+            try:
+                result = await self._command(method, target=target, nodeId=document['root']['nodeId'], selector=selector)
+            except _ProtocolCommandError as error:
+                # Navigation can invalidate the root before documentUpdated arrives.
+                # Only a condition waiter may poll a fresh document; actions fail
+                # before sending input, and unrelated protocol errors still escape.
+                if (isinstance(error.error, dict) and error.error.get('code') == -32000
+                        and error.error.get('message') == 'Missing node for given nodeId'):
+                    self._document_address = None
+                    raise DocumentChangedError('Document root disappeared during selector lookup') from error
+                raise
             self._same_document(target, generation)
             if strict:
                 nodes = result['nodeIds']
