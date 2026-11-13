@@ -62,10 +62,10 @@ class BrowserProfile:
                        address_field_reader=NativeFocusReader.from_deployment(
                            guest, self.focus_path, max_read_attempts=focus_read_attempts))
 
-    def session(self, *, browser, url=None, new_tab_url=None, new_tab=False):
-        """Attach a tab, open a fixture, or request a native owned blank tab."""
+    def session(self, *, browser, url=None, new_tab_url=None, new_tab=False, retain_tab=False):
+        """Attach a tab or create one, optionally retaining it for later sessions."""
         if browser.guest.cid != self.cid:
             raise ValueError('Browser and deployment profile target different guest CIDs')
-        return InspectorSession(browser=browser, url=url, new_tab_url=new_tab_url, new_tab=new_tab, timeout=300,
+        return InspectorSession(browser=browser, url=url, new_tab_url=new_tab_url, new_tab=new_tab, retain_tab=retain_tab, timeout=300,
                                 transport=InspectorTransport(cid=self.cid, timeout=240,
                                                              max_open_attempts=4))

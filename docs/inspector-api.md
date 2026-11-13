@@ -329,6 +329,42 @@ assert page.tab_cleanup['status'] in {'closed', 'already_absent'}
 assert not page.cleanup_errors
 ```
 
+For a persistent tab, pass `retain_tab=True` with `new_tab_url` or `new_tab`.
+This explicit option releases inspection and the transport on exit without
+sending native tab-close input, including when the session body raises.
+Create the tab once per phone and attach subsequent sessions to its unique URL:
+
+```python
+session = profile.session(
+    browser=browser,
+    new_tab_url=os.environ['TTT_BOOTSTRAP_URL'],
+    retain_tab=True,
+)
+async with session:
+    await session.wait_for_selector('body')
+    retained_url = await session.wait_for_url(session.url)
+
+assert session.tab_cleanup['status'] == 'retained'
+assert not session.cleanup_errors
+
+async with profile.session(browser=browser, url=retained_url) as page:
+    rendered_html = await page.content()
+```
+
+The caller manages the retained tab's lifetime, for example by disposing of its
+dedicated phone after the workload. Repeatedly creating retained tabs will keep
+those tabs open. `tab_cleanup.retention_verified` is `False`: the cleanup record
+states the requested policy and does not perform a new tab-existence check.
+Uncertain creation still reports unknown ownership. The default continues to
+close newly owned tabs; attaching an existing tab never owns its cleanup.
+
+A warm native check reused the same tab across two sessions, preserved the
+earlier tabs through 60 seconds, and observed no keyboard events during detach
+and reattachment. Concurrent cold qualification remains pending. Default native
+close has an unresolved preservation regression under concurrent load: another
+tab was removed after one observed close chord. Persistent phone workloads can
+use retention and whole-phone disposal to avoid that close operation.
+
 Navigation checks a fresh tab listing and the inspected document URL, then the
 native editing address field before replacing its text. Duplicate URLs, a changed
 Safari PID, a different active tab or an unverified address field cause failure.

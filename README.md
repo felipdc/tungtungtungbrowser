@@ -512,7 +512,7 @@ XPath can currently appear as no match.
 | Device image | `screenshot()` uses native JPEG by default; configuring `Browser(qmp_socket=...)` selects a host display PNG. Includes browser UI. |
 | Page image | `snapshot_rect(width=393, height=650)` returns a WebKit page PNG in an explicit CSS-pixel rectangle, without browser UI; it does not prove device composition. |
 | Coordinate input | `browser.tap(x, y)`, `type_text(text)`, `press(name)`, `swipe(...)`; native input requires verified focus and screen geometry. No selector-based `fill()` API yet. |
-| Session cleanup | `async with page` releases inspection; verified owned tabs close once. `tab_cleanup`, `cleanup_errors` and `transport.failure` retain outcomes. |
+| Session cleanup | `async with page` releases inspection. Owned tabs close by default; `retain_tab=True` keeps a newly owned tab for later sessions or phone disposal. `tab_cleanup`, `cleanup_errors` and `transport.failure` retain outcomes. |
 
 Timeouts are seconds except `wait_for_timeout(milliseconds)`. A response
 expectation's deadline starts when entering its context, including the action's

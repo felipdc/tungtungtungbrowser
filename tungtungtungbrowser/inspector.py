@@ -166,12 +166,14 @@ class InspectorSession:
     """Own native inspection of one Safari tab.
 
     A session releases its subscriptions and connection on exit. With new_tab
-    or new_tab_url it also owns the newly opened tab. It never closes an existing tab, clears
+    or new_tab_url it also owns the newly opened tab. retain_tab keeps that tab
+    after disconnecting; the caller can attach to it again or dispose of its phone.
+    It never closes an existing tab, clears
     site state, or retries an action. The optional native
     Browser provides navigation/input/screenshot methods; inspection reads use
     WebKit's DOM and Network domains, with no Runtime.evaluate calls.
     """
-    def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, new_tab=False, timeout=30,
+    def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, new_tab=False, retain_tab=False, timeout=30,
                  max_requests=512, max_events=128, max_metadata_bytes=4 * 1024**2):
         self.timeout = _timeout(timeout)
         for limit in (max_requests, max_events):
@@ -191,6 +193,11 @@ class InspectorSession:
                     or not callable(getattr(browser, 'new_tab', None))):
                 raise ValueError('new_tab requires native Browser.new_tab and no URL or bootstrap filter')
             self.url = 'about:blank'
+        if type(retain_tab) is not bool:
+            raise ValueError('retain_tab must be a boolean')
+        if retain_tab and not (new_tab or new_tab_url is not None):
+            raise ValueError('retain_tab requires a newly owned tab')
+        self.retain_tab = retain_tab
         self.new_tab = new_tab
         self._blank_open_acknowledged = False
         self._blank_navigation_attempted = False
@@ -1265,7 +1272,12 @@ class InspectorSession:
             await cleanup(self._inspector.teardown_inspector_socket(
                 self._session_id, self._app.id_, self._page.id_))
         tab_error = None
-        if self.tab_cleanup['owned']:
+        if self.tab_cleanup['owned'] and self.retain_tab:
+            # The caller explicitly keeps this tab for later sessions or until
+            # disposal of the phone. Detach inspection without native input.
+            # This records the requested policy, not a fresh existence check.
+            self.tab_cleanup.update(status='retained', retention_verified=False)
+        elif self.tab_cleanup['owned']:
             try:
                 await self._close_owned_tab()
             except Exception as error:
