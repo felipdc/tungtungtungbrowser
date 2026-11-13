@@ -329,6 +329,45 @@ does not establish sustained reliability or a general Shopee success rate. Keep
 the compressed-memory profile experimental while cold startup and repeated
 concurrent browsing remain unresolved.
 
+### Application-launch comparison and address discovery
+
+A subsequent four-phone comparison kept the same resource settings and opened
+Safari with one native application-launch request before creating an owned
+blank tab. Three phones completed readiness in 202–261 seconds. The fourth
+stopped at the launch call's 120-second transport timeout; a later read-only
+capture showed Safari, which does not repair that original failure.
+
+All three first blank-tab navigations then failed address discovery with native
+AX error `-25216`, before any URL input. A later read-only probe found the
+address control. Separate reviewed probes showed that Command-L revealed the
+bar without verified editing focus, while one tap established the URL first
+responder. One phone subsequently rendered both local fixture documents in
+native and host captures and retained its tabs through sixty seconds. Its
+first warm follow-up also contained a query/fragment harness mistake; that
+failed assertion remains separate from the corrected navigation. No measured
+Shopee product round was performed in this comparison.
+
+Final audits preserved every original tab and each intentionally retained
+blank tab, restored accessibility settings and found no focus helpers.
+Two new opt-in candidates now cover [bounded application launch](browsing-reliability.md#experimental-bounded-application-launch)
+and a [read-only discovery wait](native-focus.md#optional-address-discovery-wait).
+All 702 host tests passed; the live comparison used the preceding build.
+Fresh cold validation of both candidates is still required.
+
+The four containers coexisted for 25.70 minutes with no OOMs or disk swap I/O.
+Sampled RAM peaked at 24.00 GiB for phones and 24.18 GiB including proxies;
+host available memory stayed above 5.27 GiB. Limits remained configured at
+6 GiB per phone; the largest accounting overshoots were 56 KiB in samples and
+1,224 KiB in kernel peak counters. This interval includes failures and idle
+time. All guests shut down natively in 8.63–17.89 seconds; source disks and
+caches were unchanged and host swap settings were restored.
+
+Final anonymous executable mappings retained 974–994 MiB of proportional
+resident memory per phone. Graphics mapping sizes grew by 110–594 MiB on the
+three phones with startup snapshots, even where their resident memory fell.
+These observations do not demonstrate reduced allocation retention or qualify
+the 4 GiB stretch target.
+
 ### Compressed-memory trial: four-phone startup remains unqualified
 
 A subsequent experiment retained 3 GiB guest RAM and used a 6 GiB cgroup RAM
