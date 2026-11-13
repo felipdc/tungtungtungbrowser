@@ -59,6 +59,15 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(BrowserProfile(self.directory).browser().address_focus, 'auto')
         self.assertEqual(InspectorSession().timeout, 30)
 
+    def test_input_settle_override_is_bounded_without_native_work(self):
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            profile = BrowserProfile(self.directory)
+            self.assertEqual(profile.browser(input_settle=1).input_settle, 1)
+            self.assertEqual(profile.browser().input_settle, 5)
+            for invalid in (-1, 11, float('nan'), float('inf'), '1'):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    profile.browser(input_settle=invalid)
+
     def test_profile_can_select_shortcut_focus_without_sending_input(self):
         with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
             browser = BrowserProfile(self.directory).browser(address_focus='shortcut')

@@ -64,6 +64,12 @@ A retained deployment can be checked again after a guest reboot. Rebuild and
 install a new helper to get the guard; an older deployment does not acquire it
 by updating the Python package alone.
 
+`BrowserProfile.browser(input_settle=1)` can shorten the voluntary waits between
+native focus, select-all and paste operations for a measured workload. The
+profile default remains five seconds; the accepted range is 0–10 seconds.
+Changing this delay preserves foreground, editing-field, expected-tab and exact
+pasted-URL checks. It does not establish page readiness or a latency guarantee.
+
 ## Experimental shortcut address focus
 
 Select `address_focus="shortcut"` to focus the address bar with one Command-L

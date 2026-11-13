@@ -5,36 +5,36 @@ provider-neutral and validate them against native Safari. Deployment details,
 credentials, external-site acceptance tests and captured content stay outside
 this repository.
 
-## Current priority: four phones within a 32 GiB host
+## Current priority: product capture latency on four warmed phones
 
-Target four independent Safari phones, each within a **6 GiB whole-container
-limit**, with reliable startup, native focus, visible rendering, application
-API response capture and owned-session cleanup during concurrent browsing.
-Reserve the remaining host memory for proxy sidecars and host services.
-Treat **4 GiB per phone as a stretch target**, not a supported profile.
+Target **p95 below 70 seconds** for valid product captures, with **at least
+70% product-data success** across dozens of attempts covering different products.
+Keep four phones warm on the existing sixteen-core, 32 GiB host, each with a
+**6 GiB whole-container limit** and unchanged CPU and guest-memory settings.
+Measure from capture API request receipt through validated JSON return,
+including queue time, navigation, network observation and serialization.
 
 The [two-phone milestone](multiple-phones.md#validation-scope) established basic
 isolation, but reached 19.38 GiB combined sampled container memory. The
 [per-instance resource overrides](multiple-phones.md) can enforce smaller
 limits; they do not establish successful browsing at those limits.
 
-1. Profile a successful, repeatable workload with raw cgroup memory, pressure
-   and OOM counters, plus process and graphics allocation breakdowns. Account
-   for proxy containers and host memory separately. Shared memory is part of
-   the container charge; guest RAM and Docker's cache-adjusted display are
-   insufficient measures of total cost.
-2. Compare a smaller guest and measured emulator/graphics retention changes
-   against the same stopped parent, cache and browser state. Keep failed
-   trials and adopt only changes that retain browser correctness.
-3. Validate four independent phones concurrently under their hard limits,
-   including sustained external navigation, native request/response capture
-   through each configured proxy, visible pages and preserved cleanup.
-4. Publish the measured density profile and its limits, then evaluate the
-   4 GiB stretch target against the same acceptance workload.
+1. Instrument request receipt, queue time, native navigation, matching network
+   events, JSON validation and response delivery. Keep warmups and pilots
+   separate from the measured batch.
+2. Optimize measured delays while preserving native input, foreground and tab
+   identity checks, exact address readback and read-only DOM/network observation.
+3. Freeze the product list and attempt count before the measured batch. Report
+   the latency percentile for valid, identity-matched product JSON and the
+   product-data success rate over all planned attempts. Report logins, timeouts,
+   other errors and retries separately; never shrink the denominator to successes.
+4. Verify unchanged resource limits, memory/OOM evidence and ordinary final
+   cleanup. Publish the measured workload and its limits.
 
 Keep guests warm during a batch and use targeted checks for each fix. Run the
-full browser workflow at milestones; lower memory alone is not a passing
-result. The earlier [graphics accounting](graphics-memory.md),
+full browser workflow at milestones. The earlier memory-retention and 4 GiB
+stretch objectives are separate future work, not extra latency acceptance gates.
+The earlier [graphics accounting](graphics-memory.md),
 [backing reclamation](lavapipe-memory.md) and translation-cache experiments
 remain evidence, not demonstrated whole-browser savings.
 
@@ -52,9 +52,9 @@ the configured 6 GiB phone limits on sixteen cores and 32 GiB RAM. Each round
 returned three visible products with matching API data and one login. The
 two-round workload spanned 8.15 minutes; the longer 80.50-minute coexistence
 record includes idle time. The fixed safety timer stopped the host before the
-planned default-close check and final native audit. Longer browsing, repeated
-cold cohorts, complete cleanup qualification and demonstrated retention savings
-remain open, so the density profile stays experimental.
+planned default-close check and final native audit. Those historical gaps remain
+recorded; this small, single-product workload does not qualify the new latency
+target or establish a general success rate. The density profile stays experimental.
 
 ## Completed workflow milestones and remaining API work
 

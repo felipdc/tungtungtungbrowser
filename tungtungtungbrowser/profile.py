@@ -46,8 +46,13 @@ class BrowserProfile:
         return value
 
     def browser(self, *, qmp_socket=None, guest=None, address_focus='auto', focus_read_attempts=2,
-                address_discovery_timeout=0):
-        """Create one controller; leave qmp_socket unset for native device JPEGs."""
+                address_discovery_timeout=0, input_settle=5):
+        """Create one controller; leave qmp_socket unset for native device JPEGs.
+
+        input_settle controls voluntary native-input waits (0–10 seconds).
+        Foreground, editing-field and exact URL readback checks still apply.
+        Shorter waits require validation on the intended workload.
+        """
         if guest is None:
             guest = Guest(cid=self.cid, timeout=120,
                           touch_helper_sha256=self.touch['helper_sha256'],
@@ -58,7 +63,7 @@ class BrowserProfile:
                     or guest.touch_helper_sha256 != self.touch['helper_sha256']
                     or guest.keyboard_helper_sha256 != self.keyboard['helper_sha256']):
                 raise ValueError('Supplied Guest differs from the deployment profile')
-        return Browser(guest=guest, input_settle=5, touch_hold_ms=0, qmp_socket=qmp_socket,
+        return Browser(guest=guest, input_settle=input_settle, touch_hold_ms=0, qmp_socket=qmp_socket,
                        address_focus=address_focus, address_discovery_timeout=address_discovery_timeout,
                        address_field_reader=NativeFocusReader.from_deployment(
                            guest, self.focus_path, max_read_attempts=focus_read_attempts))
