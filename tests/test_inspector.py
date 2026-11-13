@@ -260,6 +260,70 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(s._inspector.commands.count('DOM.querySelector'), 10)
         self.assertFalse(s._pending)
 
+    async def test_xpath_wait_refreshes_missing_root_and_releases_only_created_search(self):
+        for state, count, expected in [('attached', 1, 9), ('detached', 0, None)]:
+            with self.subTest(state=state):
+                s = session_fixture()
+                s._inspector.results = {'DOM.getDocument': {'root': {'nodeId': 1}},
+                    'DOM.performSearch': {'searchId': 'search-1', 'resultCount': count},
+                    'DOM.getSearchResults': {'nodeIds': [9]}}
+                s._inspector.errors['DOM.performSearch'] = [{
+                    'code': -32000, 'message': 'Missing node for given nodeId',
+                    'data': [{'code': -32000, 'message': 'Missing node for given nodeId'}]}]
+                self.assertEqual(await s.wait_for_selector('//button', strategy='xpath',
+                    state=state, interval=0.05), expected)
+                commands = ['DOM.getDocument', 'DOM.performSearch'] * 2
+                if count:
+                    commands.append('DOM.getSearchResults')
+                self.assertEqual(s._inspector.commands, commands + ['DOM.discardSearchResults'])
+                self.assertEqual(s.document_generation, 0)
+                self.assertFalse(s._pending)
+
+    async def test_missing_xpath_root_actions_fail_without_input_or_second_search(self):
+        for action in ['query_selector', 'focus', 'click']:
+            with self.subTest(action=action):
+                s = session_fixture()
+                s.browser = SimpleNamespace(guest=SimpleNamespace(touch_helper_sha256='a' * 64))
+                s._page.web_url = 'https://fixture.invalid/'
+                s._inspector.results['DOM.getDocument'] = {
+                    'root': {'nodeId': 1, 'documentURL': s._page.web_url}}
+                s._inspector.errors['DOM.performSearch'] = [
+                    {'code': -32000, 'message': 'Missing node for given nodeId'}]
+                with self.assertRaises(DocumentChangedError):
+                    await getattr(s, action)('//button', strategy='xpath')
+                self.assertEqual(s._inspector.commands, ['DOM.getDocument', 'DOM.performSearch'])
+                self.assertIsNone(s._document_address)
+
+    async def test_xpath_wait_does_not_reclassify_unrelated_or_later_search_errors(self):
+        for method, error in [
+                ('DOM.performSearch', {'code': -32001, 'message': 'Missing node for given nodeId'}),
+                ('DOM.performSearch', {'code': -32000, 'message': 'Invalid XPath'}),
+                ('DOM.performSearch', 'Missing node for given nodeId'),
+                ('DOM.getSearchResults', {'code': -32000, 'message': 'Missing node for given nodeId'})]:
+            with self.subTest(method=method, error=error):
+                s = session_fixture()
+                s._inspector.results = {'DOM.getDocument': {'root': {'nodeId': 1}},
+                    'DOM.performSearch': {'searchId': 'search-1', 'resultCount': 1}}
+                s._inspector.errors[method] = [error]
+                with self.assertRaises(InspectorError) as caught:
+                    await s.wait_for_selector('//button', strategy='xpath', interval=0.05)
+                self.assertNotIsInstance(caught.exception, DocumentChangedError)
+                self.assertEqual(s._inspector.commands.count('DOM.performSearch'), 1)
+                self.assertEqual(s._inspector.commands.count('DOM.discardSearchResults'),
+                                 int(method == 'DOM.getSearchResults'))
+
+    async def test_xpath_missing_root_wait_keeps_original_deadline(self):
+        s = session_fixture()
+        s._inspector.results['DOM.getDocument'] = {'root': {'nodeId': 1}}
+        s._inspector.errors['DOM.performSearch'] = [
+            {'code': -32000, 'message': 'Missing node for given nodeId'}] * 100
+        with self.assertRaises(TimeoutError):
+            await s.wait_for_selector('//button', strategy='xpath', timeout=0.12, interval=0.05)
+        self.assertGreaterEqual(s._inspector.commands.count('DOM.performSearch'), 2)
+        self.assertLess(s._inspector.commands.count('DOM.performSearch'), 10)
+        self.assertNotIn('DOM.discardSearchResults', s._inspector.commands)
+        self.assertFalse(s._pending)
+
     async def test_xpath_expression_does_not_fall_through_to_css_or_ordinary_text(self):
         s = session_fixture()
         expressions = []

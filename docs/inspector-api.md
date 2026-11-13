@@ -472,7 +472,7 @@ itself from navigating or mutating. Focus is not retried after a lost reply or a
 failed post-action check. XPath syntax validation and explicit frame scope remain
 unfinished; an invalid XPath can currently look like an empty search result.
 
-When a CSS lookup reports that its document root no longer exists,
+When a CSS lookup or the initial XPath search reports that its document root no longer exists,
 `wait_for_selector` polls a fresh document within its original timeout. This
 covers a navigation race where WebKit invalidates the node before delivering
 the document-change event. A direct query, focus or click raises

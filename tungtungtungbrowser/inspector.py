@@ -802,6 +802,19 @@ class InspectorSession:
         async with self._dom_lock:
             return (await self._resolve_selector(selector, strategy=strategy))[2]
 
+    async def _selector_root_command(self, method, *, target, **params):
+        try:
+            return await self._command(method, target=target, **params)
+        except _ProtocolCommandError as error:
+            # Navigation can invalidate the root before documentUpdated arrives.
+            # Only a condition waiter may poll a fresh document; actions fail
+            # before sending input, and unrelated protocol errors still escape.
+            if (isinstance(error.error, dict) and error.error.get('code') == -32000
+                    and error.error.get('message') == 'Missing node for given nodeId'):
+                self._document_address = None
+                raise DocumentChangedError('Document root disappeared during selector lookup') from error
+            raise
+
     async def _resolve_selector(self, selector, *, strategy, strict=False):
         if not isinstance(selector, str) or not 1 <= len(selector) <= 8192:
             raise ValueError('selector must contain 1–8192 characters')
@@ -810,17 +823,8 @@ class InspectorSession:
         target, generation, document = await self._document()
         if strategy == 'css':
             method = 'DOM.querySelectorAll' if strict else 'DOM.querySelector'
-            try:
-                result = await self._command(method, target=target, nodeId=document['root']['nodeId'], selector=selector)
-            except _ProtocolCommandError as error:
-                # Navigation can invalidate the root before documentUpdated arrives.
-                # Only a condition waiter may poll a fresh document; actions fail
-                # before sending input, and unrelated protocol errors still escape.
-                if (isinstance(error.error, dict) and error.error.get('code') == -32000
-                        and error.error.get('message') == 'Missing node for given nodeId'):
-                    self._document_address = None
-                    raise DocumentChangedError('Document root disappeared during selector lookup') from error
-                raise
+            result = await self._selector_root_command(method, target=target,
+                nodeId=document['root']['nodeId'], selector=selector)
             self._same_document(target, generation)
             if strict:
                 nodes = result['nodeIds']
@@ -834,8 +838,8 @@ class InspectorSession:
         # XPath expression excludes CSS, and a fresh always-true predicate keeps
         # ordinary page text from matching the search expression itself.
         expression = '(' + selector + ")[boolean('" + uuid.uuid4().hex + "')]"
-        search = await self._command('DOM.performSearch', target=target, query=expression,
-                                     nodeIds=[document['root']['nodeId']], caseSensitive=True)
+        search = await self._selector_root_command('DOM.performSearch', target=target, query=expression,
+                                                   nodeIds=[document['root']['nodeId']], caseSensitive=True)
         try:
             self._same_document(target, generation)
             if strict and search['resultCount'] > 1:
