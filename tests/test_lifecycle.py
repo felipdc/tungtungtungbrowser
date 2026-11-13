@@ -77,6 +77,9 @@ while True: signal.pause()
             def health(self):
                 pass
 
+            def clock_state(self):
+                return {'automatic': True, 'time': 123}
+
             def sync_clock(self):
                 order.append('clock request')
                 entered.set()

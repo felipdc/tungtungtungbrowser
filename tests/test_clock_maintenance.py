@@ -15,6 +15,11 @@ from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECON
 from tungtungtungbrowser.guest import Guest, GuestError
 
 
+class ReadyClockGuest:
+    def clock_state(self):
+        return {'automatic': True, 'time': 123}
+
+
 class ClockMaintenanceTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -33,7 +38,7 @@ class ClockMaintenanceTest(unittest.TestCase):
         return json.loads(self.path.read_text())
 
     def test_read_only_startup_retries_then_preserves_manual_time(self):
-        class NativeGuest:
+        class NativeGuest(ReadyClockGuest):
             health_calls = 0
             offers = 0
 
@@ -56,7 +61,7 @@ class ClockMaintenanceTest(unittest.TestCase):
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     def test_failed_offer_is_not_repeated_and_failure_survives_stop(self):
-        class NativeGuest:
+        class NativeGuest(ReadyClockGuest):
             offers = 0
 
             def health(self):
@@ -97,6 +102,10 @@ class ClockMaintenanceTest(unittest.TestCase):
 
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if not request['params']:
+                    requests.append(('clock-read', request))
+                    self.reply({'id': request['id'], 'type': 'response', 'result': {'automatic': True, 'time': 123}})
+                    return
                 requests.append(('offer', request))
                 entered.set()
                 # A valid reply after the former shared five-second timeout.
@@ -122,10 +131,10 @@ class ClockMaintenanceTest(unittest.TestCase):
         worker.start()
         self.assertTrue(entered.wait(2))
         state = worker.stop()
-        self.assertEqual(connections, ['health', 'offer'])
-        self.assertEqual([kind for kind, _ in requests], ['health', 'offer'])
-        self.assertEqual(requests[1][1]['method'], 'time.clock')
-        self.assertEqual(set(requests[1][1]['params']), {'time'})
+        self.assertEqual(connections, ['health', 'health', 'offer'])
+        self.assertEqual([kind for kind, _ in requests], ['health', 'clock-read', 'offer'])
+        self.assertEqual(requests[2][1]['method'], 'time.clock')
+        self.assertEqual(set(requests[2][1]['params']), {'time'})
         self.assertEqual(state['status'], 'stopped')
         self.assertEqual(state['offers'], 1)
         self.assertTrue(state['last_response']['changed'])
@@ -134,7 +143,7 @@ class ClockMaintenanceTest(unittest.TestCase):
     def test_stop_during_health_never_starts_clock_offer(self):
         entered, release = threading.Event(), threading.Event()
 
-        class NativeGuest:
+        class NativeGuest(ReadyClockGuest):
             offers = 0
 
             def health(self):
@@ -185,7 +194,7 @@ class ClockMaintenanceTest(unittest.TestCase):
                 idle.set()
                 return self.event.wait(timeout)
 
-        class NativeGuest:
+        class NativeGuest(ReadyClockGuest):
             def health(self):
                 pass
 
@@ -214,7 +223,7 @@ class ClockMaintenanceTest(unittest.TestCase):
         self.assertEqual(state['last_response']['offset'], 2)
 
     def test_startup_deadline_sends_no_clock_offer(self):
-        class NativeGuest:
+        class NativeGuest(ReadyClockGuest):
             offers = 0
 
             def health(self):
@@ -223,6 +232,94 @@ class ClockMaintenanceTest(unittest.TestCase):
             def sync_clock(self):
                 self.offers += 1
 
+        guest = NativeGuest()
+        worker = self.worker(guest, startup_timeout=0.03)
+        with contextlib.redirect_stderr(io.StringIO()):
+            worker.start()
+            state = self.join(worker)
+        self.assertEqual(guest.offers, 0)
+        self.assertEqual(state['status'], 'failed')
+        self.assertIn('deadline', state['error'])
+
+    def test_healthy_daemon_waits_for_read_only_native_clock(self):
+        class NativeGuest(ReadyClockGuest):
+            reads = 0
+            offers = 0
+            def health(self):
+                pass
+            def clock_state(self):
+                self.reads += 1
+                if self.reads == 1:
+                    raise GuestError('timed did not answer within 3 seconds')
+                return {'automatic': False, 'time': 123}
+            def sync_clock(self):
+                self.offers += 1
+                return {'automatic': False, 'changed': False, 'time': 123, 'offset': 0}
+        guest = NativeGuest()
+        worker = self.worker(guest)
+        worker.start()
+        state = self.join(worker)
+        self.assertEqual((guest.reads, guest.offers), (2, 1))
+        self.assertEqual(state['status'], 'manual_time_preserved')
+        self.assertEqual(state['clock_checks'], 2)
+        self.assertIn('timed', state['last_clock_read_error'])
+        self.assertFalse(state['initial_clock_state']['automatic'])
+
+    def test_native_clock_deadline_never_starts_offer(self):
+        class NativeGuest(ReadyClockGuest):
+            offers = 0
+            def health(self):
+                pass
+            def clock_state(self):
+                raise GuestError('timed not ready')
+            def sync_clock(self):
+                self.offers += 1
+        guest = NativeGuest()
+        worker = self.worker(guest, startup_timeout=0.03)
+        with contextlib.redirect_stderr(io.StringIO()):
+            worker.start()
+            state = self.join(worker)
+        self.assertEqual(guest.offers, 0)
+        self.assertGreater(state['clock_checks'], 0)
+        self.assertIn('native-clock readiness deadline', state['error'])
+
+    def test_stop_joins_clock_read_before_any_offer(self):
+        entered, release = threading.Event(), threading.Event()
+        class NativeGuest(ReadyClockGuest):
+            offers = 0
+            def health(self):
+                pass
+            def clock_state(self):
+                entered.set()
+                if not release.wait(2):
+                    raise RuntimeError('clock read gate not released')
+                return {'automatic': True, 'time': 123}
+            def sync_clock(self):
+                self.offers += 1
+        guest = NativeGuest()
+        worker = self.worker(guest)
+        worker.start()
+        self.assertTrue(entered.wait(2))
+        stopping = threading.Thread(target=worker.stop)
+        stopping.start()
+        self.assertTrue(worker.stopping.wait(2))
+        self.assertTrue(stopping.is_alive())
+        release.set()
+        stopping.join(2)
+        self.assertFalse(stopping.is_alive())
+        self.assertEqual(guest.offers, 0)
+        self.assertEqual(self.join(worker)['status'], 'stopped')
+
+    def test_late_clock_read_cannot_authorize_first_offer(self):
+        class NativeGuest(ReadyClockGuest):
+            offers = 0
+            def health(self):
+                pass
+            def clock_state(self):
+                time.sleep(0.06)
+                return {'automatic': True, 'time': 123}
+            def sync_clock(self):
+                self.offers += 1
         guest = NativeGuest()
         worker = self.worker(guest, startup_timeout=0.03)
         with contextlib.redirect_stderr(io.StringIO()):

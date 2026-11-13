@@ -227,18 +227,21 @@ Compose overlay enables this interval by default because it blocks UDP NTP.
 The base Compose file defaults to `0` (disabled). Intervals from 10 to 3,600
 seconds are accepted; `0` explicitly disables maintenance in either setup.
 
-The launcher waits for daemon health, offers host time, then waits the interval
-after each successful response. Health requests use a five-second socket
+The launcher waits for daemon health and a successful read of native clock
+state before offering host time. Both read-only checks may retry within the
+same startup deadline: daemon health alone does not establish that the native
+time service is ready. Health and clock-state reads use a five-second socket
 timeout; clock offers use 30 seconds to accommodate the native operation's
-multiple waits. Both settings are recorded in `launch.json`. Health checks may
-retry during startup;
-failed clock offers are never retried. Manual guest time remains untouched and
-ends maintenance. A clock failure is recorded without restarting the guest.
+multiple waits. Both timeout settings are recorded in `launch.json`.
+
+After each successful offer, the worker waits the configured interval. Failed
+clock offers are never retried. Manual guest time remains untouched and ends
+maintenance. A clock failure is recorded without restarting the guest.
 Use an accurately synchronized host clock and review `clock_maintenance` in
 `launch.json`: it identifies a unique `clock-*.json` state file in the VM bundle.
-That file retains the last response, offer count and any failure with mode
-`0600`. The final state is also recorded in `exit.json`. When stopping the VM,
-the launcher waits for an in-flight clock exchange before requesting native
+That file retains the initial clock state, read and offer counts, last response
+and any failure with mode `0600`. The final state is also recorded in `exit.json`. When stopping the VM,
+the launcher waits for an in-flight read or clock offer before requesting native
 shutdown, and sends no further clock offers.
 
 The readiness command detects launcher maintenance and waits for its successful

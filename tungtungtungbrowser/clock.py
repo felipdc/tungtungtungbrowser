@@ -16,7 +16,7 @@ HEALTH_RPC_TIMEOUT_SECONDS = 5
 
 
 class ClockMaintenance:
-    """Wait for read-only health, then make serial offers until stopped or failed.
+    """Wait for native clock readiness, then make serial offers until stopped or failed.
 
     The caller must stop this worker before requesting guest shutdown. A stop
     waits for the current bounded guest request; it does not cancel that request.
@@ -36,7 +36,7 @@ class ClockMaintenance:
         self.thread = None
         self.state = {
             'status': 'prepared', 'launch_started_unix': launch_started_unix,
-            'interval_seconds': interval, 'health_checks': 0, 'offers': 0,
+            'interval_seconds': interval, 'health_checks': 0, 'clock_checks': 0, 'offers': 0,
         }
         # Each launch chooses a new file, preserving earlier runs and mode 0600.
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -93,12 +93,33 @@ class ClockMaintenance:
                 self.health_guest.health()
                 break
             except GuestError as exc:
-                # Only read-only health is retried. A clock offer is never retried
+                # Read-only health can retry. A clock offer is never retried
                 # after failure, even when the failed exchange may have reached iOS.
                 self.state['last_health_error'] = str(exc)
                 self._save('waiting_for_guest')
                 self.stopping.wait(min(self.health_interval,
                                        max(0, deadline - time.monotonic())))
+        # Daemon health can precede timed readiness. Only this read-only
+        # preflight is retried; a failed time offer remains terminal.
+        while not self.stopping.is_set():
+            if time.monotonic() >= deadline:
+                raise GuestError('Clock maintenance native-clock readiness deadline exceeded')
+            self.state['clock_checks'] += 1
+            self._save('waiting_for_guest')
+            try:
+                clock = self.health_guest.clock_state()
+                if type(clock.get('automatic')) is not bool:
+                    raise GuestError('Automatic guest time is not ready')
+            except GuestError as exc:
+                self.state['last_clock_read_error'] = str(exc)
+                self._save('waiting_for_guest')
+                self.stopping.wait(min(self.health_interval,
+                                       max(0, deadline - time.monotonic())))
+            else:
+                self.state['initial_clock_state'] = clock
+                if time.monotonic() >= deadline:
+                    raise GuestError('Clock maintenance native-clock readiness deadline exceeded')
+                break
         while not self.stopping.is_set():
             self.state['offers'] += 1
             self.state['offer_started_unix'] = time.time()
