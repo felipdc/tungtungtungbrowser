@@ -345,6 +345,36 @@ using direct application launch, one original call exceeded its 120-second
 transport wait, while a later read-only capture showed Safari. That later image
 does not repair the original failure or validate the new bounded option.
 
+A subsequent four-phone trial returned the exact 90-second stop response on
+all four launches. One phone then verified Safari within its original deadline
+at 441.10 seconds; the other three exhausted their original startup budgets on
+the Home Screen. The passing phone rendered both local fixture documents,
+reattached and retained its tab. This is one cold readiness pass, not a
+successful four-phone startup result.
+
+### Experimental targeted LaunchServices launch
+
+`--launch-services` makes one native
+`LSApplicationWorkspace.openApplicationWithBundleID:` request for Safari in
+the daemon's disposable session. It avoids the broad installed/running-app
+scans surrounding `apps.launch`. The native ceiling is 60 seconds and the
+transport ceiling is 120 seconds, both constrained by the original startup
+deadline. This mode cannot be combined with `--bounded-launch` or
+`--initial-url`, and remains disabled by default.
+
+An accepted request is only an acknowledgment. Readiness still requires a
+separate bounded foreground observation, capture and visual review. Refusal,
+malformed replies and uncertain transport failures end the measurement
+without another launch. Only the daemon's exact confirmed-stop response
+allows read-only foreground reconciliation. The Objective-C bridge runs in
+the native daemon session; it does not execute JavaScript in a webpage.
+
+One separately reviewed warm follow-up accepted this targeted request in
+3.88 seconds, then verified Safari foreground state and visible browser
+chrome. The page was still loading; no product API JSON was measured. That
+follow-up preserves the original cold failure and does not qualify this
+candidate for fresh four-phone startup.
+
 ### First native initial-URL observation
 
 The first run used the same stopped tab-cleanup parent, copied renderer cache,

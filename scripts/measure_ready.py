@@ -19,6 +19,28 @@ from tungtungtungbrowser.guest import Guest, GuestError, GuestHTTPError, GuestTr
 from tungtungtungbrowser import Browser
 
 
+# Native Objective-C in vphoned's disposable session, never page JavaScript.
+# Use the same LaunchServices selector as pinned icli Launch.m, without its
+# before/after running-app scans or allInstalledApplications enumeration:
+# https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliLaunchPrivate/Launch.m
+LAUNCH_SERVICES_SOURCE = '''(function () {
+    var paths = ["/System/Library/Frameworks/MobileCoreServices.framework",
+                 "/System/Library/Frameworks/CoreServices.framework"];
+    var loaded = paths.map(function (path) {
+        var bundle = ObjC.use("NSBundle").bundleWithPath_(path);
+        return {path: path, loaded: bundle ? bundle.load() : false};
+    });
+    if (!loaded.every(function (entry) { return entry.loaded === true; }))
+        throw new Error("LaunchServices frameworks unavailable");
+    var workspace = ObjC.use("LSApplicationWorkspace").defaultWorkspace();
+    if (!workspace.respondsToSelector_("openApplicationWithBundleID:"))
+        throw new Error("LaunchServices selector unavailable");
+    var accepted = workspace.openApplicationWithBundleID_("com.apple.mobilesafari");
+    return {protocol: 1, bundle_id: "com.apple.mobilesafari", loaded: loaded,
+            launch_requests: 1, accepted: accepted, foreground_verified: false};
+})()'''
+
+
 def usable_guest_ip(value):
     """An assigned address is a prerequisite, not a connectivity check."""
     if not isinstance(value, str) or '%' in value:
@@ -69,13 +91,18 @@ def main(argv=None):
     parser.add_argument('--bounded-foreground', action='store_true',
                         help='Experimental: observe foreground through a native session that '
                              'the daemon stops at its deadline; never repeats browser input')
-    parser.add_argument('--bounded-launch', action='store_true',
+    launch_modes = parser.add_mutually_exclusive_group()
+    launch_modes.add_argument('--bounded-launch', action='store_true',
                         help='Experimental: send apps.launch once in a bounded native session; '
                              'enables bounded foreground reconciliation after confirmed stop')
+    launch_modes.add_argument('--launch-services', action='store_true',
+                        help='Experimental: request Safari once through native LaunchServices '
+                             'without broad app scans; requires separate bounded foreground verification')
     args = parser.parse_args(argv)
-    if args.bounded_launch:
+    bounded_launch = args.bounded_launch or args.launch_services
+    if bounded_launch:
         if args.initial_url is not None:
-            parser.error('--bounded-launch cannot be combined with --initial-url')
+            parser.error('Bounded application launch cannot be combined with --initial-url')
         args.bounded_foreground = True
     if args.initial_url is not None:
         try:
@@ -104,9 +131,9 @@ def main(argv=None):
     if args.bounded_foreground:
         result.update(foreground_mode='bounded_native_session', foreground_observations=[],
                       foreground_transport_timeout_ceiling_seconds=120)
-    if args.bounded_launch:
-        result.update(launch_mode='bounded_native_session',
-                      launch_transport_timeout_ceiling_seconds=180)
+    if bounded_launch:
+        result.update(launch_mode='bounded_launch_services' if args.launch_services else 'bounded_native_session',
+                      launch_transport_timeout_ceiling_seconds=120 if args.launch_services else 180)
     if args.initial_url is not None:
         result.update(initial_url=args.initial_url, startup_method='native_open_url',
                       initial_url_content_verified=False)
@@ -239,12 +266,12 @@ def main(argv=None):
                           'seconds': result['screen_unlocked_seconds']}), flush=True)
 
     def launch_safari(guest):
-        if not args.bounded_launch:
+        if not bounded_launch:
             return guest.call('apps.launch', bundle_id='com.apple.mobilesafari')
         remaining = deadline - time.monotonic()
         if remaining <= 31:
             raise TimeoutError('Insufficient startup budget for a bounded Safari launch')
-        native_timeout = min(90, remaining - 30)
+        native_timeout = min(60 if args.launch_services else 90, remaining - 30)
         observation = result['launch_observation'] = {
             'started_unix': time.time(), 'native_timeout_seconds': native_timeout,
             'native_stop_confirmed': False,
@@ -255,7 +282,8 @@ def main(argv=None):
             # launch, not page JavaScript. The daemon kills and reaps this
             # session before acknowledging its deadline; never launch again.
             reply = guest._rpc('script.eval',
-                               source='api("apps.launch", {bundle_id: "com.apple.mobilesafari"})',
+                               source=(LAUNCH_SERVICES_SOURCE if args.launch_services else
+                                       'api("apps.launch", {bundle_id: "com.apple.mobilesafari"})'),
                                timeout=native_timeout)
             observation['reply'] = reply
             if (not isinstance(reply, dict) or reply.get('ok') is not True
@@ -266,6 +294,23 @@ def main(argv=None):
                 response = json.loads(reply['result'])
             except ValueError as exc:
                 raise RuntimeError('Invalid bounded launch result') from exc
+            if args.launch_services:
+                paths = ['/System/Library/Frameworks/MobileCoreServices.framework',
+                         '/System/Library/Frameworks/CoreServices.framework']
+                if (not isinstance(response, dict)
+                        or type(response.get('protocol')) is not int or response['protocol'] != 1
+                        or response.get('bundle_id') != 'com.apple.mobilesafari'
+                        or type(response.get('launch_requests')) is not int or response['launch_requests'] != 1
+                        or type(response.get('accepted')) is not bool
+                        or response.get('foreground_verified') is not False
+                        or response.get('loaded') != [{'path': path, 'loaded': True} for path in paths]
+                        or any(type(entry.get('loaded')) is not bool for entry in response['loaded'])):
+                    raise RuntimeError('Invalid bounded LaunchServices result')
+                if not response['accepted']:
+                    raise GuestError('Native LaunchServices refused Safari; no launch replay')
+                # Acceptance is not foreground proof. The following read must
+                # independently establish the live Safari process and focus.
+                response = {'pid': 0, 'frontmost_verified': False, 'launch_services': response}
             if (not isinstance(response, dict) or type(response.get('pid')) is not int
                     or not 0 <= response['pid'] <= 2147483647
                     or type(response.get('frontmost_verified')) is not bool
@@ -456,12 +501,13 @@ def main(argv=None):
         else:
             try:
                 result['safari_launch_response'] = request_once(
-                    'apps.launch', min(180 if args.bounded_launch else 120, remaining),
+                    'launchservices.open_application' if args.launch_services else 'apps.launch',
+                    min(180 if args.bounded_launch else 120, remaining),
                     launch_safari)
             except GuestHTTPError as exc:
-                stopped = (args.bounded_launch
+                stopped = (bounded_launch
                            and result.get('launch_observation', {}).get('native_stop_confirmed') is True)
-                refused = (not args.bounded_launch and exc.status == 400
+                refused = (not bounded_launch and exc.status == 400
                            and exc.detail == 'launch refused: com.apple.mobilesafari')
                 if not stopped and not refused:
                     raise

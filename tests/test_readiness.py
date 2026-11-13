@@ -63,8 +63,11 @@ class ReadinessTest(unittest.TestCase):
         }[method]
 
     def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None,
-                        wait_for_guest_ip=False, bounded_foreground=False, bounded_launch=False):
+                        wait_for_guest_ip=False, bounded_foreground=False, bounded_launch=False,
+                        launch_services=False):
         argv = [str(self.vm), '--output', str(self.output)]
+        if launch_services:
+            argv += ['--launch-services']
         if bounded_launch:
             argv += ['--bounded-launch']
         if bounded_foreground:
@@ -92,6 +95,113 @@ class ReadinessTest(unittest.TestCase):
         response = {'pid': 301, 'frontmost_verified': True}
         response.update(overrides)
         return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(response)}
+
+    def launch_services_reply(self, **overrides):
+        response = {'protocol': 1, 'bundle_id': 'com.apple.mobilesafari',
+                    'launch_requests': 1, 'accepted': True, 'foreground_verified': False,
+                    'loaded': [{'path': '/System/Library/Frameworks/' + name + '.framework', 'loaded': True}
+                               for name in ['MobileCoreServices', 'CoreServices']]}
+        response.update(overrides)
+        return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(response)}
+
+    def test_launch_services_acceptance_requires_independent_foreground_proof(self):
+        timeouts = []
+        replies = iter([self.launch_services_reply(), self.foreground_reply()])
+        def reply(*args, **kwargs):
+            timeouts.append(self.factory.call_args.kwargs['timeout'])
+            return next(replies)
+        self.guest._rpc.side_effect = reply
+        self.run_measurement(launch_services=True)
+        calls = self.guest._rpc.call_args_list
+        self.assertEqual(calls[0].kwargs, {'source': measure_ready.LAUNCH_SERVICES_SOURCE, 'timeout': 60})
+        self.assertEqual(calls[1].kwargs, {'source': 'api("apps.foreground")', 'timeout': 45})
+        self.assertEqual(timeouts, [120, 120])
+        self.assertEqual([m for m, _ in self.calls], ['screen.unlock'])
+        report = self.report()
+        self.assertEqual(report['launch_mode'], 'bounded_launch_services')
+        self.assertEqual(report['safari_foreground_source'], 'apps.foreground')
+        self.assertFalse(report['safari_launch_response']['frontmost_verified'])
+        self.assertTrue(report['safari_foreground_verified'])
+        self.assertFalse(report['navigation_verified'])
+        self.assertEqual([r['method'] for r in report['once_only_requests']],
+                         ['screen.unlock', 'launchservices.open_application'])
+
+    def test_launch_services_confirmed_stop_allows_only_foreground_read(self):
+        self.guest._rpc.side_effect = [
+            GuestHTTPError(400, 'The script did not finish within 60 seconds and was stopped'),
+            self.foreground_reply(),
+        ]
+        self.run_measurement(launch_services=True)
+        self.assertEqual(self.guest._rpc.call_count, 2)
+        self.assertTrue(self.report()['launch_observation']['native_stop_confirmed'])
+        self.assertEqual(self.report()['once_only_requests'][-1]['status'], 'error')
+        self.assertEqual(self.guest._rpc.call_args_list[-1].kwargs['source'], 'api("apps.foreground")')
+
+    def test_launch_services_uncertain_stop_or_transport_failure_sends_no_followup(self):
+        failures = [GuestTransportError('receive_headers', TimeoutError('timed out')),
+                    GuestHTTPError(400, 'The script did not finish within 90 seconds and was stopped'),
+                    GuestHTTPError(500, 'The script did not finish within 60 seconds and was stopped')]
+        for index, failure in enumerate(failures):
+            with self.subTest(failure=failure):
+                self.output = self.vm / f'uncertain-ls-{index}.json'
+                self.guest._rpc.reset_mock()
+                self.guest._rpc.side_effect = failure
+                with self.assertRaises((GuestTransportError, RuntimeError)):
+                    self.run_measurement(launch_services=True)
+                self.guest._rpc.assert_called_once()
+                self.assertFalse(self.report()['launch_observation']['native_stop_confirmed'])
+                self.assertEqual(self.report()['foreground_observations'], [])
+
+    def test_launch_services_refusal_does_not_fall_back_to_another_launch(self):
+        self.guest._rpc.return_value = self.launch_services_reply(accepted=False)
+        with self.assertRaisesRegex(GuestError, 'refused Safari'):
+            self.run_measurement(launch_services=True)
+        self.guest._rpc.assert_called_once()
+        self.assertEqual(self.report()['foreground_observations'], [])
+        self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_launch_services_rejects_malformed_acknowledgment_before_foreground_read(self):
+        invalid = [{'protocol': True}, {'bundle_id': 'com.apple.springboard'},
+                   {'launch_requests': True}, {'launch_requests': 2}, {'accepted': 1},
+                   {'foreground_verified': True}, {'loaded': []}, {'loaded': None},
+                   {'loaded': [{'path': '/System/Library/Frameworks/' + name + '.framework', 'loaded': 1}
+                               for name in ['MobileCoreServices', 'CoreServices']]}]
+        for index, overrides in enumerate(invalid):
+            with self.subTest(overrides=overrides):
+                self.output = self.vm / f'invalid-ls-{index}.json'
+                self.guest._rpc.reset_mock()
+                self.guest._rpc.return_value = self.launch_services_reply(**overrides)
+                with self.assertRaisesRegex(RuntimeError, 'Invalid bounded LaunchServices'):
+                    self.run_measurement(launch_services=True)
+                self.guest._rpc.assert_called_once()
+                self.assertEqual(self.report()['foreground_observations'], [])
+
+    def test_launch_services_rejects_late_acknowledgment_with_original_deadline(self):
+        clock = [self.launch['started_monotonic'] + 10]
+        def reply(*args, **kwargs):
+            clock[0] = self.launch['started_monotonic'] + 601
+            return self.launch_services_reply()
+        self.guest._rpc.side_effect = reply
+        with patch.object(measure_ready.time, 'monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(TimeoutError, 'original startup deadline'):
+                self.run_measurement(launch_services=True)
+        self.guest._rpc.assert_called_once()
+        self.assertFalse(self.report()['safari_foreground_verified'])
+
+    def test_launch_services_obeys_remaining_budget_and_rejects_conflicting_modes(self):
+        self.launch['started_monotonic'] = 450
+        (self.vm / 'launch.json').write_text(json.dumps(self.launch))
+        self.guest._rpc.side_effect = [self.launch_services_reply(), self.foreground_reply()]
+        with patch.object(measure_ready.time, 'monotonic', return_value=1000):
+            self.run_measurement(launch_services=True)
+        self.assertEqual(self.guest._rpc.call_args_list[0].kwargs['timeout'], 20)
+        self.assertEqual(self.report()['once_only_requests'][-1]['timeout_seconds'], 50)
+        for kwargs in [{'bounded_launch': True}, {'initial_url': 'https://example.org/'}]:
+            with self.subTest(kwargs=kwargs):
+                self.factory.reset_mock()
+                with self.assertRaises(SystemExit):
+                    self.run_measurement(launch_services=True, **kwargs)
+                self.factory.assert_not_called()
 
     def test_bounded_launch_sends_one_native_launch_and_reuses_verified_identity(self):
         timeouts = []
