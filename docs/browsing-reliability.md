@@ -311,10 +311,16 @@ returned a verified Safari process in four seconds. In a subsequent concurrent
 cold run, three phones received explicit native-stop replies and then verified
 foreground state through fresh observations, without repeating startup input.
 The fourth lost its reply at the earlier 60-second transport limit and stopped.
-That failure remains recorded; the 120-second transport allowance requires a
-fresh cold check. Host tests cover confirmed native cancellation, uncertain
-transport, invalid identity and the original deadline. The option remains
-disabled by default.
+That failure remains recorded. A fresh replacement with the 120-second
+transport allowance received a confirmed 45-second native-stop response after
+84.3 seconds of host time. Later reads completed, but Safari remained out of
+the foreground and the original startup deadline failed. A separately reviewed
+native Safari-icon tap subsequently exposed the requested, rendered fixture;
+that warm recovery does not qualify the cold start. The longer transport wait
+therefore covers a demonstrated reply delay without establishing reliable cold
+startup. Host tests cover confirmed native cancellation, uncertain transport,
+invalid identity and the original deadline. The option remains disabled by
+default.
 
 ### First native initial-URL observation
 
