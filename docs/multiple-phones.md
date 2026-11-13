@@ -291,6 +291,44 @@ mutually untrusted tenants or renderer-census-disabled operation. Keep guests
 warm during a batch and validate each change with a targeted check; repeat a
 full browser workflow at milestones.
 
+### Latest four-phone product result
+
+A later run on sixteen physical cores and 32 GiB RAM returned **four visible
+Shopee product pages with matching intercepted product JSON** in one concurrent
+round. Each phone retained the configured 6 GiB container limit, 3 GiB guest
+RAM, three guest CPUs, one rendering worker and a 1024 MiB translation cache.
+The compressed-memory settings described below were unchanged. Native and host
+screenshots confirmed each product; all four responses had the expected item
+and shop IDs, HTTP status 200 and no application error. This exceeds the accepted
+threshold of three products and at most one login for that measured round.
+
+The replacement cohort ran together for 42.28 minutes. Sampled RAM peaked at
+24.00 GiB for the phones and 24.15 GiB including proxies; minimum host available
+memory was 5.04 GiB. There were no host or phone OOM events and no disk swap I/O.
+The largest sampled per-phone accounting overshoot above the configured 6 GiB
+limit was 52 KiB; the kernel peak counter recorded up to 648 KiB above it.
+This interval includes startup, recovery and idle time. It is not a measurement
+of continuous successful browsing.
+
+Cold startup remains unqualified. Three original phones passed readiness and
+their first native fixture. The fourth stopped on an uncertain foreground-read
+transport timeout and was retired. Its fresh replacement received a confirmed
+native observation timeout, then exhausted its original readiness deadline
+while Safari remained in the background. A separately reviewed native tap on
+Safari opened the already-persisted requested page. The replacement subsequently
+passed its warm fixture and the four-phone product round; its original cold
+failure remains a failure. No failed input was automatically replayed.
+
+Separate default-close checks passed on all four working phones: two visibly
+rendered local documents, one observed Command-W and every earlier tab preserved
+through sixty seconds. Final native audits also passed. These checks do not
+explain the earlier intermittent tab loss. All guests shut down natively;
+source disks and caches were unchanged and host swap settings were restored.
+One accepted concurrent product round
+does not establish sustained reliability or a general Shopee success rate. Keep
+the compressed-memory profile experimental while cold startup and repeated
+concurrent browsing remain unresolved.
+
 ### Compressed-memory trial: four-phone startup remains unqualified
 
 A subsequent experiment retained 3 GiB guest RAM and used a 6 GiB cgroup RAM
