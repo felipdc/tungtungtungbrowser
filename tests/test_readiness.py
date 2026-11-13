@@ -87,8 +87,13 @@ class ReadinessTest(unittest.TestCase):
         return {'ok': True, 'crashed': False, 'output': '', 'result': json.dumps(foreground)}
 
     def test_bounded_foreground_uses_only_a_native_read_after_one_url_open(self):
-        self.guest._rpc.return_value = self.foreground_reply()
+        transport_timeouts = []
+        def foreground_read(*args, **kwargs):
+            transport_timeouts.append(self.factory.call_args.kwargs['timeout'])
+            return self.foreground_reply()
+        self.guest._rpc.side_effect = foreground_read
         self.run_measurement(initial_url='https://example.org/', bounded_foreground=True)
+        self.assertEqual(transport_timeouts, [120])
         self.guest._rpc.assert_called_once_with('script.eval', source='api("apps.foreground")', timeout=45)
         self.guest.open.assert_called_once_with('https://example.org/')
         self.assertNotIn('apps.foreground', [method for method, _ in self.calls])
@@ -132,11 +137,16 @@ class ReadinessTest(unittest.TestCase):
     def test_bounded_foreground_native_budget_leaves_response_time_within_startup_deadline(self):
         self.launch['started_monotonic'] = 450
         (self.vm / 'launch.json').write_text(json.dumps(self.launch))
-        self.guest._rpc.return_value = self.foreground_reply()
+        transport_timeouts = []
+        def foreground_read(*args, **kwargs):
+            transport_timeouts.append(self.factory.call_args.kwargs['timeout'])
+            return self.foreground_reply()
+        self.guest._rpc.side_effect = foreground_read
         with patch.object(measure_ready.time, 'monotonic', return_value=1000):
             self.run_measurement(bounded_foreground=True)
         self.guest._rpc.assert_called_once_with('script.eval', source='api("apps.foreground")', timeout=40)
         self.assertEqual(self.report()['foreground_observations'][0]['native_timeout_seconds'], 40)
+        self.assertEqual(transport_timeouts, [50])
 
     def test_bounded_foreground_rejects_unverified_process_identity_without_read_replay(self):
         self.guest._rpc.return_value = self.foreground_reply(pid=True)

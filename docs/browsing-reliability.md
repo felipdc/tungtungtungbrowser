@@ -292,9 +292,11 @@ qualification remains necessary. The default startup method is unchanged.
 
 Add `--bounded-foreground` to observe `apps.foreground` inside a native daemon
 session. This is a guest-native read; it does not evaluate JavaScript in Safari.
-The session receives at most 45 seconds, with ten seconds reserved for its reply
-within the original startup deadline. The existing foreground identity and
-rendering checks still apply.
+The session receives at most 45 seconds, leaving at least ten seconds in the
+original startup budget. Its transport wait permits up to 120 seconds, still
+limited by the remaining startup budget: spawning, reaping and delivering a
+reply can extend beyond the native evaluation interval. The existing foreground
+identity and rendering checks still apply.
 
 The pinned daemon's [session evaluator](https://github.com/Lakr233/vphone-cli/blob/83197152137ddd2aad70eb121d6b88a9afbee36e/VPhoneDaemon/Native/vphoned_pty.c)
 kills and reaps its child before returning the explicit native deadline error.
@@ -305,10 +307,14 @@ Unlock, URL open and application launch are never repeated by this option.
 
 This option bounds the native observation; it does not remove the foreground
 API's application scans or establish faster startup. A warm native probe
-returned a verified Safari process in four seconds. Host tests cover confirmed
-native cancellation, uncertain transport, invalid identity and the original
-deadline. Fresh cold validation remains outstanding, so the option is disabled
-by default.
+returned a verified Safari process in four seconds. In a subsequent concurrent
+cold run, three phones received explicit native-stop replies and then verified
+foreground state through fresh observations, without repeating startup input.
+The fourth lost its reply at the earlier 60-second transport limit and stopped.
+That failure remains recorded; the 120-second transport allowance requires a
+fresh cold check. Host tests cover confirmed native cancellation, uncertain
+transport, invalid identity and the original deadline. The option remains
+disabled by default.
 
 ### First native initial-URL observation
 

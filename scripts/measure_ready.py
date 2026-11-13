@@ -95,7 +95,8 @@ def main(argv=None):
               'visual_review': 'pending', 'status': 'running', 'stage': 'starting',
               'once_only_requests': []}
     if args.bounded_foreground:
-        result.update(foreground_mode='bounded_native_session', foreground_observations=[])
+        result.update(foreground_mode='bounded_native_session', foreground_observations=[],
+                      foreground_transport_timeout_ceiling_seconds=120)
     if args.initial_url is not None:
         result.update(initial_url=args.initial_url, startup_method='native_open_url',
                       initial_url_content_verified=False)
@@ -386,7 +387,8 @@ def main(argv=None):
             # URL opening acknowledges an asynchronous operation. It supplies
             # neither foreground proof nor page-load completion.
             result['safari_foreground_source'] = 'apps.foreground'
-            result['safari_foreground_response'] = retry('safari_foreground', safari)
+            result['safari_foreground_response'] = retry(
+                'safari_foreground', safari, timeout=120 if args.bounded_foreground else 60)
         else:
             try:
                 result['safari_launch_response'] = request_once(
@@ -410,7 +412,8 @@ def main(argv=None):
                 result['safari_foreground_source'] = 'apps.foreground'
                 result['safari_foreground_response'] = retry(
                     'safari_foreground', lambda guest: safari(
-                        guest, reconcile_refusal='safari_launch_error' in result))
+                        guest, reconcile_refusal='safari_launch_error' in result),
+                    timeout=120 if args.bounded_foreground else 60)
         result['safari_foreground_verified'] = True
         retry('safari_capture', screenshot)
         # Native foreground identity plus a valid image still requires inspection
