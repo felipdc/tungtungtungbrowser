@@ -21,6 +21,8 @@ class NativeFixture:
         self.editing = True
         self.focus_on_tap = True
         self.address_frame = {'x': 46, 'y': 770, 'width': 213, 'height': 48}
+        self.screen = {'width': 393, 'height': 852, 'scale': 3, 'orientation': 0,
+                       'locked': False, 'screen_off': False}
 
     def call(self, method, **params):
         self.calls.append((method, params))
@@ -28,6 +30,8 @@ class NativeFixture:
             raise GuestError('Native operation failed')
         if method == 'screen.unlock':
             return {'locked': self.locked}
+        if method == 'device.screen':
+            return self.screen
         if method == 'apps.foreground':
             return {'bundle_id': self.foreground, 'verified': self.verified, 'pid': 301}
         if method == 'input.touch_sequence':

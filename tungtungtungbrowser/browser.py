@@ -323,9 +323,20 @@ class Browser:
                 or min(values[:2]) < 0 or min(values[2:]) <= 0):
             raise GuestError('Invalid native URL field bounds; focus tap not sent')
         x, y, width, height = values
-        screen = Screenshot.from_native(self.guest.call('screen.screenshot'))
-        if (x + width > screen.width / screen.coordinate_scale
-                or y + height > screen.height / screen.coordinate_scale):
+        # device.screen reports oriented screen points from the same native
+        # metrics used by screenshot coordinate_scale. Bounds checking needs
+        # no image capture, JPEG encoding or large VSOCK response.
+        screen = self.guest.call('device.screen')
+        if (not isinstance(screen, dict)
+                or any(type(screen.get(k)) not in (int, float)
+                       or not math.isfinite(screen[k]) or screen[k] <= 0
+                       for k in ('width', 'height', 'scale'))
+                or type(screen.get('orientation')) is not int
+                or screen['orientation'] not in (0, 90, 180, 270)
+                or screen.get('locked') is not False
+                or screen.get('screen_off') is not False):
+            raise GuestError('Cannot verify unlocked native screen geometry; focus tap not sent')
+        if x + width > screen['width'] or y + height > screen['height']:
             raise GuestError('Native URL field outside screen bounds; focus tap not sent')
         current = self.guest.call('apps.foreground')
         if (not isinstance(current, dict) or current.get('verified') is not True

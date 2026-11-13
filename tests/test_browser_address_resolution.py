@@ -2,11 +2,12 @@ import copy
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call
 
 from tungtungtungbrowser import Browser
 from test_browser import NativeFixture
 from tungtungtungbrowser import GuestError
+from tungtungtungbrowser.guest import GuestTransportError
 
 FG = {'pid': 301, 'bundle_id': 'com.apple.mobilesafari', 'verified': True}
 
@@ -38,10 +39,6 @@ class NativeAddressResolutionTests(unittest.TestCase):
         self.guest = NativeFixture()
         self.field = self.guest.focused_field(301)
         self.guest.calls.clear()
-        self.screen = Mock(width=1179, height=2556, coordinate_scale=3)
-        self.screen.metadata.return_value = {'width': 1179, 'height': 2556}
-        p = patch('tungtungtungbrowser.browser.Screenshot.from_native', return_value=self.screen)
-        p.start(); self.addCleanup(p.stop)
     def browser(self, field):
         self.reader = Reader(self.guest, field)
         return Browser(guest=self.guest, address_field_reader=self.reader, input_settle=0)
@@ -74,6 +71,52 @@ class NativeAddressResolutionTests(unittest.TestCase):
         self.assertEqual(len(self.taps()), 1)
         self.assertEqual(self.taps()[0]['events'][0]['delay_ms'], 0)
         self.assertEqual((reader.resolved, reader.fresh), (1, 1))
+
+    def test_focus_bounds_do_not_require_a_screenshot(self):
+        self.guest.fail = 'screen.screenshot'
+        self.browser(self.discovered())._focus_address_field(FG)
+        methods = [method for method, _ in self.guest.calls]
+        self.assertEqual(methods.count('device.screen'), 1)
+        self.assertNotIn('screen.screenshot', methods)
+        self.assertEqual(len(self.taps()), 1)
+
+    def test_oriented_screen_points_bound_the_focus_tap(self):
+        for orientation, width, height in [(0, 393, 852), (90, 852, 393),
+                                            (180, 393, 852), (270, 852, 393)]:
+            with self.subTest(orientation=orientation):
+                self.guest.calls.clear()
+                self.guest.screen.update(width=width, height=height, orientation=orientation)
+                frame = {'x': width - 30, 'y': height - 30, 'width': 20, 'height': 20}
+                self.guest.address_frame = frame
+                self.browser({**self.discovered(), 'frame': frame})._focus_address_field(FG)
+                self.assertEqual(len(self.taps()), 1)
+                self.assertEqual(self.taps()[0]['events'][0]['x'], width - 20)
+                self.assertEqual(self.taps()[0]['events'][0]['y'], height - 20)
+
+    def test_unusable_screen_state_stops_before_focus_input(self):
+        screen = self.guest.screen.copy()
+        invalid = [None, {}, *({**screen, key: value} for key, value in [
+            ('width', True), ('width', 0), ('width', float('nan')),
+            ('height', -1), ('height', float('inf')), ('scale', 0),
+            ('scale', False), ('scale', float('nan')), ('orientation', True),
+            ('orientation', 45), ('locked', True), ('locked', 0),
+            ('screen_off', True), ('screen_off', None)])]
+        for state in invalid:
+            with self.subTest(state=state):
+                self.guest.calls.clear(); self.guest.screen = state
+                with self.assertRaisesRegex(GuestError, 'native screen geometry'):
+                    self.browser(self.discovered())._focus_address_field(FG)
+                self.assertEqual(self.guest.calls, [('device.screen', {})])
+                self.assertEqual(self.reader.fresh, 0)
+
+    def test_screen_transport_failure_is_not_replayed_or_followed_by_input(self):
+        error = GuestTransportError('read_body', OSError('connection closed'))
+        self.guest.call = Mock(side_effect=error)
+        with self.assertRaises(GuestTransportError) as caught:
+            self.browser(self.discovered())._focus_address_field(FG)
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.guest.call.call_args_list, [call('device.screen')])
+        self.assertEqual(self.reader.fresh, 0)
 
     def test_discovery_does_not_dispatch_a_shortcut(self):
         original = self.guest.call

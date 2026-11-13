@@ -253,11 +253,21 @@ comparison. The full external-site workflow was not repeated for this fix.
 A returned first responder must be Safari's URL field. If it is already editing,
 the browser proceeds to URL verification. A discovered control is not proof of
 keyboard focus, even if it carries an editing trait. The browser verifies its
-bounds against the native screenshot and rechecks the foreground Safari PID,
+bounds against native `device.screen` dimensions in points and rechecks the foreground Safari PID,
 then sends at most one tap and requires a fresh editing first-responder read.
 Subsequent typed-URL verification and owned-tab close still use exact expected
 addresses. Shortcuts, taps, paste, Return and close commands are not replayed.
 A navigation acknowledgment requires a separate page condition.
+
+Screen validation requires finite positive dimensions and scale, a known
+orientation (0, 90, 180 or 270 degrees), and an unlocked, lit display. Invalid
+state or a failed screen read stops before the focus tap. This avoids capturing
+and transferring a JPEG solely to validate bounds. The pinned native
+[screen metadata](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Device/Device.swift)
+and [screenshot coordinates](https://github.com/owngoal-dev/icli/blob/2fbdb5ee61d8c320732deb9768b22506f5e3d411/Sources/IcliKit/Input/Screen.swift)
+use the same oriented screen metrics. Rendering validation still requires
+explicit image captures. The bounds optimization has host regression coverage;
+fresh-guest native validation remains outstanding.
 
 `reader.resolve_address_field(pid, max_attempts=1)` disables the second complete
 resolution for a direct caller. Its default limit is two; this is separate from
