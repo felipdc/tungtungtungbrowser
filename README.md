@@ -540,6 +540,10 @@ See the [full API reference](docs/inspector-api.md),
 [Proxy routing](runtime/proxy/README.md) gives the entire iPhone a dedicated
 network namespace. TCP and DNS go through the configured proxy; direct egress
 is blocked. Configuration and credentials belong in an external private file.
+The optional [browser-only mode](docs/browser-proxy.md) proxies Safari's WebKit
+HTTP(S) traffic while other device traffic connects directly. Register with
+`--proxy-scope browser` and configure Safari before launching it; device-wide
+routing remains the default.
 
 Use the reversible native service profile to reduce background work, then
 restart the guest:

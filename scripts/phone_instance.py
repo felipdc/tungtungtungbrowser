@@ -49,11 +49,13 @@ def read_instance(registry, name):
 
 
 def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu',
-             qemu=None, proxy=None, resources=None):
+             qemu=None, proxy=None, proxy_scope='device', resources=None):
     if not NAME.fullmatch(name):
         raise ValueError('Invalid instance name')
     if type(cid) is not int or not 3 <= cid < 2**32 - 1:
         raise ValueError('CID must be between 3 and 4294967294')
+    if proxy_scope not in {'device', 'browser'} or (proxy_scope == 'browser' and proxy is None):
+        raise ValueError('Browser proxy scope requires --proxy; scope must be device or browser')
     resources = {} if resources is None else dict(resources)
     resource_environment(resources)
     registry = Path(registry).resolve()
@@ -91,7 +93,8 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
         namespace = hashlib.sha256(os.fsencode(registry)).hexdigest()[:12]
         record = {'version': 1, 'name': name, 'project': f'ttt-phone-{name}-{namespace}',
                   'cid': cid, 'vm': str(vm), 'runtime': str(runtime),
-                  'image': image, 'qemu': qemu, 'proxy': proxy, 'resources': resources}
+                  'image': image, 'qemu': qemu, 'proxy': proxy, 'proxy_scope': proxy_scope,
+                  'resources': resources}
         # Use JSON for paths and values; never interpolate a shell command or .env file.
         (destination / 'image.json').write_text(json.dumps({'services': {'iphone': {'image': image}}}, indent=2))
         (destination / 'instance.json').write_text(json.dumps(record, indent=2) + '\n')
@@ -100,6 +103,9 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
 
 def compose_command(registry, name, action, arguments):
     record = read_instance(registry, name)
+    scope = record.get('proxy_scope', 'device')
+    if scope not in {'device', 'browser'} or (scope == 'browser' and record['proxy'] is None):
+        raise ValueError('Invalid registered proxy scope')
     if any(a == '--scale' or a.startswith('--scale=') for a in arguments):
         raise ValueError('Register another named instance with its own VM and CID instead of --scale')
     # A shell configured for another phone must not redirect this one's disks,
@@ -116,7 +122,8 @@ def compose_command(registry, name, action, arguments):
         command += ['-f', str(ROOT / 'runtime/compose.api-experimental.yaml')]
     if record['proxy'] is not None:
         env['TTT_PROXY_FILE'] = record['proxy']
-        command += ['-f', str(ROOT / 'runtime/compose.proxy.yaml')]
+        overlay = 'compose.browser-proxy.yaml' if scope == 'browser' else 'compose.proxy.yaml'
+        command += ['-f', str(ROOT / 'runtime' / overlay)]
     command += ['-f', str(Path(registry).resolve() / name / 'image.json'), action, *arguments]
     return command, env
 
@@ -133,6 +140,8 @@ def main():
     init.add_argument('--image', default='tungtungtungbrowser:cpu')
     init.add_argument('--qemu', help='Optional qualified native-FP executable path inside the container')
     init.add_argument('--proxy', type=Path)
+    init.add_argument('--proxy-scope', choices=['device', 'browser'], default='device',
+                      help='browser selects the local relay; configure Safari preferences separately before launch')
     for name, (_, kind, minimum, maximum, _) in RESOURCE_OPTIONS.items():
         init.add_argument('--' + name.replace('_', '-'), type=kind,
                           help=f'Record this resource override ({minimum}–{maximum}); otherwise use the default profile')
@@ -147,6 +156,7 @@ def main():
         if args.command == 'init':
             result = register(args.registry, args.name, vm=args.vm, runtime=args.runtime,
                               cid=args.cid, image=args.image, qemu=args.qemu, proxy=args.proxy,
+                              proxy_scope=args.proxy_scope,
                               resources={name: getattr(args, name) for name in RESOURCE_OPTIONS
                                          if getattr(args, name) is not None})
         elif args.command == 'show':

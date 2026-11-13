@@ -1,5 +1,8 @@
 # Device proxy routing
 
+This is the default device-wide mode. For Safari HTTP(S) through the proxy and
+other device traffic directly, use the separate [browser-only setup](../../docs/browser-proxy.md).
+
 Merge `compose.proxy.yaml` with the base Compose file. The iPhone shares the
 egress container's network namespace. Only the egress container gets
 `NET_ADMIN`, `NET_RAW` and `/dev/net/tun`; the iPhone retains no capabilities.

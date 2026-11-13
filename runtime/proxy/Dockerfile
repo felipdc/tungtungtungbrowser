@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=download /usr/local/bin/sing-box /usr/local/bin/sing-box
 COPY runtime/proxy/entrypoint.py /app/entrypoint.py
+COPY runtime/proxy/browser_entrypoint.py /app/browser_entrypoint.py
 COPY scripts/check_proxy_route.py /app/scripts/check_proxy_route.py
 COPY scripts/reload_proxy_session.py /app/scripts/reload_proxy_session.py
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/tungtungtungbrowser/

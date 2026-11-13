@@ -1,0 +1,35 @@
+# Use instead of compose.proxy.yaml. Safari must also be configured in the guest.
+services:
+  egress:
+    image: tungtungtungbrowser:egress
+    build:
+      context: ..
+      dockerfile: runtime/proxy/Dockerfile
+    entrypoint: [python3, /app/browser_entrypoint.py]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /run:size=8m,mode=700
+      - /tmp:size=8m
+    volumes:
+      - type: bind
+        source: ${TTT_PROXY_FILE:?Set TTT_PROXY_FILE to a private proxy configuration}
+        target: /run/secrets/proxy.json
+        read_only: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, python3, -c, "import socket; socket.create_connection(('127.0.0.1', 1080), 2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+    labels:
+      app: tungtungtungbrowser
+  iphone:
+    # QEMU's 10.0.2.2 reaches this shared namespace's loopback relay.
+    network_mode: service:egress
+    depends_on:
+      egress:
+        condition: service_healthy

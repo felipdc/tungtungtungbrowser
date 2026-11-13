@@ -86,6 +86,10 @@ experimental native-FP overlay; it does not build or patch QEMU. For routed
 egress, add `--proxy /absolute/private/proxy.json`. Each project gets its own
 egress container/network namespace, even when both use the same proxy provider.
 No host TCP ports are published by these Compose files.
+Add `--proxy-scope browser` to select the [Safari-only relay](browser-proxy.md)
+instead. This also requires the guest preference setup described there;
+registration alone does not configure Safari. Existing registrations default
+to device-wide routing.
 
 The base Compose file also accepts `TTT_VM_CID` (default 3). All phone projects
 share the external Docker volume `tungtungtungbrowser-runtime-leases`. The instance

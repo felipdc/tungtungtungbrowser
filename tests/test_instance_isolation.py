@@ -19,6 +19,34 @@ from tungtungtungbrowser.vm_lease import lease_vm
 
 
 class InstanceIsolationTests(unittest.TestCase):
+    def test_browser_proxy_scope_is_explicit_and_preserved(self):
+        secret = self.root / 'proxy.json'
+        secret.write_text('{}')
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
+                 proxy=secret, proxy_scope='browser')
+        with patch.dict(os.environ, {'TTT_PROXY_SCOPE': 'device'}):
+            command, env = compose_command(self.registry, 'a', 'config', [])
+        self.assertTrue(any(p.endswith('/compose.browser-proxy.yaml') for p in command))
+        self.assertFalse(any(p.endswith('/compose.proxy.yaml') for p in command))
+        self.assertNotIn('TTT_PROXY_SCOPE', env)
+        with self.assertRaises(ValueError):
+            register(self.registry, 'b', vm=self.b, runtime=self.runtime, cid=42, proxy_scope='browser')
+
+    def test_old_proxy_registration_keeps_device_scope_and_invalid_scope_fails(self):
+        secret = self.root / 'proxy.json'
+        secret.write_text('{}')
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, proxy=secret)
+        path = self.registry / 'a/instance.json'
+        record = json.loads(path.read_text())
+        del record['proxy_scope']
+        path.write_text(json.dumps(record))
+        command, _ = compose_command(self.registry, 'a', 'config', [])
+        self.assertTrue(any(p.endswith('/compose.proxy.yaml') for p in command))
+        for values in [{'proxy_scope': 'typo'}, {'proxy_scope': 'browser', 'proxy': None}]:
+            path.write_text(json.dumps(record | values))
+            with self.assertRaises(ValueError):
+                compose_command(self.registry, 'a', 'config', [])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
