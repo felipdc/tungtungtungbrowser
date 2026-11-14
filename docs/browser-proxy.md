@@ -108,6 +108,11 @@ no host TCP listener. A different process, guest boot or existing deployment is
 never silently replaced. An uncertain start is reconciled using its exclusive
 native log and live process identity, without launching another helper.
 
+Cold startup allows one administrative launch up to 120 seconds, with a
+135-second transport budget. After an acknowledged spawn, refused or timed-out
+health reads may repeat within the original 30-second readiness window. Those
+reads never repeat the launch or install a second policy.
+
 ## Inspect or remove the setting
 
 Use `--mode read` with a new evidence directory to inspect without changing

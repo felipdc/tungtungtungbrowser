@@ -83,6 +83,10 @@ class SafariUDPGuardTests(unittest.TestCase):
             self.assertEqual(result['native_policy'], POLICY)
             self.assertFalse(result['native_input_sent'])
             self.assertEqual(sum(method == 'script.eval' for method, _ in guest.calls), 1)
+            launch = next(params for method, params in guest.calls if method == 'script.eval')
+            self.assertEqual(launch['timeout'], 120)
+            self.assertEqual(result['launch_budget_seconds'], launch['timeout'])
+            self.assertGreater(guard.RPC_TIMEOUT_SECONDS, launch['timeout'])
             record = guard.read_deployment(Path(directory) / 'deployment/deploy.json', guest.cid)
             self.assertEqual(record['health'], HEALTH)
 
@@ -92,6 +96,16 @@ class SafariUDPGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(GuestError, 'already exists'):
                 guard.install(guest, HELPER, DIGEST, Path(directory) / 'deployment')
             self.assertEqual(guest.calls, [])
+
+    def test_slow_initial_health_repeats_only_observation_after_one_spawn(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(guard, 'exchange', side_effect=[
+                ConnectionRefusedError(), TimeoutError('cold policy initialization'), HEALTH]) as control, \
+                patch.object(guard.time, 'sleep'):
+            guest = Guest()
+            result = guard.install(guest, HELPER, DIGEST, Path(directory) / 'deployment')
+            self.assertEqual(result['status'], 'complete')
+            self.assertEqual(sum(method == 'script.eval' for method, _ in guest.calls), 1)
+            self.assertEqual([c.args for c in control.call_args_list], [(61, 'health')] * 3)
 
     def test_unavailable_guest_does_not_look_like_an_unused_port(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(guard, 'exchange', side_effect=OSError('no guest')):

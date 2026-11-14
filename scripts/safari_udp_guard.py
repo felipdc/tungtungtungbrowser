@@ -17,6 +17,11 @@ sys.path.insert(0, str(ROOT))
 from tungtungtungbrowser.guest import Guest, GuestError
 
 PORT = 1345
+SCRIPT_TIMEOUT_SECONDS = 120
+# Cold administrative-session initialization can consume the old 50-second
+# allowance before the executable starts. Allow one bounded launch and enough
+# HTTP time for the daemon's terminal reply; this does not authorize a retry.
+RPC_TIMEOUT_SECONDS = SCRIPT_TIMEOUT_SECONDS + 15
 SOURCES = ('safari_udp_guard.c', 'safari_udp_guard_libSystem.tbd',
            'process_observer_entitlements.plist')
 
@@ -102,6 +107,7 @@ def install(guest, data, digest, output):
     report = {'protocol': 1, 'status': 'starting', 'cid': guest.cid,
               'helper_sha256': digest, 'guest_path': path, 'log_path': path + '.log',
               'spawn_requested': False, 'native_input_sent': False,
+              'launch_budget_seconds': SCRIPT_TIMEOUT_SECONDS,
               'scope': 'Safari effective application UUID, UDP only'}
 
     def save():
@@ -127,7 +133,8 @@ def install(guest, data, digest, output):
         save()
         try:
             value = guest._rpc('script.eval', source='proc.run(' + json.dumps(path) + ', '
-                               + json.dumps(['spawn', report['log_path']]) + ', "")', timeout=50)
+                               + json.dumps(['spawn', report['log_path']]) + ', "")',
+                               timeout=SCRIPT_TIMEOUT_SECONDS)
         except (GuestError, OSError) as error:
             # Reconcile this one launch from its exclusive log and live identity.
             # A transport error never authorizes another spawn.
@@ -157,7 +164,10 @@ def install(guest, data, digest, output):
             try:
                 health = identity(exchange(guest.cid, 'health'))
                 break
-            except ConnectionRefusedError:
+            except (ConnectionRefusedError, TimeoutError):
+                # The listener binds before policy initialization. A cold guest
+                # may accept a health connection before it can answer it.
+                # Repeat only this read within the original startup deadline.
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.25)
@@ -256,7 +266,7 @@ def main():
     args = parser.parse_args()
     if args.mode != 'status' and args.output is None:
         parser.error('--output is required for start and stop')
-    guest = Guest(cid=args.cid, timeout=65)
+    guest = Guest(cid=args.cid, timeout=RPC_TIMEOUT_SECONDS)
     if args.mode == 'start':
         data, digest = read_build(args.source)
         result = install(guest, data, digest, args.output)
