@@ -74,6 +74,22 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(browser.address_focus, 'shortcut')
         self.assertEqual(browser.guest.keyboard_helper_sha256, SHA)
 
+    def test_resident_profile_uses_one_guest_and_preserves_focus_validation(self):
+        from test_resident_browser import deployment, PORTS
+        from tungtungtungbrowser.resident import ResidentGuest
+        directory = self.directory / 'resident'
+        self.write('resident/session.json', version=1, name='browser-resident', cid=7)
+        for kind in PORTS:
+            self.write('resident/' + kind + '/deploy.json', **deployment(kind))
+        with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
+            browser = BrowserProfile(self.directory).browser(
+                resident=directory, input_settle=.25, address_focus='shortcut', focus_read_attempts=3)
+        self.assertIsInstance(browser.guest, ResidentGuest)
+        self.assertIs(browser.address_field_reader._pid_query.__self__, browser.guest.resident)
+        self.assertEqual(browser.address_field_reader.max_read_attempts, 3)
+        self.assertEqual(browser.guest.connection_factory().cid, 7)
+        self.assertEqual(browser.input_settle, .25)
+
     def test_focus_read_bound_is_explicit_and_does_not_send_input(self):
         with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
             profile = BrowserProfile(self.directory)

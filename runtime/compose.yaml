@@ -15,7 +15,7 @@ services:
       - /dev/vhost-vsock:/dev/vhost-vsock
     shm_size: ${TTT_SHM_SIZE:-6g}
     mem_limit: ${TTT_CONTAINER_MEMORY:-10g}
-    memswap_limit: ${TTT_CONTAINER_MEMORY:-10g}
+    memswap_limit: ${TTT_CONTAINER_MEMORY_SWAP:-${TTT_CONTAINER_MEMORY:-10g}}
     cpus: ${TTT_CONTAINER_CPUS:-4}
     pids_limit: 512
     tmpfs:

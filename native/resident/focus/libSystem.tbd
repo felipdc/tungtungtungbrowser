@@ -1,0 +1,8 @@
+--- !tapi-tbd
+tbd-version: 4
+targets: [ arm64-ios ]
+install-name: '/usr/lib/libSystem.B.dylib'
+exports:
+  - targets: [ arm64-ios ]
+    symbols: [ ___error, _accept, _alarm, _bind, _bzero, _clock_gettime, _close, _dlopen, _dlsym, _fcntl, _fflush, _flock, _getegid, _geteuid, _getgid, _getpid, _getuid, _listen, _nanosleep, _open, _pipe, _poll, _posix_spawn, _posix_spawn_file_actions_addclose, _posix_spawn_file_actions_adddup2, _posix_spawn_file_actions_addopen, _posix_spawn_file_actions_destroy, _posix_spawn_file_actions_init, _printf, _read, _setgid, _setgroups, _setsid, _setsockopt, _setuid, _signal, _sigprocmask, _snprintf, _socket, _strcmp, _sysctlbyname, _vsnprintf, _waitpid, _write ]
+...

@@ -56,6 +56,10 @@ extern int posix_spawn(int *, const char *, const posix_spawn_file_actions_t *, 
 #define TTT_FOCUS_GUARD_WAIT_MS 22000
 #endif
 
+#ifndef TTT_FOCUS_GUARD_READY_WAIT_MS
+#define TTT_FOCUS_GUARD_READY_WAIT_MS TTT_FOCUS_GUARD_WAIT_MS
+#endif
+
 struct FocusGuard { int pid, input, output; };
 struct FocusGuardState { int protocol, status, before_app, before_auto, after_app, after_auto; };
 _Static_assert(sizeof(struct FocusGuardState) == 24, "focus guard protocol ABI");
@@ -149,7 +153,7 @@ static int focus_guard_run(const char *lock_path, unsigned char (*app)(void),
     signal(SIGPIPE, SIG_IGN);
     if (setsid() < 0) return 8;
     char command = 0;
-    if (!focus_guard_receive(0, &command, 1, TTT_FOCUS_GUARD_WAIT_MS) || command != 'R') return 9;
+    if (!focus_guard_receive(0, &command, 1, TTT_FOCUS_GUARD_READY_WAIT_MS) || command != 'R') return 9;
     struct FocusGuardState state = {1, 1, 0, 0, 0, 0};
     int lock = open(lock_path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
     if (lock < 0 || flock(lock, LOCK_EX | LOCK_NB)) {

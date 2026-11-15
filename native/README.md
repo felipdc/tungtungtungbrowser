@@ -1,5 +1,12 @@
 # Native diagnostics and workarounds
 
+## Bounded browser session helpers
+
+`resident/` contains the optional accessibility lease, guarded focus service and
+foreground/keyboard service. The [session guide](../docs/resident-browser.md)
+covers their separate source-verified build, explicit startup and restoration,
+native ownership checks and measured limits.
+
 ## Navigation keyboard helper
 
 `keyboard_helper.c` preallocates a supported navigation chord and dispatches all

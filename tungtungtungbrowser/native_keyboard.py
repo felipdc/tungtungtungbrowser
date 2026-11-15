@@ -55,6 +55,16 @@ def press_key(guest, sha256, name):
     if not isinstance(name, str) or name not in KEYS:
         raise ValueError('Native navigation keys support cmd+a, cmd+l, cmd+t, cmd+w and return')
     result = invoke(guest, sha256, ['press', name])
+    return validate_key_result(name, result, sha256)
+
+
+def validate_key_result(name, result, sha256):
+    """Validate balanced native dispatch evidence for either helper transport."""
+    helper_path(sha256)
+    if not isinstance(name, str) or name not in KEYS:
+        raise ValueError('Unsupported native navigation key')
+    if not isinstance(result, dict) or type(result.get('protocol')) is not int or result['protocol'] != 1:
+        raise GuestError('Invalid native keyboard protocol; input is not repeated')
     expected = [(7, KEYS[name], 1), (7, KEYS[name], 0)]
     if name.startswith('cmd+'):
         expected = [(7, 227, 1), *expected, (7, 227, 0)]

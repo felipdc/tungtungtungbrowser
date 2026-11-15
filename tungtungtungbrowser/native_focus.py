@@ -26,7 +26,7 @@ class NativeFocusReader:
     None means the native query completed and found no first responder. A failed
     query, wrong owner, malformed response, or un-restored switch is an error.
     """
-    def __init__(self, guest, *, sha256, deployment_id, max_read_attempts=2):
+    def __init__(self, guest, *, sha256, deployment_id, max_read_attempts=2, pid_query=None):
         if type(max_read_attempts) is not int or not 1 <= max_read_attempts <= 3:
             raise ValueError('max_read_attempts must be an integer between 1 and 3')
         self.guest = guest
@@ -41,9 +41,10 @@ class NativeFocusReader:
         self.supports_address_resolution = False
         self.supports_placeholder_read = False
         self._query_script_timeout = 30
+        self._pid_query = pid_query
 
     @classmethod
-    def from_deployment(cls, guest, path, *, max_read_attempts=2):
+    def from_deployment(cls, guest, path, *, max_read_attempts=2, pid_query=None):
         path = Path(path)
         if path.stat().st_size > 128 * 1024:
             raise ValueError('Focus deployment record exceeds 128 KiB')
@@ -51,7 +52,7 @@ class NativeFocusReader:
         if report.get('status') != 'complete':
             raise ValueError('Focus helper deployment did not complete')
         result = cls(guest, sha256=report['helper_sha256'], deployment_id=report['deployment_id'],
-                     max_read_attempts=max_read_attempts)
+                     max_read_attempts=max_read_attempts, pid_query=pid_query)
         if report.get('path') != result.path:
             raise ValueError('Focus helper path does not match its deployment identity')
         if 'native_check' in report:
@@ -130,7 +131,7 @@ class NativeFocusReader:
             time.sleep(0.1)
 
     def _read_once(self, pid):
-        result = self._invoke(['pid', str(pid)])
+        result = self._pid_query(pid) if self._pid_query is not None else self._invoke(['pid', str(pid)])
         try:
             return self._read_result(result, pid, 'ax_first_responder')
         except GuestError as error:

@@ -537,6 +537,11 @@ See the [full API reference](docs/inspector-api.md),
 
 ## Proxy, resources and diagnostics
 
+The optional [bounded native session](docs/resident-browser.md) reuses focus,
+foreground and keyboard helpers during warmed capture batches. Its separate
+resource preset supports explicit CPU allocation and a prepared scale-1 guest;
+the guide records the four-phone prototype results and their limits.
+
 [Proxy routing](runtime/proxy/README.md) gives the entire iPhone a dedicated
 network namespace. TCP and DNS go through the configured proxy; direct egress
 is blocked. Configuration and credentials belong in an external private file.

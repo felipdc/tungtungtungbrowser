@@ -19,6 +19,28 @@ from tungtungtungbrowser.vm_lease import lease_vm
 
 
 class InstanceIsolationTests(unittest.TestCase):
+    def test_capture_profile_and_cpu_affinity_are_explicit_and_isolated(self):
+        record = register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
+                          resource_profile='capture-experimental', cpuset='0-3')
+        self.assertEqual(record['cpuset'], '0-3')
+        with patch.dict(os.environ, {'TTT_VM_CPUS': '8', 'COMPOSE_FILE': 'wrong'}):
+            command, env = compose_command(self.registry, 'a', 'config', [])
+        self.assertTrue(any(p.endswith('/capture-experimental.env') for p in command))
+        self.assertNotIn('TTT_VM_CPUS', env)
+        layout = json.loads((self.registry/'a/image.json').read_text())
+        self.assertEqual(layout['services']['iphone']['cpuset'], '0-3')
+        with self.assertRaisesRegex(ValueError, 'disjoint'):
+            register(self.registry, 'b', vm=self.b, runtime=self.runtime, cid=42, cpuset='3-7')
+        register(self.registry, 'b', vm=self.b, runtime=self.runtime, cid=42, cpuset='4-7')
+
+    def test_invalid_cpu_affinity_and_profile_do_not_create_records(self):
+        for cpuset in ('', '3-0', '0-5000', '0,0', '-1', '0;danger', True):
+            with self.subTest(cpuset=cpuset), self.assertRaises(ValueError):
+                register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, cpuset=cpuset)
+        with self.assertRaises(ValueError):
+            register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, resource_profile='../bad')
+        self.assertFalse((self.registry/'a').exists())
+
     def test_browser_proxy_scope_is_explicit_and_preserved(self):
         secret = self.root / 'proxy.json'
         secret.write_text('{}')

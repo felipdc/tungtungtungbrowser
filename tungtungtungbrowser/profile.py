@@ -46,12 +46,14 @@ class BrowserProfile:
         return value
 
     def browser(self, *, qmp_socket=None, guest=None, address_focus='auto', focus_read_attempts=2,
-                address_discovery_timeout=0, input_settle=5):
+                address_discovery_timeout=0, input_settle=5, resident=None):
         """Create one controller; leave qmp_socket unset for native device JPEGs.
 
         input_settle controls voluntary native-input waits (0–10 seconds).
         Foreground, editing-field and exact URL readback checks still apply.
         Shorter waits require validation on the intended workload.
+        resident optionally selects a verified, bounded native session directory.
+        Start and stop that session explicitly with scripts/resident_browser.py.
         """
         if guest is None:
             guest = Guest(cid=self.cid, timeout=120,
@@ -63,10 +65,17 @@ class BrowserProfile:
                     or guest.touch_helper_sha256 != self.touch['helper_sha256']
                     or guest.keyboard_helper_sha256 != self.keyboard['helper_sha256']):
                 raise ValueError('Supplied Guest differs from the deployment profile')
+        pid_query = None
+        if resident is not None:
+            from .resident import ResidentGuest, ResidentSession
+            session = ResidentSession(resident, cid=self.cid)
+            guest = ResidentGuest(guest, session)
+            pid_query = session.focus
         return Browser(guest=guest, input_settle=input_settle, touch_hold_ms=0, qmp_socket=qmp_socket,
                        address_focus=address_focus, address_discovery_timeout=address_discovery_timeout,
                        address_field_reader=NativeFocusReader.from_deployment(
-                           guest, self.focus_path, max_read_attempts=focus_read_attempts))
+                           guest, self.focus_path, max_read_attempts=focus_read_attempts,
+                           pid_query=pid_query))
 
     def session(self, *, browser, url=None, new_tab_url=None, new_tab=False, retain_tab=False):
         """Attach a tab or create one, optionally retaining it for later sessions."""

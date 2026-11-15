@@ -12,15 +12,35 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
+RESOURCE_PROFILES = ('api-experimental', 'capture-experimental')
 RESOURCE_OPTIONS = {
     'guest_memory_gib': ('TTT_VM_MEMORY_GIB', int, 2, 8, ''),
     'guest_cpus': ('TTT_VM_CPUS', int, 1, 8, ''),
     'container_memory_mib': ('TTT_CONTAINER_MEMORY', int, 1024, 65536, 'm'),
+    'container_memory_swap_mib': ('TTT_CONTAINER_MEMORY_SWAP', int, 1024, 131072, 'm'),
     'container_cpus': ('TTT_CONTAINER_CPUS', float, 0.25, 64, ''),
     'tcg_cache_mib': ('TTT_TCG_CACHE_MIB', int, 256, 2048, ''),
     'render_threads': ('TTT_RENDER_THREADS', int, 1, 4, ''),
     'shm_mib': ('TTT_SHM_SIZE', int, 1024, 65536, 'm'),
 }
+
+
+def cpu_set(value):
+    if value is None:
+        return set()
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*', value):
+        raise ValueError('CPU set must contain CPU numbers or inclusive ranges')
+    result = set()
+    for part in value.split(','):
+        ends = list(map(int, part.split('-')))
+        first, last = ends[0], ends[-1]
+        if not 0 <= first <= last <= 4095:
+            raise ValueError('CPU set range must be between 0 and 4095')
+        selected = set(range(first, last + 1))
+        if result & selected:
+            raise ValueError('Duplicate CPU in CPU set')
+        result.update(selected)
+    return result
 
 
 def resource_environment(resources):
@@ -49,7 +69,8 @@ def read_instance(registry, name):
 
 
 def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu',
-             qemu=None, proxy=None, proxy_scope='device', resources=None):
+             qemu=None, proxy=None, proxy_scope='device', resources=None,
+             resource_profile='api-experimental', cpuset=None):
     if not NAME.fullmatch(name):
         raise ValueError('Invalid instance name')
     if type(cid) is not int or not 3 <= cid < 2**32 - 1:
@@ -58,6 +79,9 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
         raise ValueError('Browser proxy scope requires --proxy; scope must be device or browser')
     resources = {} if resources is None else dict(resources)
     resource_environment(resources)
+    if resource_profile not in RESOURCE_PROFILES:
+        raise ValueError('Unknown instance resource profile')
+    selected_cpus = cpu_set(cpuset)
     registry = Path(registry).resolve()
     vm, runtime = Path(vm).resolve(strict=True), Path(runtime).resolve(strict=True)
     if any(p.is_relative_to(ROOT) for p in (registry, vm)):
@@ -76,6 +100,8 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
         fcntl.flock(lock, fcntl.LOCK_EX)
         for path in registry.glob('*/instance.json'):
             other = json.loads(path.read_text())
+            if selected_cpus & cpu_set(other.get('cpuset')):
+                raise ValueError('Registered phones must have disjoint explicit CPU sets')
             other_vm = Path(other['vm']).resolve()
             if other['cid'] == cid:
                 raise ValueError(f"CID {cid} already belongs to {other['name']}")
@@ -94,15 +120,22 @@ def register(registry, name, *, vm, runtime, cid, image='tungtungtungbrowser:cpu
         record = {'version': 1, 'name': name, 'project': f'ttt-phone-{name}-{namespace}',
                   'cid': cid, 'vm': str(vm), 'runtime': str(runtime),
                   'image': image, 'qemu': qemu, 'proxy': proxy, 'proxy_scope': proxy_scope,
-                  'resources': resources}
+                  'resources': resources, 'resource_profile': resource_profile, 'cpuset': cpuset}
         # Use JSON for paths and values; never interpolate a shell command or .env file.
-        (destination / 'image.json').write_text(json.dumps({'services': {'iphone': {'image': image}}}, indent=2))
+        service = {'image': image}
+        if cpuset is not None:
+            service['cpuset'] = cpuset
+        (destination / 'image.json').write_text(json.dumps({'services': {'iphone': service}}, indent=2))
         (destination / 'instance.json').write_text(json.dumps(record, indent=2) + '\n')
         return record
 
 
 def compose_command(registry, name, action, arguments):
     record = read_instance(registry, name)
+    profile = record.get('resource_profile', 'api-experimental')
+    if profile not in RESOURCE_PROFILES:
+        raise ValueError('Unknown registered resource profile')
+    cpu_set(record.get('cpuset'))
     scope = record.get('proxy_scope', 'device')
     if scope not in {'device', 'browser'} or (scope == 'browser' and record['proxy'] is None):
         raise ValueError('Invalid registered proxy scope')
@@ -115,7 +148,7 @@ def compose_command(registry, name, action, arguments):
     env.update(TTT_VM_DIR=record['vm'], TTT_CACHE_DIR=str(Path(record['vm']) / 'cache'),
                TTT_RUNTIME_DIR=record['runtime'], TTT_VM_CID=str(record['cid']))
     command = ['docker', 'compose', '--project-name', record['project'],
-               '--env-file', str(ROOT / 'runtime/api-experimental.env'),
+               '--env-file', str(ROOT / 'runtime' / (profile + '.env')),
                '-f', str(ROOT / 'runtime/compose.yaml')]
     if record['qemu'] is not None:
         env['TTT_QEMU_EXECUTABLE'] = record['qemu']
@@ -142,6 +175,8 @@ def main():
     init.add_argument('--proxy', type=Path)
     init.add_argument('--proxy-scope', choices=['device', 'browser'], default='device',
                       help='browser selects the local relay; configure Safari preferences separately before launch')
+    init.add_argument('--resource-profile', choices=RESOURCE_PROFILES, default='api-experimental')
+    init.add_argument('--cpuset', help='Disjoint host CPU numbers, for example 0-3; verify physical cores on this host')
     for name, (_, kind, minimum, maximum, _) in RESOURCE_OPTIONS.items():
         init.add_argument('--' + name.replace('_', '-'), type=kind,
                           help=f'Record this resource override ({minimum}–{maximum}); otherwise use the default profile')
@@ -157,6 +192,7 @@ def main():
             result = register(args.registry, args.name, vm=args.vm, runtime=args.runtime,
                               cid=args.cid, image=args.image, qemu=args.qemu, proxy=args.proxy,
                               proxy_scope=args.proxy_scope,
+                              resource_profile=args.resource_profile, cpuset=args.cpuset,
                               resources={name: getattr(args, name) for name in RESOURCE_OPTIONS
                                          if getattr(args, name) is not None})
         elif args.command == 'show':
