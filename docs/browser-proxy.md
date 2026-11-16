@@ -194,6 +194,14 @@ All guests and the host shut down; no candidate CPU comparison ran. Automatic
 login recovery is verified functionality, while recovery from these other
 failure types and CPU qualification remain outstanding.
 
+A subsequent read of that stopped relay's historical logs found upstream HTTP
+410 rejections during the failed navigation, including 15 for Shopee itself.
+The IP-check connection also received an upstream 410. This corroborates a
+proxy rejection alongside the Safari error document; the provider's internal
+reason remains unknown. Login recovery alone does not handle this case. A
+separate private recovery helper has local tests, but is not yet enabled in the
+capture worker or validated natively.
+
 ## Optional Safari UDP guard
 
 Build and start the guard before launching Safari when browser UDP must not use
