@@ -206,6 +206,15 @@ evidence from that phone's relay before attempting one verified reset. Its
 integration has local and host tests; native recovery from this error remains
 unvalidated until the path runs and its original evidence is reviewed.
 
+The next trial verified three more automatic resets after genuine login
+responses, plus two resets for confirmed proxy failures before warmup. A fourth
+login-triggered reset stopped because Safari and both relay observations reported
+different exits. The trial ended before measured requests; no CPU improvement
+was established. Two early host IP screenshots were blank or stale, while the
+later native images and DOM showed the new IPs. All guests and the host shut down
+cleanly. The post-capture error-tab recovery path did not trigger and remains
+unvalidated natively.
+
 ## Optional Safari UDP guard
 
 Build and start the guard before launching Safari when browser UDP must not use
