@@ -49,6 +49,7 @@ def _direct_inspector(service, receive, disconnected):
             super().__init__(None)
             self._service = service
             self.receive_handlers['_rpc_applicationSentData:'] = self.page_data
+            self.receive_handlers['_rpc_applicationDisconnected:'] = self.application_disconnected
             self.on_connection_lost = disconnected
 
         async def connect(self):
@@ -80,6 +81,12 @@ def _direct_inspector(service, receive, disconnected):
 
         async def page_data(self, argument):
             receive(argument.get('WIRDestinationKey'), json.loads(argument['WIRMessageDataKey']))
+
+        async def application_disconnected(self, argument):
+            await super()._handle_application_disconnected(argument)
+            callback = getattr(self, 'on_application_disconnected', None)
+            if callback is not None:
+                callback(argument['WIRApplicationIdentifierKey'])
 
     return DirectInspector()
 
@@ -242,6 +249,7 @@ class InspectorSession:
         self._pointer_state = None
         self._listing_queues = set()
         self._connection_error = None
+        self._disconnected_apps = set()
         self.listing_refreshes = 0
         self.cleanup_errors = []
         self._closed = False
@@ -282,6 +290,22 @@ class InspectorSession:
         for queue in self._listing_queues:
             queue.put_nowait(None)
 
+    def _application_disconnected(self, app_id):
+        # An application can leave while the Inspector stream stays open.
+        # Retain that event even if the same identifier is later registered;
+        # it does not restore this session's original page ownership.
+        self._disconnected_apps.add(app_id)
+        if any(app is not None and app.id_ == app_id for app in (self._app, self._create_app)):
+            self._fail(f'Native Inspector application disconnected: {app_id}')
+        for queue in self._listing_queues:
+            queue.put_nowait(app_id)
+
+    def _check_listing_connection(self, app_id):
+        if self._connection_error:
+            raise InspectorError(self._connection_error)
+        if app_id in self._disconnected_apps:
+            raise InspectorError(f'Native Inspector application disconnected: {app_id}')
+
     async def __aenter__(self):
         if self._inspector is not None or self._closed:
             raise InspectorError('Inspector session is single-use')
@@ -292,6 +316,7 @@ class InspectorSession:
                     service.max_frame_size = 32 * 1024**2
                     self._inspector = _direct_inspector(service, self._receive,
                         self._disconnected)
+                    self._inspector.on_application_disconnected = self._application_disconnected
                     try:
                         await self._inspector.connect()
                     except _InitialInspectorEOF:
@@ -350,8 +375,7 @@ class InspectorSession:
 
     async def _fresh_pages(self, app_id):
         """Await a listing requested after subscription; normalize wire dict keys."""
-        if self._connection_error:
-            raise InspectorError(self._connection_error)
+        self._check_listing_connection(app_id)
         queue = self._inspector.subscribe_listings()
         self._listing_queues.add(queue)
         try:
@@ -364,16 +388,13 @@ class InspectorSession:
                         # never repeat the tab-open, navigation or close input.
                         async with asyncio.timeout(_LISTING_REFRESH_SECONDS):
                             while await queue.get() != app_id:
-                                if self._connection_error:
-                                    raise InspectorError(self._connection_error)
+                                self._check_listing_connection(app_id)
                         break
                     except TimeoutError:
-                        if self._connection_error:
-                            raise InspectorError(self._connection_error)
+                        self._check_listing_connection(app_id)
                         self.listing_refreshes += 1
                         await self._inspector._forward_get_listing(app_id)
-                if self._connection_error:
-                    raise InspectorError(self._connection_error)
+                self._check_listing_connection(app_id)
             if app_id not in self._inspector.connected_application:
                 raise InspectorError('Safari application disappeared while listing its tabs')
             return {page.id_: page for page in self._inspector.application_pages.get(app_id, {}).values()

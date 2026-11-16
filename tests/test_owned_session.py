@@ -230,6 +230,61 @@ class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(session._listing_queues)
         self.assertFalse(guest.calls)
 
+    async def test_application_disconnect_wakes_listing_without_replaying_input(self):
+        session, native, guest = fixture()
+        session._inspector = native
+        sent = asyncio.Event()
+        async def listing(app_id):
+            sent.set()
+        native._forward_get_listing = AsyncMock(side_effect=listing)
+        read = asyncio.create_task(session._fresh_pages(native.app.id_))
+        await sent.wait()
+        native.connected_application.pop(native.app.id_)
+        native.application_pages.pop(native.app.id_)
+        session._application_disconnected(native.app.id_)
+        with self.assertRaisesRegex(InspectorError, 'application disconnected: PID:301'):
+            await asyncio.wait_for(read, 0.1)
+        # Re-registration does not restore the original session's ownership.
+        native.connected_application[native.app.id_] = native.app
+        with self.assertRaisesRegex(InspectorError, 'application disconnected'):
+            await session._fresh_pages(native.app.id_)
+        native._forward_get_listing.assert_awaited_once_with(native.app.id_)
+        self.assertEqual(session.listing_refreshes, 0)
+        self.assertFalse(native.subscribers)
+        self.assertFalse(session._listing_queues)
+        self.assertFalse(guest.calls)
+
+    async def test_unrelated_application_disconnect_does_not_fail_safari_listing(self):
+        session, native, guest = fixture()
+        session._inspector = native
+        async def listing(app_id):
+            session._application_disconnected('PID:999')
+            for queue in native.subscribers:
+                queue.put_nowait(app_id)
+        native._forward_get_listing = listing
+        pages = await session._fresh_pages(native.app.id_)
+        self.assertEqual(set(pages), {1})
+        self.assertIsNone(session._failure)
+        self.assertFalse(native.subscribers)
+        self.assertFalse(guest.calls)
+
+    async def test_application_disconnect_fails_active_page_command_and_response_wait(self):
+        session, native, guest = fixture()
+        session._app = native.app
+        command = asyncio.get_running_loop().create_future()
+        session._pending[1] = ('target', command)
+        with self.assertRaisesRegex(InspectorError, 'application disconnected'):
+            async with session.expect_response(lambda response: True, timeout=1):
+                session._application_disconnected('PID:999')
+                self.assertFalse(command.done())
+                session._application_disconnected(native.app.id_)
+                with self.assertRaisesRegex(InspectorError, 'application disconnected'):
+                    await command
+        with self.assertRaisesRegex(InspectorError, 'application disconnected'):
+            session._check()
+        self.assertFalse(session._waiters)
+        self.assertFalse(guest.calls)
+
     async def test_blank_session_attaches_before_first_navigation_without_bootstrap_request(self):
         session, native, guest = fixture(new_tab=True)
         with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):

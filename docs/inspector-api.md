@@ -152,7 +152,15 @@ navigation and close inputs are not repeated. A disconnected Inspector stream
 wakes pending listing reads immediately, including during cleanup; ordinary
 session closure still allows the live listing stream to verify tab cleanup.
 
-This addresses a native observation where a tab opened and fetched its document,
+An explicit application-disconnect event also wakes pending listing reads and
+fails commands and response waiters for that application. The Inspector stream
+can remain open after Safari leaves; repeatedly requesting its old tab listing
+cannot restore ownership. Re-registering the same application identifier does
+not revive that session. Disconnects for unrelated applications leave the
+selected Safari application usable. No tab-opening or navigation input is
+repeated in response to a disconnect.
+
+Refreshing listings addresses an observation where a tab opened and fetched its document,
 but the listing read consumed a 90-second deadline. A separate cleanup read then
 identified the new tab. Cleanup subsequently failed at native focused-field
 readback, so refreshing listings alone does not qualify that full workflow.
