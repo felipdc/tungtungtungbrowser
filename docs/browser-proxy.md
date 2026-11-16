@@ -199,8 +199,12 @@ A subsequent read of that stopped relay's historical logs found upstream HTTP
 The IP-check connection also received an upstream 410. This corroborates a
 proxy rejection alongside the Safari error document; the provider's internal
 reason remains unknown. Login recovery alone does not handle this case. A
-separate private recovery helper has local tests, but is not yet enabled in the
-capture worker or validated natively.
+separate private recovery helper is now integrated in the matched CPU trial's
+capture worker, with the same policy in both arms. It requires the original
+navigation failure, a Safari error document and contemporaneous upstream 410
+evidence from that phone's relay before attempting one verified reset. Its
+integration has local and host tests; native recovery from this error remains
+unvalidated until the path runs and its original evidence is reviewed.
 
 ## Optional Safari UDP guard
 
