@@ -178,3 +178,30 @@ qualification for two CPUs from this trial. The
 three CPUs. All guests shut down without forced termination, stopped settings
 were restored to three CPUs, parent disks were unchanged, and the cloud host
 was stopped.
+
+## Low Power Mode preflight (2026-11-16)
+
+A separate four-phone trial kept the three-CPU capture configuration and
+controller `17d5c95`, testing native Low Power Mode without a reboot between
+conditions. All phones passed the fixed warmup with three of four captures.
+The baseline then completed 10 of 16 measured captures: 4, 4, 2 and 0 per phone,
+with three native focus failures and three login-required responses. Successful
+captures had per-phone p95 values of 53.24, 49.68 and 50.53 seconds. The measured
+host window used 2,509.1 CPU seconds, or 250.91 per successful capture. All
+20 original product images were reviewed against the matching product data.
+The baseline failed the success-rate gates.
+
+Native Low Power Mode initially enabled on all four phones while Auto-Lock
+still reported Never. A second observation after a 45-second idle interval
+reported Auto-Lock at 30 seconds and the separate lock-screen minimum cleared
+on every phone. This failed the preflight before any candidate capture ran.
+The delayed change illustrates why immediate setter/readback success alone
+does not qualify an unattended capture configuration.
+
+Cleanup independently verified Low Power Mode off again, but Auto-Lock remained
+at 30 seconds in the disposable test copies. Their full settings restoration
+therefore failed and was retained as an error. All four guests exited without
+forced termination; helper settings and host compression were restored, the
+immutable parent images were unchanged, and the cloud host was stopped.
+There is no candidate CPU measurement or saving claim. Low Power Mode remains
+outside the capture profile.
