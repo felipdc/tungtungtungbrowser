@@ -208,14 +208,22 @@ class Browser:
                 raise GuestError('Native new-tab input was not acknowledged; outcome is unknown')
             return {'requested': True, 'method': 'native_new_tab', 'tab_created_verified': False}
 
-    def goto(self, url, *, reuse_tab=False, expected_url=None, expected_pid=None):
+    def goto(self, url, *, reuse_tab=False, expected_url=None, expected_pid=None, focus_read_timeout=0):
         """Request navigation through native Safari URL opening.
 
         Experimental tab reuse uses native HID events and address-field
         readback. A different foreground app uses explicit Safari URL opening
         instead of receiving text. Neither path asserts that content loaded.
+        focus_read_timeout optionally waits through completed unavailable focus
+        reads during shortcut navigation. It never repeats native input.
         """
         url = web_url(url)
+        if (type(focus_read_timeout) not in (int, float) or not math.isfinite(focus_read_timeout)
+                or not 0 <= focus_read_timeout <= 30):
+            raise ValueError('focus_read_timeout must be between 0 and 30 seconds')
+        if focus_read_timeout and (not reuse_tab or self.address_focus != 'shortcut'
+                or not callable(getattr(self.address_field_reader, 'wait_for_focus', None))):
+            raise ValueError('Focus read wait requires tab reuse, shortcut focus and a capable reader')
         if expected_url is not None:
             _expected_address(expected_url)
             if not reuse_tab:
@@ -237,14 +245,14 @@ class Browser:
                     raise GuestError('Cannot verify Safari process identity; native input not sent')
                 if expected_pid is not None and pid != expected_pid:
                     raise GuestError('Safari process changed; navigation not submitted')
-                field = self._focus_address_field(foreground)
+                field = self._focus_address_field(foreground, focus_read_timeout=focus_read_timeout)
                 if expected_url is not None and not self._matches_address(field, expected_url, foreground):
                     raise GuestError('Active Safari tab does not contain the expected URL; navigation not submitted')
                 self.guest.call('input.key', name='cmd+a')
                 time.sleep(self.input_settle)
                 self.guest.call('input.paste', text=url)
                 time.sleep(self.input_settle)
-                if self._address_field(foreground).get('value') != url:
+                if self._address_field(foreground, focus_read_timeout=focus_read_timeout).get('value') != url:
                     raise GuestError('Safari address field does not contain the requested URL; navigation not submitted')
                 self.guest.call('input.key', name='return')
                 method = 'native_address_bar'
@@ -256,7 +264,7 @@ class Browser:
             return {'url': url, 'browser': SAFARI, 'requested': True,
                     'method': method, 'navigation_verified': False}
 
-    def _focus_address_field(self, foreground):
+    def _focus_address_field(self, foreground, *, focus_read_timeout=0):
         if self.address_focus == 'shortcut':
             if self.address_field_reader is None:
                 raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
@@ -266,7 +274,7 @@ class Browser:
             time.sleep(self.input_settle)
             # An acknowledged shortcut is not editing focus. Require a fresh
             # owned first responder; never add a contact or repeat the shortcut.
-            return self._address_field(foreground)
+            return self._address_field(foreground, focus_read_timeout=focus_read_timeout)
         if getattr(self.address_field_reader, 'supports_address_resolution', False) is True:
             return self._resolve_address_field(foreground)
         if self.address_field_reader is None:
@@ -399,11 +407,12 @@ class Browser:
         return (isinstance(placeholder, str) and bool(placeholder)
                 and current.get('value') == field.get('value') == placeholder)
 
-    def _address_field(self, foreground, *, require_editing=True, include_placeholder=False):
+    def _address_field(self, foreground, *, require_editing=True, include_placeholder=False, focus_read_timeout=0):
         if self.address_field_reader is None:
             raise GuestError('Native address-field readback requires address_field_reader; configure NativeFocusReader')
         reader = self.address_field_reader.read_placeholder if include_placeholder else self.address_field_reader
-        field = reader(foreground['pid'])
+        field = (self.address_field_reader.wait_for_focus(foreground['pid'], timeout=focus_read_timeout)
+                 if focus_read_timeout else reader(foreground['pid']))
         if field is not None:
             if (not isinstance(field, dict) or field.get('source') != 'ax_first_responder'
                     or type(field.get('pid')) is not int or field['pid'] != foreground['pid']):

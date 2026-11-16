@@ -6,6 +6,7 @@ import contextlib
 from dataclasses import dataclass, field
 import fnmatch
 import json
+import math
 import time
 import uuid
 
@@ -1101,10 +1102,13 @@ class InspectorSession:
     async def reload(self):
         return await self._command('Page.reload')
 
-    async def goto(self, url):
+    async def goto(self, url, *, focus_read_timeout=0):
         if self.browser is None:
             raise InspectorError('Native navigation requires a Browser instance')
         web_url(url)
+        if (type(focus_read_timeout) not in (int, float) or not math.isfinite(focus_read_timeout)
+                or not 0 <= focus_read_timeout <= 30):
+            raise ValueError('focus_read_timeout must be between 0 and 30 seconds')
         async with self._native_lock, self._dom_lock:
             self._check()
             pages = await self._fresh_pages(self._app.id_)
@@ -1144,8 +1148,9 @@ class InspectorSession:
                     if initial_blank:
                         self._blank_navigation_attempted = True
                     # Browser.goto verifies foreground and PID after unlock.
+                    focus_options = {'focus_read_timeout': focus_read_timeout} if focus_read_timeout else {}
                     result = self.browser.goto(url, reuse_tab=True, expected_url=expected_url,
-                                               expected_pid=self._app.pid)
+                                               expected_pid=self._app.pid, **focus_options)
                     if result.get('method') != 'native_address_bar':
                         raise InspectorError('Native navigation opened a different tab; inspected tab readiness is unknown')
                     return result

@@ -149,7 +149,7 @@ request still opens the normal page with native input and verification. Include
 reset time and CPU use in batch cost measurements, and record every failed
 attempt and proxy change when comparing performance.
 
-The public suite passes 788 tests, with nine additional deployment-adapter tests.
+The public suite passes 798 tests, with nine additional deployment-adapter tests.
 A native worker test confirmed that a live Shopee login response triggers a
 session change; that run stopped when Safari and the relay probe disagreed.
 A subsequent controlled test used an explicitly labeled recorded login response
@@ -161,6 +161,21 @@ the phone and relay identities were preserved. The phone shut down cleanly.
 The fixture is excluded from live success counts. This is functional recovery
 validation, not a four-phone success-rate or CPU qualification. Proxy changes
 can still lead to another login response; retain those failures in measurements.
+
+For a shortcut-mode recovery navigation, an adapter can use
+`await page.goto(ip_check_url, focus_read_timeout=15)`. This optional
+[bounded focus wait](native-focus.md#optional-focus-wait-for-recovery-navigation)
+allows up to ten completed, restored native observations per readback without
+repeating keyboard input. Ordinary product navigation keeps its defaults.
+
+A further controlled native test verified a real reset in 17.4 seconds and
+captured all four following normal products in 41.3–56.8 seconds. Including
+the two fixed warmups, five of six live captures passed; the recorded login
+trigger was excluded. Fourteen original images and the native event journals
+were reviewed, and the guest and host shut down cleanly. This run needed three
+reads before typing and one afterward. Recovery beyond the third read is covered
+by unit tests; this run does not reproduce the earlier three-read exhaustion
+or establish a four-phone success-rate or CPU improvement.
 
 ## Optional Safari UDP guard
 

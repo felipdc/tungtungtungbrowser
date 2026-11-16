@@ -33,6 +33,7 @@ class NativeFocusReader:
         self.path = helper_path(sha256, deployment_id)
         self.max_read_attempts = max_read_attempts
         self.last_read_attempts = []
+        self.last_read_wait = None
         self.last_address_lookup = None
         self.last_address_attempts = []
         self.last_address_wait = None
@@ -101,10 +102,38 @@ class NativeFocusReader:
         return self._accept_check(self._invoke(['check']))
 
     def __call__(self, pid):
+        self.last_read_wait = None
+        return self._read_focus(pid, max_attempts=self.max_read_attempts)
+
+    def wait_for_focus(self, pid, *, timeout=15):
+        """Allow up to ten completed, restored reads within a time budget.
+
+        This sends no input. An in-flight native query keeps its own timeout so
+        guard restoration can finish; late results are discarded. Absence,
+        malformed evidence and uncertain operations never authorize another read.
+        Ordinary calls retain their configured one-to-three attempt limit.
+        """
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 30:
+            raise ValueError('Focus read timeout must be between 0 and 30 seconds')
+        started = time.monotonic()
+        self.last_read_wait = {'timeout_seconds': timeout, 'max_attempts': 10, 'status': 'waiting'}
+        try:
+            field = self._read_focus(pid, max_attempts=10, deadline=started + timeout)
+            self.last_read_wait['status'] = 'absent' if field is None else 'read'
+            return field
+        except BaseException:
+            self.last_read_wait['status'] = 'failed'
+            raise
+        finally:
+            self.last_read_wait['seconds'] = time.monotonic() - started
+
+    def _read_focus(self, pid, *, max_attempts, deadline=None):
         if type(pid) is not int or not 1 < pid <= 2147483647:
             raise ValueError('Focus query requires a valid native process ID')
         self.last_read_attempts = []
-        for attempt in range(self.max_read_attempts):
+        for attempt in range(max_attempts):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise GuestError('Native focus read deadline exceeded; no further input permitted')
             record = {'attempt': attempt + 1}
             self.last_read_attempts.append(record)
             started = time.monotonic()
@@ -121,14 +150,18 @@ class NativeFocusReader:
                 # establish restoration. This repeats no key, tap or paste.
                 retryable = (getattr(error, 'retryable_focus_read', False)
                              or getattr(error, 'retryable_focus_batch', False))
-                if not retryable or attempt + 1 == self.max_read_attempts:
+                if not retryable or attempt + 1 == max_attempts:
                     raise
             else:
+                if deadline is not None and time.monotonic() >= deadline:
+                    record['status'] = 'discarded_late'
+                    raise GuestError('Native focus read deadline exceeded; no further input permitted')
                 record['status'] = 'absent' if field is None else 'read'
                 return field
             finally:
                 record['seconds'] = time.monotonic() - started
-            time.sleep(0.1)
+            remaining = .1 if deadline is None else min(.1, max(0, deadline - time.monotonic()))
+            time.sleep(remaining)
 
     def _read_once(self, pid):
         result = self._pid_query(pid) if self._pid_query is not None else self._invoke(['pid', str(pid)])

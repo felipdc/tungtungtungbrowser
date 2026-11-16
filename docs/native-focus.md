@@ -905,3 +905,25 @@ input. A later separate read found the native address control, and a separately
 reviewed tap established an editing first responder. Command-L alone did not.
 These observations motivate waiting for valid discovery; they do not establish
 that the new option fixes cold startup. Fresh native validation remains needed.
+
+## Optional focus wait for recovery navigation
+
+`await page.goto(url, focus_read_timeout=15)` lets one shortcut-mode navigation
+wait through completed, restored native focus failures. The default is zero,
+which keeps the existing one-to-three read limit. Direct `Browser.goto` calls
+can use the same option with `reuse_tab=True` and `address_focus='shortcut'`.
+A capable `NativeFocusReader` is required before any input is sent.
+
+Each address readback has at most ten observations and a positive deadline of
+up to 30 seconds. The native reader exposes this as
+`reader.wait_for_focus(pid, timeout=15)` and records `last_read_wait` and
+`last_read_attempts`. Only already-retryable, completed observations with
+verified guard restoration can be read again. Absence, foreign ownership,
+malformed evidence and uncertain transport stop the operation. In-flight reads
+keep their own timeout to finish restoration, and late results are discarded.
+
+The option repeats no Command-L, select-all, paste or Return. Foreground/PID,
+tab ownership, editing state and exact URL readback checks still apply. A proxy
+recovery adapter can select it for the IP-verification navigation while ordinary
+product requests retain their defaults. It does not retry a failed capture or
+change its outcome.
