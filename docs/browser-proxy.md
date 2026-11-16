@@ -177,6 +177,23 @@ reads before typing and one afterward. Recovery beyond the third read is covered
 by unit tests; this run does not reproduce the earlier three-read exhaustion
 or establish a four-phone success-rate or CPU improvement.
 
+A later four-phone pilot exercised the policy with two genuine Shopee login
+responses on one phone. Each response triggered one automatic reset before the
+next scheduled request. Routing and identity verification completed in 15.4 and
+15.9 seconds. The first reset was followed by another login; after the second,
+both remaining normal product captures passed in 50.5 and 51.7 seconds. Neither
+failed request was retried, cookies were preserved, and non-browser traffic
+remained direct. The second reset's early host screenshot was stale; the later
+native screenshot and Safari DOM agreed with the new relay IP.
+
+That pilot achieved 10/16 products overall but failed the 60% per-phone gate.
+A separate phone became stuck on a Safari error document and its relay check
+failed. Those were not confirmed login responses and did not trigger this
+policy. A further phone's periodic clock maintenance failed during capture.
+All guests and the host shut down; no candidate CPU comparison ran. Automatic
+login recovery is verified functionality, while recovery from these other
+failure types and CPU qualification remain outstanding.
+
 ## Optional Safari UDP guard
 
 Build and start the guard before launching Safari when browser UDP must not use
