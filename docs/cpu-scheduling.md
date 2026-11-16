@@ -145,3 +145,36 @@ reliable lifecycle control. Prioritize native lifecycle completion and the
 cost of foreground/process inspection before seeking further cold-start
 reductions. This single trial does not qualify TLB mode 2, smaller memory
 limits or a change to the default runtime pin.
+
+## Four-phone Shopee comparison (2026-11-16)
+
+A later pilot tested three versus two application CPUs on four phones using
+the controller at `17d5c95`. Each phone kept 3 GiB guest memory, one software
+renderer thread, a 1 GiB translation cache, a four-core host allocation and
+the same proxy container. The display was 393×852 at scale 1. Four fixed
+normal-product warmups were scheduled before each arm's 16 capture requests.
+The guest CPU count was changed only while stopped and verified after boot.
+
+The three-CPU baseline completed all 16 requests, with three validated captures,
+five login-required responses and eight capture errors. Successful captures
+per phone were 1, 0, 0 and 2. Only two phones met the warmup requirement.
+The three successful captures took 42.7–55.1 seconds; matching product JSON,
+native screenshots and host screenshots were verified, including review of
+all six original images. The measured host window consumed 1,945.8 CPU seconds,
+or 648.6 per successful capture. This low-success run is not a capacity estimate.
+
+All four two-CPU guests reached native readiness and passed resource checks.
+One then timed out establishing ownership of its bootstrap tab. Its saved
+display showed Safari reporting a lost network connection to the bootstrap
+host. The four-phone barrier aborted before any candidate request entered the
+measured window. Other workers stopped on that abort; their generic session
+budget errors do not establish that their time limits expired.
+
+The baseline also preserved a Safari service-worker failure page, followed by
+three navigation refusals from its unsupported `data:` document. These failures
+do not establish CPU-count causality. There is no paired CPU-saving result or
+qualification for two CPUs from this trial. The
+[experimental capture profile](../runtime/capture-experimental.env) retains
+three CPUs. All guests shut down without forced termination, stopped settings
+were restored to three CPUs, parent disks were unchanged, and the cloud host
+was stopped.
