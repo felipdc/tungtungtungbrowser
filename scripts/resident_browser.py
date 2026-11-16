@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser.resident import PORTS, PROTOCOLS, SESSION_SECONDS
-from tungtungtungbrowser.resident import exchange, identity, read_json, same_process
+from tungtungtungbrowser.resident import exchange, identity, lease_scope, read_json, same_process
 
 BINARIES = {'lease': ('guardian', 'controller'), 'focus': ('server',), 'control': ('server',)}
 COMMON = ('focus_guard.h', 'focus_guard_trace.h', 'focus_deadline.h',
@@ -285,7 +285,9 @@ def stop(directory, *, guest=None):
     return result
 
 
-def start(build, directory, *, cid=3, guest=None):
+def start(build, directory, *, cid=3, guest=None, accessibility_scope='session'):
+    if accessibility_scope not in ('session', 'navigation'):
+        raise ValueError('accessibility_scope must be session or navigation')
     manifest, data = read_build(build)  # Verify every binary before the first guest operation.
     directory = external(directory)
     guest = guest or Guest(cid=cid, timeout=135)
@@ -293,7 +295,9 @@ def start(build, directory, *, cid=3, guest=None):
         raise ValueError('Guest differs from requested CID')
     directory.mkdir(mode=0o700, parents=True, exist_ok=False)
     out = directory / 'session.json'
-    state = {'version': 1, 'name': 'browser-resident', 'status': 'starting', 'cid': cid,
+    state = {'version': 2 if accessibility_scope == 'navigation' else 1,
+             'accessibility_scope': accessibility_scope,
+             'name': 'browser-resident', 'status': 'starting', 'cid': cid,
              'started_unix': time.time(), 'helpers': {}, 'native_input_sent': False,
              'maximum_native_lifetime_seconds': 1800, 'submission_budget_seconds': SESSION_SECONDS}
     dump(out, state)
@@ -308,6 +312,14 @@ def start(build, directory, *, cid=3, guest=None):
         for kind in PORTS:
             state['helpers'][kind] = start_helper(guest, kind, data[kind], manifest['binaries'][kind], directory / kind)
             dump(out, state)
+        if accessibility_scope == 'navigation':
+            deployment = state['helpers']['lease']
+            owner = deployment['health']
+            lease_scope(owner, deployment, active=True, status='ready')
+            state['pause_requested'] = True
+            dump(out, state)  # An uncertain transition is never replayed.
+            paused = exchange(cid, 'lease', f"pause {owner['pid']} {owner['boot_uuid']}")
+            state['initial_pause'] = lease_scope(paused, deployment, active=False)
         state.update(status='complete', finished_unix=time.time())
         return state
     except BaseException as error:
@@ -338,12 +350,15 @@ def main():
     make = commands.add_parser('manifest'); make.add_argument('build', type=Path)
     begin = commands.add_parser('start'); begin.add_argument('build', type=Path)
     begin.add_argument('--cid', type=int, default=3); begin.add_argument('--output', type=Path, required=True)
+    begin.add_argument('--accessibility-scope', choices=('session', 'navigation'), default='session',
+                       help='Experimental navigation scope restores settings between native actions')
     for name in ('status', 'stop'):
         commands.add_parser(name).add_argument('directory', type=Path)
     args = parser.parse_args()
     try:
         if args.command == 'manifest': result = manifest(args.build)
-        elif args.command == 'start': result = start(args.build, args.output, cid=args.cid)
+        elif args.command == 'start':
+            result = start(args.build, args.output, cid=args.cid, accessibility_scope=args.accessibility_scope)
         else: result = globals()[args.command](args.directory)
         print(json.dumps(result, indent=2))
         if result.get('status') == 'closure_unverified': return 1

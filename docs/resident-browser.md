@@ -12,6 +12,11 @@ logical display scale. The existing coordinate-touch calibration is for scale
 3; this path uses native keyboard navigation and does not qualify scale-1
 coordinate or selector clicks.
 
+The optional `--accessibility-scope navigation` candidate restores the saved
+accessibility switches between native navigations. It has host-side lifecycle
+and cancellation tests; its native Shopee behavior and CPU benefit are still
+unqualified. The default remains `--accessibility-scope session`.
+
 ## Build and run
 
 First follow the [API setup](inspector-api.md) to build and install the ordinary
@@ -90,6 +95,32 @@ to a different keyboard transport after an uncertain result. Paste continues
 through the ordinary guest transport. Shorter voluntary input waits preserve
 foreground, editing-field and exact address readback checks. A failed read can
 still terminate a navigation before paste.
+
+## Experimental navigation scope
+
+Start a new session with `--accessibility-scope navigation` to try the candidate.
+It requires newly built helpers. Startup verifies the original switch values,
+then pauses the accessibility lease before exposing the session to the SDK.
+`BrowserProfile.browser(resident=...)` automatically holds the lease across
+`goto()`, `new_tab()` and `close_tab()`, including native focus checks, paste
+readback and keyboard dispatch. The saved values are restored before those
+synchronous methods return, including after an input error. Inspector task
+cancellation cannot end the lease while its native thread is still running.
+Page loading and screenshot waits occur with the original switch settings.
+Original switches that were already enabled stay enabled.
+
+Transitions verify the helper PID, guest boot UUID, guardian identity and fresh
+switch values. An uncertain or invalid transition disables further SDK calls
+for that session and is never retried. Run the ordinary `stop` command to close
+its owned helpers and verify restoration. The independent guardian retains its
+exclusive ownership lock and original lifetime while paused; health requests
+and navigations cannot extend it. Session records use version 2 so older clients
+refuse this mode. Existing version-1 sessions remain supported.
+
+This option changes the duration of accessibility enablement. It preserves
+normal product-page navigation and native verification. Qualify it on the
+intended workload before adopting it; host tests do not establish CPU savings
+or Shopee success rates.
 
 ## Resource profile
 

@@ -1,6 +1,7 @@
 """Small synchronous API for native Safari input and screen capture."""
 import base64
 import binascii
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
@@ -109,7 +110,7 @@ class Browser:
     def __init__(self, *, cid=3, timeout=120, guest=None, input_settle=2,
                  qmp_socket=None, display_timeout=15, touch_helper_sha256=None,
                  address_field_reader=None, touch_hold_ms=50, address_focus='auto',
-                 address_discovery_timeout=0):
+                 address_discovery_timeout=0, native_input_scope=None):
         if not isinstance(input_settle, (int, float)) or not math.isfinite(input_settle) or not 0 <= input_settle <= 10:
             raise ValueError('input_settle must be between 0 and 10 seconds')
         if guest is not None and touch_helper_sha256 is not None:
@@ -135,6 +136,9 @@ class Browser:
         self.address_field_reader = address_field_reader
         self.address_focus = address_focus
         self.address_discovery_timeout = address_discovery_timeout
+        if native_input_scope is not None and not callable(native_input_scope):
+            raise ValueError('native_input_scope must be callable')
+        self._native_input_scope = nullcontext if native_input_scope is None else native_input_scope
         self._lock = threading.RLock()
 
     def health(self):
@@ -195,7 +199,7 @@ class Browser:
         """Request one native blank tab; its creation must be verified separately."""
         if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
             raise ValueError('Creating a tab requires a valid expected process ID')
-        with self._lock:
+        with self._lock, self._native_input_scope():
             self.unlock()
             foreground = self.guest.call('apps.foreground')
             if (not isinstance(foreground, dict) or foreground.get('verified') is not True
@@ -231,7 +235,7 @@ class Browser:
         if expected_pid is not None:
             if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647 or not reuse_tab:
                 raise ValueError('An expected PID requires tab reuse and a valid process ID')
-        with self._lock:
+        with self._lock, self._native_input_scope():
             self.unlock()
             foreground = self.guest.call('apps.foreground') if reuse_tab else None
             if reuse_tab and (not isinstance(foreground, dict)
@@ -380,7 +384,7 @@ class Browser:
         _expected_address(expected_url)
         if type(expected_pid) is not int or not 1 < expected_pid <= 2147483647:
             raise ValueError('Closing a tab requires a valid expected process ID')
-        with self._lock:
+        with self._lock, self._native_input_scope():
             foreground = self.guest.call('apps.foreground')
             if (not isinstance(foreground, dict) or foreground.get('verified') is not True
                     or foreground.get('bundle_id') != SAFARI

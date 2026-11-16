@@ -66,13 +66,16 @@ class BrowserProfile:
                     or guest.keyboard_helper_sha256 != self.keyboard['helper_sha256']):
                 raise ValueError('Supplied Guest differs from the deployment profile')
         pid_query = None
+        native_input_scope = None
         if resident is not None:
             from .resident import ResidentGuest, ResidentSession
             session = ResidentSession(resident, cid=self.cid)
             guest = ResidentGuest(guest, session)
             pid_query = session.focus
+            native_input_scope = session.native_input_scope
         return Browser(guest=guest, input_settle=input_settle, touch_hold_ms=0, qmp_socket=qmp_socket,
                        address_focus=address_focus, address_discovery_timeout=address_discovery_timeout,
+                       native_input_scope=native_input_scope,
                        address_field_reader=NativeFocusReader.from_deployment(
                            guest, self.focus_path, max_read_attempts=focus_read_attempts,
                            pid_query=pid_query))

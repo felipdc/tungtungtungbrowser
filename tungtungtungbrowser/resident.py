@@ -4,6 +4,8 @@ Configuration sends no input. Reads remain fresh; keyboard dispatches never
 retry or fall back to another transport after an uncertain result.
 """
 import errno
+from contextlib import contextmanager
+import fcntl
 import json
 import math
 from pathlib import Path
@@ -19,6 +21,27 @@ from .native_keyboard import KEYS, validate_key_result
 PORTS = {'lease': 1346, 'focus': 1347, 'control': 1348}
 PROTOCOLS = {'lease': 1, 'focus': 2, 'control': 2}
 SESSION_SECONDS = 1650  # Stop submitting before the native 1800-second deadline.
+
+
+def lease_scope(value, deployment, *, active, status='scope'):
+    """Validate fresh native switch values against the original owned snapshot."""
+    identity(value, 'lease', status)
+    owner = deployment['health']
+    same_process(value, owner)
+    original = deployment.get('enabled', {}).get('before', {})
+    if (value.get('navigation_scope') != 'guarded-v1'
+            or type(value.get('active')) is not bool or value['active'] is not active
+            or type(value.get('guard_status')) is not int or value['guard_status'] != 0
+            or type(value.get('guardian_pid')) is not int or value['guardian_pid'] <= 1
+            or value['guardian_pid'] != owner.get('guardian_pid')):
+        raise GuestError('Unverified native accessibility scope')
+    for name in ('application', 'automation'):
+        before, after = value.get('before_' + name), value.get('after_' + name)
+        if (type(original.get(name)) is not int or original[name] not in (0, 1)
+                or type(before) is not int or before != original[name]
+                or type(after) is not int or after != (1 if active else before)):
+            raise GuestError('Native accessibility scope differs from the original settings')
+    return value
 
 
 def read_json(path, limit=256 * 1024):
@@ -97,15 +120,21 @@ class ResidentSession:
     def __init__(self, directory, *, cid):
         self.directory = Path(directory).resolve()
         self.record = read_json(self.directory / 'session.json')
-        if (type(self.record.get('version')) is not int or self.record['version'] != 1
+        if (type(self.record.get('version')) is not int or self.record['version'] not in (1, 2)
                 or self.record.get('status') != 'complete'
                 or self.record.get('name') != 'browser-resident'
                 or type(cid) is not int or type(self.record.get('cid')) is not int
                 or self.record['cid'] != cid):
             raise ValueError('A complete resident session for this guest CID is required')
+        self.navigation_scoped = self.record['version'] == 2
+        if self.record.get('accessibility_scope', 'session') != (
+                'navigation' if self.navigation_scoped else 'session'):
+            raise ValueError('Unsupported resident accessibility scope')
         self.cid = cid
         self.helpers = {}
         self._locks = {kind: threading.Lock() for kind in PORTS}
+        self._scope_lock = threading.Lock()
+        self._scope_failed = False
         for kind in PORTS:
             state = read_json(self.directory / kind / 'deploy.json')
             if (state.get('status') != 'complete' or type(state.get('cid')) is not int
@@ -124,15 +153,20 @@ class ResidentSession:
         if any(type(t) not in (int, float) or not math.isfinite(t) for t in starts):
             raise ValueError('Missing resident helper launch time')
         self.accept_until = min(starts) + SESSION_SECONDS
+        if self.navigation_scoped:
+            lease_scope(self.helpers['lease']['health'], self.helpers['lease'], active=True, status='ready')
+            lease_scope(self.record.get('initial_pause'), self.helpers['lease'], active=False)
         self.assert_active()
 
     def assert_active(self):
-        if time.time() >= self.accept_until or (self.directory / 'stop.json').exists():
+        if (time.time() >= self.accept_until or (self.directory / 'stop.json').exists()
+                or self._scope_failed or (self.directory / 'scope-failed.json').exists()):
             raise GuestError('Resident session expired or is closing; start a new owned session')
 
-    def _query(self, kind, command):
+    def _query(self, kind, command, *, closing=False):
         with self._locks[kind]:
-            self.assert_active()
+            if not closing:
+                self.assert_active()
             started = time.monotonic()
             row = {'started_unix': time.time(), 'command': command.split(' ', 1)[0]}
             try:
@@ -146,6 +180,60 @@ class ResidentSession:
                 row['seconds'] = time.monotonic() - started
                 with (self.directory / kind / 'requests.jsonl').open('a') as file:
                     file.write(json.dumps(row) + '\n')
+
+    def _scope_transition(self, active, *, closing=False):
+        owner = self.helpers['lease']['health']
+        verb = 'resume' if active else 'pause'
+        try:
+            value = self._query('lease', f"{verb} {owner['pid']} {owner['boot_uuid']}", closing=closing)
+            return lease_scope(value, self.helpers['lease'], active=active)
+        except BaseException as error:
+            self._scope_failed = True
+            # Presence prevents another Session object from submitting input,
+            # even if writing the diagnostic later fails. No transition retry.
+            path = self.directory / 'scope-failed.json'
+            try:
+                path.touch(exist_ok=True)
+                path.write_text(json.dumps({'command': verb, 'error': f'{type(error).__name__}: {error}',
+                                            'time': time.time()}) + '\n')
+            except OSError as recording_error:
+                error.add_note(f'Could not persist scope failure: {recording_error}')
+            raise
+
+    @contextmanager
+    def native_input_scope(self):
+        """Hold accessibility across the synchronous native action, never an await."""
+        if not self.navigation_scoped:
+            yield
+            return
+        if not self._scope_lock.acquire(blocking=False):
+            raise GuestError('Another native navigation owns this resident session')
+        try:
+            # Also exclude other Session objects and processes using this directory.
+            with (self.directory / 'navigation.lock').open('a') as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise GuestError('Another native navigation owns this resident session') from error
+                self.assert_active()
+                self._scope_transition(True)
+                action_error = None
+                try:
+                    yield
+                except BaseException as error:
+                    action_error = error
+                    raise
+                finally:
+                    try:
+                        # Restoration remains permitted after the submission deadline
+                        # or stop marker, and is never followed by more native input.
+                        self._scope_transition(False, closing=True)
+                    except BaseException as error:
+                        if action_error is None:
+                            raise
+                        action_error.add_note(f'Accessibility restoration also failed: {type(error).__name__}: {error}')
+        finally:
+            self._scope_lock.release()
 
     def focus(self, pid):
         if type(pid) is not int or not 1 < pid < 2**31:

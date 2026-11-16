@@ -86,6 +86,7 @@ class ProfileTests(unittest.TestCase):
                 resident=directory, input_settle=.25, address_focus='shortcut', focus_read_attempts=3)
         self.assertIsInstance(browser.guest, ResidentGuest)
         self.assertIs(browser.address_field_reader._pid_query.__self__, browser.guest.resident)
+        self.assertIs(browser._native_input_scope.__self__, browser.guest.resident)
         self.assertEqual(browser.address_field_reader.max_read_attempts, 3)
         self.assertEqual(browser.guest.connection_factory().cid, 7)
         self.assertEqual(browser.input_settle, .25)
