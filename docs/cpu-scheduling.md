@@ -205,3 +205,60 @@ forced termination; helper settings and host compression were restored, the
 immutable parent images were unchanged, and the cloud host was stopped.
 There is no candidate CPU measurement or saving claim. Low Power Mode remains
 outside the capture profile.
+
+## Navigation-scoped accessibility pilot (2026-11-16)
+
+A subsequent four-phone pilot compared a resident accessibility lease held for
+the whole session with an unpublished candidate that holds it only across each
+complete native navigation. The candidate restores the original switch values
+while pages load and screenshots are collected. Both arms used the same SDK and
+native helpers, three application CPUs, one-second native input settling, normal
+product pages and fixed browser-only proxy sessions. Each arm had four fixed
+warmups per phone, followed by four measured requests per phone.
+
+The success target was explicitly changed to 60% overall and 60% per phone before
+its measured captures. The other criteria remained: at least 20% lower host CPU
+seconds per successful capture, at most five percentage points of success
+regression, and per-phone p95 at most 60 seconds. Earlier trials were not
+reclassified.
+
+| Pilot measurement | Whole-session lease | Navigation-scoped lease |
+| --- | ---: | ---: |
+| Validated captures | 13/16 | 16/16 |
+| Captures per phone | 4, 3, 3, 3 | 4, 4, 4, 4 |
+| Host CPU seconds | 3,254.98 | 2,764.07 |
+| CPU seconds per successful capture | 250.383 | 172.754 |
+| Measured elapsed time, seconds | 270.693 | 229.633 |
+| Average host CPU cores used | 12.025 | 12.037 |
+| Largest per-phone p95, seconds | 66.854 | 60.078 |
+
+All 58 original images for the successful captures were reviewed for the product
+title, price and main image. The baseline's three failures remained failures:
+two native focus errors and one native screenshot timeout. The timeout's saved
+failure image showed a language selector and cookie banner, so it cannot be
+treated as an otherwise valid product capture.
+
+The candidate reduced CPU cost per successful capture by 31.0% in this pilot.
+Average CPU usage stayed approximately unchanged; fewer failures and a shorter
+measured window contributed to the cost difference. This does not establish a
+31% reduction in background CPU utilization. Its slowest successful capture
+took 60.077755808 seconds, exceeding the strict latency limit. The pilot was
+therefore rejected and did not automatically enter the 64-request qualification.
+
+All accessibility leases restored their original settings, other observed native
+settings remained unchanged, proxy checks retained the same addresses, and all
+guests shut down cleanly. The parent images were unchanged and the host stopped.
+A separate fixed 64-request comparison per arm is needed to assess repeatability;
+this pilot alone does not qualify a default or a capacity claim.
+
+The subsequent comparison was stopped when automatic proxy recovery after login
+was requested. Its candidate arm completed 60 of 64 scheduled attempts: 42
+machine-validated products, 17 login responses and one screenshot error. One
+phone returned login for all 15 of its attempts. The baseline arm never started,
+and the final CPU sample is absent, so this interrupted run supplies no CPU
+comparison. Only 12 of its 84 successful-capture images were manually reviewed.
+All guests and helpers closed cleanly and the evidence was archived.
+
+Future comparisons must apply the same bounded login-recovery policy in both
+arms, retaining login failures and including proxy-reset overhead in batch CPU
+and wall time. The previous fixed-session runs are not reclassified.
