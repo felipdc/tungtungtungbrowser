@@ -13,6 +13,8 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -20,7 +22,36 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = Path('/run/proxy-config.json')
+BROWSER_CONFIG = Path('/run/browser-proxy-config.json')
 MAX_CONFIG = 65536
+
+
+def new_evomi_locked_session(secret, *, token=None):
+    """Replace one explicit locked-session token, preserving all other fields."""
+    token = secrets.token_hex(5) if token is None else token
+    if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9]{6,10}', token):
+        raise ValueError('Evomi session tokens must contain 6 to 10 letters or digits')
+    candidate = copy.deepcopy(secret)
+    changed = 0
+    for key in ('username', 'password'):
+        value = candidate.get(key)
+        if (not isinstance(value, str) or '_session-' in value or '_hardsession-' in value
+                or '_lifetime-' in value):
+            raise ValueError('Expected exactly one explicit Evomi locked session')
+        matches = list(re.finditer(r'_lockedsession-([A-Za-z0-9]{6,10})(?=_|$)', value))
+        if value.count('_lockedsession-') != len(matches):
+            raise ValueError('Invalid Evomi locked session')
+        for match in reversed(matches):
+            if match[1] == token:
+                raise ValueError('Replacement session must differ from the previous session')
+            value = value[:match.start(1)] + token + value[match.end(1):]
+            changed += 1
+        candidate[key] = value
+    if changed != 1:
+        raise ValueError('Expected exactly one explicit Evomi locked session')
+    if 'session' in candidate:
+        candidate['session'] = token
+    return candidate
 
 
 def unique_object(pairs):
@@ -167,10 +198,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True,
                         help='New private evidence directory on the /run filesystem')
+    parser.add_argument('--scope', choices=['device', 'browser'], default='device',
+                        help='Select the existing router configuration; does not change routing scope')
+    parser.add_argument('--rotate-evomi-session', action='store_true',
+                        help='Replace one explicit Evomi locked-session token before the single reload')
     args = parser.parse_args()
     try:
         secret = read_json(sys.stdin.buffer.read(MAX_CONFIG + 1))
-        report = reload_session(secret, args.output)
+        if args.rotate_evomi_session:
+            secret = new_evomi_locked_session(secret)
+        report = reload_session(secret, args.output,
+                                config=BROWSER_CONFIG if args.scope == 'browser' else CONFIG)
     except Exception as error:
         print(json.dumps({'status': 'failed', 'failure_type': type(error).__name__,
                           'reload_requests': None, 'outcome_unknown': True}))

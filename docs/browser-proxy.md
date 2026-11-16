@@ -67,6 +67,101 @@ direct route. The device-wide `check_proxy_route.py` requires a TUN/firewall set
 and is not the check for this mode. Test normal product pages after routing is
 verified.
 
+## Reload a browser proxy session
+
+The existing relay can reload credentials without replacing its container or
+rebooting the phone. Finish the current browser request and save its result first:
+
+```sh
+docker compose -f runtime/compose.yaml -f runtime/compose.browser-proxy.yaml exec -T egress \
+  python3 /app/scripts/reload_proxy_session.py --scope browser --output /run/reload-001 \
+  < /absolute/private/proxy-next.json
+```
+
+The replacement must use the same upstream gateway, protocol, port and TLS
+identity. Only credentials change. `--scope browser` selects the running
+browser-relay configuration; it does not change device routing or Safari's
+preferences. The default scope remains `device` for existing callers. See the
+[reload guarantees and private evidence](../runtime/proxy/README.md#reload-credentials-without-recreating-the-iphone).
+A reload closes existing proxy connections, and `reload_requested` is only a
+signal receipt. Verify the new upstream session and browser route before sending
+the next product request.
+
+For an existing Evomi locked session, add `--rotate-evomi-session` to generate a
+new ten-character session token from the supplied private configuration. It
+preserves the gateway, country and other parameters, rejects ambiguous session
+modes, and does not print credentials. Evomi documents locked sessions as fixed
+to one peer, with no automatic replacement when that peer disconnects. See
+[Evomi's session parameters](https://docs.evomi.com/proxy-instructions/residential-proxies/proxy-sessions/).
+
+## Automatic recovery after a login response
+
+`LoginProxyRecovery` provides an optional per-phone policy for a capture worker.
+It calls an application-supplied async reset function after a completed,
+confirmed login-required response. It does not infer login from a timeout,
+arbitrary page text or an unrelated HTTP error.
+
+```python
+from tungtungtungbrowser import LoginProxyRecovery
+
+recovery = LoginProxyRecovery(
+    "/absolute/private/phone-41/proxy-recovery",
+    cid=41,
+    reset_and_verify=reset_browser_proxy_and_verify,
+    max_resets=3,
+)
+
+for request in scheduled_requests:
+    recovery.check_ready()
+    result = await capture_normal_product_page(request)
+    save_original_result(result)
+    await recovery.after_capture(
+        result.attempt_id,
+        login_required=result.outcome == "login_required",
+    )
+```
+
+The reset callback selects fresh provider credentials, invokes the reload once,
+and verifies the upstream session, Safari's exit, non-browser direct routing,
+and unchanged container/guest identities. It must return these exact boolean
+proof fields: `session_changed`, `upstream_verified`, `browser_verified`,
+`non_browser_direct_verified`, and `identities_preserved`. These checks belong in
+the adapter because provider session syntax and phone deployment differ. A new
+provider session does not itself guarantee a different IP or product success.
+
+Use a separate persistent directory and opaque attempt IDs for each phone. The
+policy permits three resets by default, configurable from one to ten. The budget
+belongs to a persistent record for a bounded worker job, survives Python restarts,
+and never repeats a reset for the same attempt. A missing verification,
+callback failure, cancellation or interrupted process blocks further work until
+its existing evidence is inspected. Exhausting the budget also stops the phone;
+a successful intervening capture does not reset that limit. Concurrent callers
+cannot reset the same phone together.
+
+The async callback has a 120-second deadline by default, configurable with
+`timeout_seconds`. Its network and native operations should also have finite
+deadlines. A timeout remains uncertain and stops further work; it does not prove
+an in-flight operation was cancelled.
+
+The original login remains a failed capture. Recovery does not retry that
+capture, clear cookies or change the requested product URL. The next scheduled
+request still opens the normal page with native input and verification. Include
+reset time and CPU use in batch cost measurements, and record every failed
+attempt and proxy change when comparing performance.
+
+The public suite passes 788 tests, with nine additional deployment-adapter tests.
+A native worker test confirmed that a live Shopee login response triggers a
+session change; that run stopped when Safari and the relay probe disagreed.
+A subsequent controlled test used an explicitly labeled recorded login response
+to trigger a real, verified reset in 25.8 seconds. All four following normal
+product pages produced validated JSON and matching host/native screenshots,
+with capture times of 42.1–49.7 seconds. Non-browser traffic stayed direct and
+the phone and relay identities were preserved. The phone shut down cleanly.
+
+The fixture is excluded from live success counts. This is functional recovery
+validation, not a four-phone success-rate or CPU qualification. Proxy changes
+can still lead to another login response; retain those failures in measurements.
+
 ## Optional Safari UDP guard
 
 Build and start the guard before launching Safari when browser UDP must not use

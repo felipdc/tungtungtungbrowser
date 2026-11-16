@@ -7,7 +7,9 @@ from .inspector_transport import InspectorError, InspectorTransport
 from .native_focus import NativeFocusReader
 from .page_capture import PageScreenshot
 from .profile import BrowserProfile
+from .proxy_recovery import LoginProxyRecovery, ProxyRecoveryError, ProxyRecoveryExhausted
 
 __version__ = "0.1.0"
 __all__ = ['Browser', 'Screenshot', 'DisplayScreenshot', 'capture_display', 'GuestError', 'GuestHTTPError', 'GuestTransportError',
-           'InspectorSession', 'InspectorTransport', 'InspectorError', 'NativeFocusReader', 'PageScreenshot', 'BrowserProfile']
+           'InspectorSession', 'InspectorTransport', 'InspectorError', 'NativeFocusReader', 'PageScreenshot', 'BrowserProfile',
+           'LoginProxyRecovery', 'ProxyRecoveryError', 'ProxyRecoveryExhausted']

@@ -1,10 +1,12 @@
 import copy
+import io
 import fcntl
 import json
 from pathlib import Path
 import signal
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -35,6 +37,28 @@ class ProxyReloadTest(unittest.TestCase):
         expected['outbounds'][0].update(username='new-user', password='new-private-secret')
         self.assertEqual(changed, expected)
 
+    def test_browser_relay_reload_preserves_listener_and_direct_device_routing(self):
+        original = {'log': {'level': 'warn'},
+                    'inbounds': [{'type': 'http', 'tag': 'safari', 'listen': '127.0.0.1', 'listen_port': 1080}],
+                    'outbounds': [copy.deepcopy(self.configuration['outbounds'][0])],
+                    'route': {'final': 'upstream'}}
+        changed = reload.replace_credentials(original, self.secret)
+        expected = copy.deepcopy(original)
+        expected['outbounds'][0].update(username='new-user', password='new-private-secret')
+        self.assertEqual(changed, expected)
+        self.assertNotIn('dns', changed)
+        self.assertNotIn('tun', json.dumps(changed))
+
+    def test_cli_selects_only_the_requested_existing_router_configuration(self):
+        for flags, config in [([], reload.CONFIG), (['--scope', 'browser'], reload.BROWSER_CONFIG)]:
+            with self.subTest(flags=flags), \
+                    patch.object(sys, 'argv', ['reload', '--output', '/run/test-reload', *flags]), \
+                    patch.object(sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(json.dumps(self.secret).encode()))), \
+                    patch.object(reload, 'reload_session', return_value={'status': 'reload_requested'}) as called, \
+                    patch('builtins.print'):
+                self.assertEqual(reload.main(), 0)
+                called.assert_called_once_with(self.secret, Path('/run/test-reload'), config=config)
+
     def test_gateway_protocol_and_tls_changes_rejected(self):
         for key, value in [('address', '192.0.2.11'), ('port', 8443), ('port', True),
                            ('host', 'another.example.net'), ('scheme', 'http'),
@@ -50,6 +74,45 @@ class ProxyReloadTest(unittest.TestCase):
         for data in [b'[]', b'{"x":1,"x":2}', b'{"x":NaN}', b'x' * (reload.MAX_CONFIG + 1)]:
             with self.subTest(data=data[:20]), self.assertRaises(ValueError):
                 reload.read_json(data)
+
+    def test_evomi_rotation_preserves_gateway_targeting_and_input(self):
+        original = self.secret | {'password': 'private_country-BR_lockedsession-1234567890_region-test',
+                                  'session': '1234567890'}
+        before = copy.deepcopy(original)
+        candidate = reload.new_evomi_locked_session(original, token='abcdef1234')
+        self.assertEqual(original, before)
+        self.assertEqual(candidate, original | {
+            'password': 'private_country-BR_lockedsession-abcdef1234_region-test', 'session': 'abcdef1234'})
+
+    def test_evomi_rotation_rejects_ambiguous_modes_and_invalid_tokens(self):
+        for password in ('private', 'private_session-1234567890',
+                         'private_lockedsession-1234567890_lockedsession-abcdefghij',
+                         'private_lockedsession-short', 'private_lockedsession-12345678901',
+                         'private_lockedsession-1234567890_lifetime-30'):
+            with self.subTest(password=password), self.assertRaises(ValueError):
+                reload.new_evomi_locked_session(self.secret | {'password': password}, token='abcdef1234')
+        original = self.secret | {'password': 'private_lockedsession-1234567890'}
+        for token in ('1234567890', 'short', 'abcdefghijklmnop', 'abcd_12345'):
+            with self.subTest(token=token), self.assertRaises(ValueError):
+                reload.new_evomi_locked_session(original, token=token)
+
+    def test_generated_evomi_session_uses_supported_length(self):
+        with patch.object(reload.secrets, 'token_hex', return_value='abcdef1234') as random:
+            candidate = reload.new_evomi_locked_session(self.secret | {'password': 'private_lockedsession-1234567890'})
+        random.assert_called_once_with(5)
+        self.assertTrue(candidate['password'].endswith('_lockedsession-abcdef1234'))
+
+    def test_cli_rotation_passes_new_credentials_to_browser_reload_without_printing_them(self):
+        original = self.secret | {'password': 'private_lockedsession-1234567890'}
+        with patch.object(sys, 'argv', ['reload', '--output', '/run/reset', '--scope', 'browser', '--rotate-evomi-session']), \
+                patch.object(sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(json.dumps(original).encode()))), \
+                patch.object(reload.secrets, 'token_hex', return_value='abcdef1234'), \
+                patch.object(reload, 'reload_session', return_value={'status': 'reload_requested'}) as called, \
+                patch('builtins.print') as printed:
+            self.assertEqual(reload.main(), 0)
+        self.assertEqual(called.call_args.args[0]['password'], 'private_lockedsession-abcdef1234')
+        self.assertEqual(called.call_args.kwargs['config'], reload.BROWSER_CONFIG)
+        self.assertNotIn('private_lockedsession', str(printed.call_args_list))
 
     def invoke(self, directory, *, check_exit=0, identities=None, signal_error=None):
         config = directory / 'router.json'
