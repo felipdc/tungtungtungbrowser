@@ -49,6 +49,32 @@ AMD. Changing framebuffer size alone is insufficient: verify `device.screen`
 and both original screenshots. Keep numerical checks, local compatibility,
 product correctness and matched performance results separate.
 
+## Four-phone startup with matched parents
+
+A later run on an eight-core, eight-vCPU, 32 GiB `m8g.2xlarge` host used the
+prepared scale-1 parents from the AMD experiments. All four phones reached
+native Safari foreground readiness with three application CPUs each. They
+started serially and remained running as the next phone booted. Time from each
+phone's own QEMU launch to readiness was 506.35, 466.42, 651.00 and 806.27 seconds.
+These are startup times, not product-load times or an isolated CPU comparison.
+
+All four native screen checks reported 393×852 at scale 1. Paired native and
+host images from the first phone showed correctly sized browser chrome but
+black restored-page content; its console recorded graphics detach stalls.
+Correct screen geometry therefore does not establish correct page rendering.
+
+The cohort passed its settings/resource checks, then failed before any product
+request because a routing helper was absent from the ARM host. All 32 scheduled
+products count as failures. All four guests shut down cleanly and the host was
+stopped. The next harness bundles the original helper and verifies its hash and
+all planned network allocations before creating phone state.
+
+A 15-second profile of the first phone's black-page state collected 773 samples
+without reported loss. Translation lookup was the largest named helper;
+anonymous translated code limits attribution. This is not a successful Shopee
+workload and does not establish whether an ARM floating-point port would improve
+product loading. That decision still requires workload measurements.
+
 The public capture profile continues to use three application CPUs per phone.
 The prospective two-CPU experiment on AMD has not yet qualified a default
 change. Native ARM driver discovery is covered by public tests; full Graviton
