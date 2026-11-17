@@ -120,9 +120,86 @@ class InspectorContractTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*s._tasks)
         self.assertEqual(s.target_id, 'page-a')
         self.assertEqual(s._inspector.commands, ['Network.enable', 'Page.enable'])
+        self.assertFalse(s._target_ready.is_set())
         s._receive(s._session_id, {'method': 'Target.didCommitProvisionalTarget',
                                  'params': {'oldTargetId': 'page-a', 'newTargetId': 'page-b'}})
         self.assertEqual(s.target_id, 'page-b')
+        self.assertTrue(s._target_ready.is_set())
+        self.assertEqual(s._inspector.commands, ['Network.enable', 'Page.enable'])
+
+    async def test_initial_provisional_target_can_commit_before_or_after_setup(self):
+        for commit_first in (False, True):
+            with self.subTest(commit_first=commit_first):
+                s = session_fixture()
+                s.target_id = None
+                s._targets.clear()
+                s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+                    'targetInfo': {'targetId': 'new-page', 'type': 'page', 'isProvisional': True}}})
+                if not commit_first:
+                    await asyncio.gather(*s._tasks)
+                self.assertFalse(s._target_ready.is_set())
+                s._receive(s._session_id, {'method': 'Target.didCommitProvisionalTarget',
+                    'params': {'oldTargetId': 'retired-page', 'newTargetId': 'new-page'}})
+                if commit_first:
+                    self.assertFalse(s._target_ready.is_set())
+                    await asyncio.gather(*s._tasks)
+                self.assertTrue(s._target_ready.is_set())
+                s._check()
+                self.assertEqual(s.target_id, 'new-page')
+                self.assertEqual(s._inspector.commands, ['Network.enable', 'Page.enable'])
+
+    async def test_provisional_commit_waits_for_paused_target_resume_ack(self):
+        s = session_fixture()
+        original = s._inspector.send_socket_data
+        resume_id = None
+        async def send(session_id, app_id, page_id, message):
+            nonlocal resume_id
+            if message['method'] == 'Target.resume':
+                resume_id = message['id']
+                return
+            await original(session_id, app_id, page_id, message)
+        s._inspector.send_socket_data = send
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'page-b', 'type': 'page',
+                           'isProvisional': True, 'isPaused': True}}})
+        while resume_id is None:
+            await asyncio.sleep(0)
+        s._receive(s._session_id, {'method': 'Target.didCommitProvisionalTarget',
+            'params': {'oldTargetId': 'page-a', 'newTargetId': 'page-b'}})
+        self.assertFalse(s._target_ready.is_set())
+        s._receive(s._session_id, {'id': resume_id, 'result': {}})
+        await asyncio.gather(*s._tasks)
+        self.assertTrue(s._target_ready.is_set())
+        s._check()
+
+    async def test_commit_cannot_reuse_destroyed_target_initialization(self):
+        s = session_fixture()
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'page-b', 'type': 'page', 'isProvisional': True}}})
+        await asyncio.gather(*s._tasks)
+        s._receive(s._session_id, {'method': 'Target.targetDestroyed', 'params': {'targetId': 'page-b'}})
+        s._receive(s._session_id, {'method': 'Target.didCommitProvisionalTarget',
+            'params': {'oldTargetId': 'page-a', 'newTargetId': 'page-b'}})
+        self.assertFalse(s._target_ready.is_set())
+        self.assertNotIn('page-b', s._initialized_targets)
+
+    async def test_destroyed_target_is_not_marked_initialized_by_late_setup_completion(self):
+        s = session_fixture()
+        original = s._inspector.send_socket_data
+        async def send(session_id, app_id, page_id, message):
+            await original(session_id, app_id, page_id, message)
+            if (message['method'] == 'Target.sendMessageToTarget' and
+                    json.loads(message['params']['message'])['method'] == 'Page.enable'):
+                s._receive(session_id, {'method': 'Target.targetDestroyed',
+                    'params': {'targetId': 'page-b'}})
+        s._inspector.send_socket_data = send
+        s._receive(s._session_id, {'method': 'Target.targetCreated', 'params': {
+            'targetInfo': {'targetId': 'page-b', 'type': 'page', 'isProvisional': True}}})
+        await asyncio.gather(*s._tasks)
+        self.assertNotIn('page-b', s._initialized_targets)
+        s._receive(s._session_id, {'method': 'Target.didCommitProvisionalTarget',
+            'params': {'oldTargetId': 'page-a', 'newTargetId': 'page-b'}})
+        self.assertFalse(s._target_ready.is_set())
 
     async def test_response_waiter_registered_before_action_and_body_waits_for_finish(self):
         s = session_fixture()

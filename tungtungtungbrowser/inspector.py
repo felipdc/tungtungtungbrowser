@@ -235,6 +235,7 @@ class InspectorSession:
         self._pending, self._outer = {}, {}
         self._root_pending = {}
         self._waiters, self._tasks, self._targets = set(), set(), set()
+        self._initialized_targets = set()
         self._auxiliary_targets = set()
         self.retired_target_resumes = 0
         self._target_ready = asyncio.Event()
@@ -561,8 +562,10 @@ class InspectorSession:
                 # also tears down the native inspection socket; no debugger is enabled.
                 async with asyncio.timeout(5):
                     await self._root_command('Target.resume', targetId=target)
-        if self.target_id == target:
-            self._target_ready.set()
+        if target in self._targets:
+            self._initialized_targets.add(target)
+            if self.target_id == target:
+                self._target_ready.set()
 
     async def _resume_auxiliary_target(self, target):
         if target not in self._auxiliary_targets:
@@ -624,10 +627,16 @@ class InspectorSession:
         elif method == 'Target.didCommitProvisionalTarget':
             self.target_id = params['newTargetId']
             self.document_generation += 1
+            # Initialization and commit may arrive in either order. A target
+            # initialized while provisional must also wake the initial attach
+            # after commit, without replaying its setup commands.
+            if self.target_id in self._initialized_targets:
+                self._target_ready.set()
         elif method == 'Target.targetDestroyed':
             target = params['targetId']
             self._auxiliary_targets.discard(target)
             self._targets.discard(target)
+            self._initialized_targets.discard(target)
             for pending_target, future in self._pending.values():
                 if pending_target == target and not future.done():
                     future.set_exception(DocumentChangedError('Page process was destroyed during the command'))

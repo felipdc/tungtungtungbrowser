@@ -1,5 +1,23 @@
 # Browsing reliability measurements
 
+## Inspector attachment during a page-process change
+
+A provisional page target can finish `Network.enable` and `Page.enable` before
+Safari reports that it has committed. Attachment now remembers completed target
+initialization and accepts either event order, setting readiness only after the
+target is current and its initialization has completed. A paused target still
+requires its resume acknowledgement. Destroying a target discards its recorded
+initialization, so a later commit cannot reuse stale readiness.
+
+Protocol fixtures reproduce the previous missing readiness notification and
+cover both event orders, delayed resume acknowledgement, target destruction and
+late initialization completion. The fix sends no additional native command and
+does not extend the attachment timeout or replay setup. Native browser validation
+is pending; this race has not been established as the cause of a retained live
+attachment failure or as a CPU improvement.
+
+## Measurement boundaries
+
 The development priority is repeatable startup and responsive use of warmed
 Safari sessions. Approximately 300 seconds is the current cold-start budget;
 it is not a guarantee. Measure foreground readiness, first complete page,
