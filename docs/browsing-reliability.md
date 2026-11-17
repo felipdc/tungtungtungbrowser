@@ -16,6 +16,11 @@ does not extend the attachment timeout or replay setup. Native browser validatio
 is pending; this race has not been established as the cause of a retained live
 attachment failure or as a CPU improvement.
 
+Failed attachment preserves its stage and target-readiness counts before cleanup
+in `attachment_failure` and an exception note. Cleanup can wake waiters without
+erasing that observation. It contains no URL or page content and retains the
+original exception and timeout.
+
 ## Measurement boundaries
 
 The development priority is repeatable startup and responsive use of warmed

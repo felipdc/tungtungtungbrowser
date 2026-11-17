@@ -120,6 +120,44 @@ def fixture(**options):
 
 
 class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_attachment_timeout_preserves_precleanup_target_state_without_replay(self):
+        session, native, guest = fixture(retain_tab=True)
+        async def attach(session_id, app_id, page_id, **options):
+            native.events.append('attach')
+            session._receive(session_id, {'method': 'Target.targetCreated', 'params': {
+                'targetInfo': {'targetId': 'provisional', 'type': 'page', 'isProvisional': True}}})
+        native.setup_inspector_socket = attach
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            with self.assertRaises(TimeoutError) as caught:
+                await session.__aenter__()
+        self.assertEqual(session.attachment_failure, {
+            'stage': 'target_initialization', 'error_type': 'TimeoutError',
+            'known_targets': 1, 'initialized_targets': 1,
+            'current_target_known': False, 'current_target_initialized': False,
+            'target_ready': False, 'protocol_failure': False, 'connection_failed': False,
+        })
+        self.assertTrue(session._target_ready.is_set())  # Cleanup woke waiters.
+        self.assertEqual(native.events, ['open', 'attach', 'detach'])
+        self.assertEqual(native.commands,
+            ['Network.enable', 'Page.enable', 'Target.setPauseOnStart'])  # Cleanup releases the hold.
+        self.assertIn('target_initialization', caught.exception.__notes__[0])
+        self.assertNotIn('fixture.invalid', caught.exception.__notes__[0])
+        session.transport.close.assert_awaited_once()
+
+    async def test_attachment_transport_failure_keeps_original_exception_and_empty_target_state(self):
+        session, native, guest = fixture()
+        error = OSError('transport unavailable')
+        session.transport.open.side_effect = error
+        with self.assertRaises(OSError) as caught:
+            await session.__aenter__()
+        self.assertIs(caught.exception, error)
+        self.assertEqual(session.attachment_failure['stage'], 'transport')
+        self.assertEqual(session.attachment_failure['known_targets'], 0)
+        self.assertFalse(session.attachment_failure['target_ready'])
+        self.assertFalse(guest.calls)
+        session.transport.open.assert_awaited_once()
+        session.transport.close.assert_awaited_once()
+
     async def test_initial_eof_recovers_before_opening_one_owned_tab(self):
         session, native, guest = fixture()
         failed = SimpleNamespace(connect=AsyncMock(side_effect=_InitialInspectorEOF('initial EOF')))

@@ -239,6 +239,7 @@ class InspectorSession:
         self._auxiliary_targets = set()
         self.retired_target_resumes = 0
         self._target_ready = asyncio.Event()
+        self.attachment_failure = None
         self._id = 0
         self._session_id = str(uuid.uuid4()).upper()
         self._inspector = self._app = self._page = self.target_id = None
@@ -311,10 +312,12 @@ class InspectorSession:
     async def __aenter__(self):
         if self._inspector is not None or self._closed:
             raise InspectorError('Inspector session is single-use')
+        stage = 'transport'
         try:
             async with asyncio.timeout(self.timeout):
                 service = await self.transport.open()
                 while True:
+                    stage = 'native_connection'
                     service.max_frame_size = 32 * 1024**2
                     self._inspector = _direct_inspector(service, self._receive,
                         self._disconnected)
@@ -330,11 +333,14 @@ class InspectorSession:
                             raise
                     else:
                         break
+                stage = 'applications'
                 await self._inspector._get_connected_applications()
                 if self.new_tab or self.new_tab_url is not None:
+                    stage = 'tab_creation'
                     await self._create_tab()
                 # Listings are asynchronous. Wait for an unambiguous matching tab;
                 # never silently choose another tab on an explicitly requested URL.
+                stage = 'tab_selection'
                 while True:
                     matches = [(app, page) for app in self._inspector.connected_application.values()
                                if app.bundle == 'com.apple.mobilesafari'
@@ -354,13 +360,29 @@ class InspectorSession:
                     self._check()
                     await asyncio.sleep(0.05)
                 self._attached = True  # A failed send may already have reached the service.
+                stage = 'socket_setup'
                 await self._inspector.setup_inspector_socket(self._session_id,
                     self._app.id_, self._page.id_, automatically_pause=False)
+                stage = 'target_initialization'
                 await self._target_ready.wait()
                 self._check()
+                stage = 'pause_on_start'
                 await self._root_command('Target.setPauseOnStart', pauseOnStart=True)
                 return self
         except BaseException as error:
+            # Cleanup wakes readiness waiters and replaces the failure state.
+            # Preserve the pre-cleanup observation without URLs or page content.
+            self.attachment_failure = {
+                'stage': stage, 'error_type': type(error).__name__,
+                'known_targets': len(self._targets),
+                'initialized_targets': len(self._initialized_targets),
+                'current_target_known': self.target_id in self._targets,
+                'current_target_initialized': self.target_id in self._initialized_targets,
+                'target_ready': self._target_ready.is_set(),
+                'protocol_failure': self._failure is not None,
+                'connection_failed': self._connection_error is not None,
+            }
+            error.add_note('Inspector attachment: ' + json.dumps(self.attachment_failure, sort_keys=True))
             try:
                 await self.close()
             except Exception as cleanup_error:
