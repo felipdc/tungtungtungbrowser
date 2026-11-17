@@ -66,6 +66,30 @@ def check_vm_access(vm, source):
             'file permissions. See docs/setup.md#filesystem-access.') from exc
 
 
+def check_renderer_access(directory):
+    """Check an optional diagnostic destination before starting the runtime."""
+    if not directory:
+        return
+    path = Path(directory)
+    try:
+        if not path.is_absolute():
+            raise ValueError('renderer diagnostic directory must be absolute')
+        path = path.resolve()
+        # The launcher creates missing descendants. Check their nearest existing
+        # parent without creating persistent directories in a guest parent image.
+        while not path.exists():
+            path = path.parent
+        if not path.is_dir():
+            raise ValueError('renderer diagnostic ancestor is not a directory')
+        with tempfile.NamedTemporaryFile(prefix='.ttt-render-access-', dir=path):
+            pass
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f'Cannot write renderer diagnostics to {directory}: {exc}. '
+            'Set REIMS_VGPU_CENSUS_DIR to a writable container directory; '
+            'a read-only parent image cannot store diagnostics.') from exc
+
+
 def stop_guest(process, guest, grace_seconds, *, clock=None):
     """Ask iOS to flush/shut down before escalating; preserve the observed outcome."""
     if clock is not None:
@@ -125,6 +149,7 @@ def main():
         parser.error("QEMU paths cannot contain commas")
     try:
         check_vm_access(vm, source)
+        check_renderer_access(os.environ.get('REIMS_VGPU_CENSUS_DIR', ''))
     except RuntimeError as exc:
         parser.error(str(exc))
     if args.check_access:

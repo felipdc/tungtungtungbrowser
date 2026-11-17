@@ -119,7 +119,11 @@ docker compose -f runtime/compose.yaml run --rm --no-deps iphone \
 The check opens existing disk/state files without writing or truncating them,
 creates and removes a temporary file in the bundle and any existing cache
 directories, and checks the runtime launcher. It reports the container UID/GID
-and failing path. Normal startup performs this check too. It does not start
+and failing path. When `REIMS_VGPU_CENSUS_DIR` is enabled, it also checks the
+diagnostic directory or its nearest existing parent without creating persistent
+directories. Use an absolute path on a writable child mount; Compose sets this
+value through `TTT_RENDER_DIAGNOSTICS_DIR`. Normal startup performs these checks
+too. It does not start
 QEMU, validate firmware, verify runtime libraries, or establish that another
 emulator has released the disk. A successful check covers filesystem access
 only; retain the separate native readiness and page-rendering checks.

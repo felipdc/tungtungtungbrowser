@@ -26,10 +26,46 @@ class VMAccessTest(unittest.TestCase):
         self.launcher.write_text('#!/bin/sh\ntouch "$1/emulator-started"\n')
         self.launcher.chmod(0o755)
 
-    def check(self):
+    def check(self, diagnostics=None):
+        environment = os.environ.copy()
+        environment.pop('REIMS_VGPU_CENSUS_DIR', None)
+        if diagnostics is not None:
+            environment['REIMS_VGPU_CENSUS_DIR'] = str(diagnostics)
         return subprocess.run([sys.executable, str(SCRIPT), str(self.vm),
                                '--source', str(self.source), '--check-access'],
-                              capture_output=True, text=True, timeout=10)
+                              env=environment, capture_output=True, text=True, timeout=10)
+
+    def test_missing_diagnostic_directory_checks_parent_without_creating_it(self):
+        target = self.vm / 'diagnostics/new-census'
+        result = self.check(target)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(target.parent.exists())
+        self.assertFalse((self.vm / 'emulator-started').exists())
+
+    def test_diagnostic_destination_below_file_is_rejected(self):
+        result = self.check(self.vm / 'Disk.img/census')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('not a directory', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertFalse((self.vm / 'emulator-started').exists())
+
+    def test_relative_diagnostic_destination_is_rejected_before_launch(self):
+        result = self.check('census')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('must be absolute', result.stderr)
+        self.assertFalse((self.vm / 'emulator-started').exists())
+
+    @unittest.skipIf(os.geteuid() == 0, 'unrestricted root may bypass directory modes')
+    def test_diagnostic_destination_under_read_only_parent_is_rejected(self):
+        parent = self.root / 'parent'
+        parent.mkdir(mode=0o500)
+        self.addCleanup(parent.chmod, 0o700)
+        result = self.check(parent / 'census')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Cannot write renderer diagnostics', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertFalse((parent / 'census').exists())
+        self.assertFalse((self.vm / 'emulator-started').exists())
 
     def test_success_preserves_files_and_does_not_start_emulator(self):
         (self.vm / 'cache/mesa').mkdir(parents=True)
