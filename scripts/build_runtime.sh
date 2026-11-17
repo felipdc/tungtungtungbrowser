@@ -13,8 +13,6 @@ git -C "$src" fetch origin "$commit"
 git -C "$src" checkout --detach "$commit"
 # Bound build memory on a 16 GiB CPU-only host.
 export CARGO_BUILD_JOBS=2 CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2
-export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-if [ ! -f "$VK_DRIVER_FILES" ]; then export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json; fi
 export LP_NUM_THREADS=1
 export VPHONE_CPUS=
 cd "$src"
@@ -28,6 +26,9 @@ s = s.replace('else extra+=(linux-headers-generic); fi',
 p.write_text(s)
 PY
 ./setup/setup.sh deps -y
+# Resolve the native CPU driver after the dependency installer has supplied it.
+VK_DRIVER_FILES=$(python3 "$root/tungtungtungbrowser/lavapipe.py")
+export VK_DRIVER_FILES VK_ICD_FILENAMES="$VK_DRIVER_FILES"
 if [ -r "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
 ./setup/setup.sh sources -y
 # The vresearch101 CPU uses the M1 register layout. Keep user-space JIT

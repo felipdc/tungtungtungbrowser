@@ -15,6 +15,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tungtungtungbrowser.guest import Guest, GuestError
 from tungtungtungbrowser.vm_lease import lease_vm
+from tungtungtungbrowser.lavapipe import select_manifest
 from tungtungtungbrowser.clock import (ClockMaintenance, CLOCK_RPC_TIMEOUT_SECONDS,
                                      HEALTH_RPC_TIMEOUT_SECONDS)
 
@@ -131,12 +132,13 @@ def main():
                           'source': str(source), 'uid': os.geteuid(), 'gid': os.getegid(),
                           'guest_started': False}))
         return
-    candidates = sorted(Path('/usr/share/vulkan/icd.d').glob('lvp_icd*.json'))
-    if not candidates:
-        parser.error("Mesa lavapipe is required; hardware GPUs are not supported")
+    try:
+        driver = select_manifest()
+    except RuntimeError as exc:
+        parser.error(str(exc))
     # Only select Mesa's CPU ICD; do not inherit the host's driver selection.
     env = os.environ | {
-        "VK_DRIVER_FILES": str(candidates[0]), "VK_ICD_FILENAMES": str(candidates[0]),
+        "VK_DRIVER_FILES": str(driver), "VK_ICD_FILENAMES": str(driver),
         "LP_NUM_THREADS": str(args.render_threads), "GFX": "1", "WINDOW": "0", "TOOLBAR": "0",
         "MEM": f"{args.memory_gib}G", "SMP": str(args.cpus), "CID": str(args.cid),
         "TB_SIZE": str(args.tcg_cache_mib),

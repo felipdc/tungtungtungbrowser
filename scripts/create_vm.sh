@@ -32,9 +32,8 @@ if [ "$apfs_kernel" != "$(uname -r)" ]; then
   make -C "$apfs" clean
   make -C "$apfs" -j2
 fi
-export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
-if [ ! -f "$VK_DRIVER_FILES" ]; then export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json; fi
-export VK_ICD_FILENAMES=$VK_DRIVER_FILES
+VK_DRIVER_FILES=$(python3 "$root/tungtungtungbrowser/lavapipe.py")
+export VK_DRIVER_FILES VK_ICD_FILENAMES="$VK_DRIVER_FILES"
 export LP_NUM_THREADS=1 MEM=6G SMP=4 WINDOW=0 TOOLBAR=0 VPHONE_CPUS=
 # Slow CPU-only filesystem verification can leave a USB bulk-IN request idle
 # beyond the exporter's 300-second default. Keep that request pending while
