@@ -105,6 +105,17 @@ class NativeHomeUnlockTests(unittest.TestCase):
         self.assertEqual(self.reads, 0)
         self.assertEqual(self.buttons, [])
 
+    def test_read_finishing_after_deadline_cannot_authorize_input(self):
+        now = [0]
+        buttons = []
+        def slow_read():
+            now[0] = 10
+            return state()
+        with self.assertRaises(TimeoutError):
+            unlock_native_home(slow_read, buttons.append, deadline=5,
+                               clock=lambda: now[0])
+        self.assertEqual(buttons, [])
+
 
 if __name__ == '__main__':
     unittest.main()

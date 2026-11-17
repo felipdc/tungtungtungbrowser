@@ -62,9 +62,10 @@ still follow.
 
 Each button request is journaled before dispatch, including its name. Unknown
 outcomes, malformed replies and unmet postconditions stop startup; buttons are
-never repeated and there is no fallback unlock attempt. The operation uses at
-most the remaining original deadline or a 90-second window. Notification reads
-are sequential, so consistent observations do not make them an atomic snapshot.
+never repeated and there is no fallback unlock attempt. The observation budget
+is the smaller of the remaining original deadline and 90 seconds. A bounded
+request can finish after that budget; no further input is then sent. Notification
+reads are sequential, so consistent observations do not make them an atomic snapshot.
 This optional path has unit and entrypoint coverage; native qualification is
 pending. The default remains `--unlock-method screen-unlock`.
 
