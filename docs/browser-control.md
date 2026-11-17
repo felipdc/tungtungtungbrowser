@@ -28,7 +28,7 @@ identity does not establish readiness, and a screenshot still needs visual
 review. If readiness fails and QMP is configured, it also attempts a
 separate `.failure.png` display capture with a five-second QMP deadline. A failure
 capture does not establish readiness, and its own error does not replace the
-original failure. Unlock input and the Safari launch request are each sent once.
+original failure. By default, the unlock RPC and Safari launch request are each sent once.
 An unlock error, including a connection reset or a reply that still reports a
 locked screen, stops the measurement before Safari launch. Inspect the retained
 report and display before starting another readiness command; a failed transport
@@ -49,6 +49,24 @@ and configured transport timeout. `response_received` means the controller
 returned a reply; the separate foreground, rendering and navigation checks
 still apply. A locked-screen reply, for example, leaves that request recorded
 as received while failing readiness.
+
+The experimental `scripts/measure_ready.py --unlock-method native-home` option
+uses native startup, lock and display notifications instead of the broad device
+snapshot inside the daemon's usual unlock method. It requires two consistent
+observations after SpringBoard startup. A dark display receives one Power-button
+event, followed by fresh confirmation that it is lit. A locked, lit screen then
+receives one Home-button event. An already unlocked, lit screen needs no input.
+It confirms the unlocked/lit notification state afterward; it does not enter a
+passcode or establish visible readiness. Safari foreground and image checks
+still follow.
+
+Each button request is journaled before dispatch, including its name. Unknown
+outcomes, malformed replies and unmet postconditions stop startup; buttons are
+never repeated and there is no fallback unlock attempt. The operation uses at
+most the remaining original deadline or a 90-second window. Notification reads
+are sequential, so consistent observations do not make them an atomic snapshot.
+This optional path has unit and entrypoint coverage; native qualification is
+pending. The default remains `--unlock-method screen-unlock`.
 
 On a structured transport error, the entry also retains `transport.phase`,
 `transport.errno` and `transport.request_may_have_been_sent`. A failure in

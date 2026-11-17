@@ -56,6 +56,57 @@ def usable_guest_ip(value):
                 or str(address) == '255.255.255.255')
 
 
+def unlock_native_home(read_state, send_button, *, deadline,
+                       clock=time.monotonic, sleep=time.sleep):
+    """Observe startup, wake once if dark, then send Home at most once.
+
+    Notification reads do not prove visible readiness. Never repeat a button
+    after a missing acknowledgement or an unmet postcondition; a passcode screen
+    therefore remains a failed unlock. The caller journals every original RPC.
+    """
+    def observe_until(predicate):
+        previous = None
+        while clock() < deadline:
+            value = read_state()
+            if (not isinstance(value, dict) or value.get('source') != 'darwin_notify'
+                    or type(value.get('springboard_started')) is not bool):
+                raise GuestError('Invalid native startup notification state')
+            if clock() >= deadline:
+                raise TimeoutError('Native Home unlock deadline exceeded')
+            if value['springboard_started']:
+                if any(type(value.get(k)) is not bool for k in ('locked', 'screen_off')):
+                    raise GuestError('Native lock/display state is unknown')
+                current = (value['locked'], value['screen_off'])
+                if current == previous and predicate(value):
+                    return value
+                previous = current
+            else:
+                previous = None
+            sleep(min(0.5, max(0, deadline - clock())))
+        raise TimeoutError('Native Home unlock deadline exceeded')
+
+    def press(name):
+        if clock() >= deadline:
+            raise TimeoutError('Native Home unlock deadline exceeded before input')
+        reply = send_button(name)
+        if not isinstance(reply, dict) or reply.get('button') != name:
+            raise GuestError('Native button was not acknowledged; outcome is unknown')
+
+    state = observe_until(lambda value: True)
+    buttons = []
+    if state['screen_off']:
+        press('power')
+        buttons.append('power')
+        state = observe_until(lambda value: not value['screen_off'])
+    if state['locked']:
+        press('home')
+        buttons.append('home')
+        state = observe_until(lambda value: not value['locked'] and not value['screen_off'])
+    return {'locked': state['locked'], 'screen_off': state['screen_off'],
+            'method': 'native_home', 'buttons': buttons,
+            'source': 'darwin_notify', 'visual_readiness_verified': False}
+
+
 def write_report(path, result, *, exclusive=False):
     """Publish complete JSON; initial creation must not expose an empty file."""
     with tempfile.NamedTemporaryFile(mode='w', dir=path.parent,
@@ -88,6 +139,10 @@ def main(argv=None):
     parser.add_argument('--wait-for-guest-ip', action='store_true',
                         help='Experimental: wait for an assigned guest IP before native input; '
                              'does not verify routing or Safari page readiness')
+    parser.add_argument('--unlock-method', choices=('screen-unlock', 'native-home'),
+                        default='screen-unlock',
+                        help='Experimental native-home observes startup notifications, wakes '
+                             'once if dark and sends Home at most once; never enters a passcode')
     parser.add_argument('--bounded-foreground', action='store_true',
                         help='Experimental: observe foreground through a native session that '
                              'the daemon stops at its deadline; never repeats browser input')
@@ -181,12 +236,14 @@ def main(argv=None):
                 time.sleep(min(5, max(0, deadline - time.monotonic())))
         raise TimeoutError(f'{label} deadline exceeded: {last_error}')
 
-    def request_once(method, timeout, operation):
+    def request_once(method, timeout, operation, *, parameters=None):
         # Publish before sending. A timeout ends the host's wait, not the native
         # operation. Keep that uncertainty and its original timing in the report.
         started = time.monotonic()
         request = {'method': method, 'status': 'in_flight',
                    'started_seconds': started - start, 'timeout_seconds': timeout}
+        if parameters is not None:
+            request['parameters'] = parameters
         result['once_only_requests'].append(request)
         checkpoint()
         try:
@@ -254,8 +311,40 @@ def main(argv=None):
         if remaining <= 0:
             raise TimeoutError('Screen unlock deadline exceeded')
         try:
-            value = request_once('screen.unlock', min(90, remaining),
-                                 lambda guest: guest.call('screen.unlock', timeout=60))
+            if args.unlock_method == 'native-home':
+                unlock_deadline = min(deadline, time.monotonic() + 90)
+                result['unlock_method'] = 'native_home'
+                observations = result['unlock_screen_observations'] = []
+
+                def read_state():
+                    alive()
+                    row = {'started_seconds': time.monotonic() - start}
+                    observations.append(row)
+                    checkpoint()
+                    try:
+                        value = Guest(launch['cid'], timeout=min(
+                            10, max(0.1, unlock_deadline - time.monotonic()))).screen_state()
+                        row['response'] = value
+                        return value
+                    except Exception as exc:
+                        row['error'] = str(exc)
+                        raise
+                    finally:
+                        row['finished_seconds'] = time.monotonic() - start
+                        checkpoint()
+
+                def send_button(name):
+                    alive()
+                    return request_once('input.button', min(
+                        30, max(0.1, unlock_deadline - time.monotonic())),
+                        lambda guest: guest.call('input.button', name=name),
+                        parameters={'name': name})
+
+                value = unlock_native_home(read_state, send_button, deadline=unlock_deadline)
+                result['unlock_response'] = value
+            else:
+                value = request_once('screen.unlock', min(90, remaining),
+                                     lambda guest: guest.call('screen.unlock', timeout=60))
             if value.get('locked') is not False:
                 raise GuestError('Screen remains locked')
         except GuestError as exc:

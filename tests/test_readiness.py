@@ -64,8 +64,10 @@ class ReadinessTest(unittest.TestCase):
 
     def run_measurement(self, *, qmp=True, sync_clock=False, initial_url=None,
                         wait_for_guest_ip=False, bounded_foreground=False, bounded_launch=False,
-                        launch_services=False):
+                        launch_services=False, unlock_method=None):
         argv = [str(self.vm), '--output', str(self.output)]
+        if unlock_method is not None:
+            argv += ['--unlock-method', unlock_method]
         if launch_services:
             argv += ['--launch-services']
         if bounded_launch:
@@ -81,6 +83,37 @@ class ReadinessTest(unittest.TestCase):
         if qmp:
             argv += ['--qmp-socket', str(self.vm / 'control.sock')]
         measure_ready.main(argv)
+
+    def test_native_home_journals_button_before_dispatch(self):
+        locked = {'source': 'darwin_notify', 'springboard_started': True,
+                  'locked': True, 'screen_off': False}
+        self.guest.screen_state.side_effect = [locked, locked,
+            dict(locked, locked=False), dict(locked, locked=False)]
+        def call(method, **params):
+            if method == 'input.button':
+                self.calls.append((method, self.report()['stage']))
+                request = self.report()['once_only_requests'][-1]
+                self.assertEqual(request['status'], 'in_flight')
+                self.assertEqual(request['parameters'], {'name': 'home'})
+                return {'button': 'home'}
+            return self.native(method, **params)
+        self.guest.call.side_effect = call
+        self.run_measurement(unlock_method='native-home')
+        self.assertEqual(self.report()['status'], 'complete')
+        self.assertNotIn('screen.unlock', [method for method, _ in self.calls])
+        self.assertEqual(self.report()['unlock_response']['buttons'], ['home'])
+
+    def test_native_home_timeout_prevents_launch_and_second_input(self):
+        locked = {'source': 'darwin_notify', 'springboard_started': True,
+                  'locked': True, 'screen_off': False}
+        self.guest.screen_state.return_value = locked
+        self.guest.call.side_effect = GuestTransportError('receive_headers', TimeoutError('timeout'))
+        with self.assertRaisesRegex(GuestError, 'not retrying native input'):
+            self.run_measurement(unlock_method='native-home')
+        self.guest.call.assert_called_once_with('input.button', name='home')
+        self.assertEqual(self.report()['once_only_requests'][0]['parameters'], {'name': 'home'})
+        self.assertTrue(self.report()['once_only_requests'][0]['transport']['request_may_have_been_sent'])
+        self.assertEqual(self.guest.screen_state.call_count, 2)
 
     def report(self):
         return json.loads(self.output.read_text())
