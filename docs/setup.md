@@ -53,8 +53,9 @@ Driver selection supports both x86-64 and ARM64 Lavapipe manifest names and
 rejects a manifest for a different architecture. Build-time selection happens
 after dependency installation. On 2026-11-17, the selector's five tests and a
 native CPU Vulkan device check passed on an eight-core Graviton5 host. This
-checks driver discovery; current ARM guest rendering and browser performance
-still require validation.
+checks driver discovery. Subsequent native builds, numerical checks and local
+Safari findings are recorded in the [Graviton investigation](graviton-investigation.md).
+Correct ARM product rendering and browser performance still require validation.
 
 The optional [ARM64 memory-access check](../native/README.md#arm64-linux-memory-access-check)
 can test some native instruction requirements before a runtime build. Passing
