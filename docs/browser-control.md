@@ -66,6 +66,11 @@ never repeated and there is no fallback unlock attempt. The observation budget
 is the smaller of the remaining original deadline and 90 seconds. A bounded
 request can finish after that budget; no further input is then sent. Notification
 reads are sequential, so consistent observations do not make them an atomic snapshot.
+Within that same budget, at most two notification transport failures can be
+followed by a fresh read. Every failure discards the previous stability
+observation; two complete consistent observations are still required. This
+applies only to read-only native notifications. Button requests, malformed
+notification data and native-operation errors are never retried.
 This optional path has unit and entrypoint coverage. In one eight-core AMD
 cohort, all four phones acknowledged exactly one Home event, passed the unlock
 postcondition and completed Safari startup. A Graviton cohort completed the
