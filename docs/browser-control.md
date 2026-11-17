@@ -66,7 +66,12 @@ never repeated and there is no fallback unlock attempt. The observation budget
 is the smaller of the remaining original deadline and 90 seconds. A bounded
 request can finish after that budget; no further input is then sent. Notification
 reads are sequential, so consistent observations do not make them an atomic snapshot.
-This optional path has unit and entrypoint coverage; native qualification is
+This optional path has unit and entrypoint coverage. In one eight-core AMD
+cohort, all four phones acknowledged exactly one Home event, passed the unlock
+postcondition and completed Safari startup. A Graviton cohort completed the
+first phone's startup, but its second phone stayed locked for the full
+observation budget after acknowledging Home. The original lock-screen image
+confirmed that failure; no button was repeated. Product qualification remains
 pending. The default remains `--unlock-method screen-unlock`.
 
 On a structured transport error, the entry also retains `transport.phase`,

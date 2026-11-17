@@ -262,3 +262,36 @@ All guests and helpers closed cleanly and the evidence was archived.
 Future comparisons must apply the same bounded login-recovery policy in both
 arms, retaining login failures and including proxy-reset overhead in batch CPU
 and wall time. The previous fixed-session runs are not reclassified.
+
+
+## Eight-core startup milestone (2026-11-17)
+
+The experimental observed Home unlock was exercised with four serially started
+phones on an eight-physical-core, eight-vCPU AMD host. Each phone used three
+application CPUs plus SEP, a four-CPU container quota and one renderer thread.
+The startup scheduling boost was restored to equal weights before each phone
+became ready. All four phones reached full startup in 250.521, 350.817, 383.295
+and 393.259 seconds from their individual launches. Each sent one acknowledged
+Home event and independently observed the unlocked/lit state. These are cold
+startup durations, separate from the requested 75-second product-load target.
+
+All four original startup images show native Safari. The first restored a
+product's main image with title/price placeholders; the others show Shopee's
+language selector and cookie banner. No scheduled product capture ran. An added
+harness clock check rejected the fourth phone's observed +4.514 to +4.552-second
+offset before product work. That two-second clock gate was an extra condition,
+not part of the requested product success/latency criteria. The retained cohort
+remains 0/32, with no product-latency or CPU-saving claim. All guests closed
+cleanly, parent images were unchanged and the host stopped.
+
+A Graviton trial with the same unlock option completed its first phone's startup
+and rendered the language/cookie screen. Its second phone acknowledged Home in
+0.149 seconds but remained locked through the 90-second observation deadline;
+the original image confirmed the lock screen. No Safari launch was requested
+for that phone. Both started guests closed cleanly and the host stopped.
+
+The option remains experimental and the default unlock method is unchanged.
+Prospective trials record clock skew separately and retain eight distinct normal
+product URLs per phone, at least five successes per phone, per-phone p95 at most
+75 seconds and original rendered-page evidence. The four-phone product goal is
+still unqualified on either eight-core architecture.
