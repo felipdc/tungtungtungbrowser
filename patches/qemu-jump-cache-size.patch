@@ -1,0 +1,18 @@
+--- a/accel/tcg/tb-jmp-cache.h
++++ b/accel/tcg/tb-jmp-cache.h
+@@ -12,7 +12,14 @@
+ #include "qemu/rcu.h"
+ #include "exec/cpu-common.h"
+ 
+-#define TB_JMP_CACHE_BITS 17
++/* Optional build-time experiment; retain the pinned 17-bit default. */
++#ifndef VPHONE_TB_JMP_CACHE_BITS
++#define VPHONE_TB_JMP_CACHE_BITS 17
++#endif
++#if VPHONE_TB_JMP_CACHE_BITS < 12 || VPHONE_TB_JMP_CACHE_BITS > 17
++#error "VPHONE_TB_JMP_CACHE_BITS must be between 12 and 17"
++#endif
++#define TB_JMP_CACHE_BITS VPHONE_TB_JMP_CACHE_BITS
+ #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
+ 
+ /*
