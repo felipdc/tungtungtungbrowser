@@ -56,7 +56,11 @@ class MinimalServicePolicy:
         return verify_after_boot(self.directory, stopped=clean_exit, **self._arguments())
 
     def restore(self):
-        return restore_enablement(self.directory, **self._arguments())
+        # Work admission may already be closed when cleanup begins. Restoration
+        # still requires the same verified live guest on every operation.
+        arguments = self._arguments()
+        arguments.pop('closing')
+        return restore_enablement(self.directory, **arguments)
 
 
 def _write(path, value, *, exclusive=False):

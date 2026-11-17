@@ -17,8 +17,9 @@ observe the running container's ID, host PID and `/proc` start ticks, the host
 boot ID, guest CID and launch timestamp. The returned dictionary uses these
 keys: `container_id`, `host_pid`, `host_start_ticks`, `host_boot_id`, `cid` and
 `launch_started_unix`. Never supply a constant dictionary in place of a live
-ownership observation. The `closing` callback prevents further operations
-after the orchestrator begins closure.
+ownership observation. The `closing` callback prevents configuration and
+verification work after the orchestrator begins closure. Restoration remains
+available during closure, subject to the same live ownership checks.
 
 ```python
 from tungtungtungbrowser.guest import Guest
@@ -52,9 +53,8 @@ guest is still owned and usable. Restoration returns the four jobs to their
 original enabled configuration and verifies every unrelated override,
 including explicit enabled entries. It does not recreate original process
 IDs or remove explicit enabled override entries added by the native API.
-Use a cleanup instance with the same ownership observation if the normal
-work callback already reports closure; cleanup still requires that exact
-running guest and a completed prior verification.
+Cleanup still requires that exact running guest and a completed prior
+verification.
 
 Every mutation is journaled and flushed before its one request. Existing
 configuration, verification and restoration records prevent replay. Partial

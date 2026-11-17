@@ -177,11 +177,12 @@ class PersistentServicesTests(unittest.TestCase):
 
     def test_wrapper_requires_three_explicit_stages(self):
         policy = MinimalServicePolicy(self.path, guest=SimpleNamespace(cid=42, _rpc=self.rpc),
-                                     ownership=lambda: self.live)
+                                     ownership=lambda: self.live, closing=lambda: self.closing)
         self.assertEqual(policy.configure()['status'], 'configured_requires_clean_boot')
         self.assertEqual([m for m, _ in self.rpc.mutations()], ['services.disable'] * 4)
         self.next_boot()
         self.assertEqual(policy.verify(self.exit)['status'], 'verified_after_clean_boot_requires_product_validation')
+        self.closing = True
         self.assertEqual(policy.restore()['status'], 'enablement_configuration_restored')
         self.assertEqual([m for m, _ in self.rpc.mutations()], ['services.disable'] * 4 + ['services.enable'] * 4)
 

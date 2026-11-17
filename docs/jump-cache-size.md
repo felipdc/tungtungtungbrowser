@@ -35,7 +35,7 @@ navigation/rendering checks. Then run a fresh four-phone product cohort with
 eight distinct normal product URLs per phone, retaining every scheduled failure,
 requiring at least five successful captures on each phone and per-phone p95 at
 most 75 seconds. Compare CPU cost over successful workloads and review original
-host/native images. Native validation is pending. Architecture-independent
+host/native images. Full four-phone qualification is pending. Architecture-independent
 source does not establish that an ARM build or browser run has passed.
 
 The disk-free instruction-update check assembles a project-authored fixture,
@@ -63,6 +63,11 @@ Both 17-bit control and 14-bit candidate passed all four instruction-update
 cases. Compiler checks accepted the preserved default and 12/14/17-bit values,
 and rejected values outside the supported range. These checks establish only
 the stated synthetic behavior; browser qualification and CPU benefit remain
-pending.
+pending. A combined native trial with two application CPUs per phone and a
+reduced service configuration reached Safari and Inspector attachment on all
+four phones. Two phones captured 8/8 products each with p95 below 75 seconds;
+the other two returned login responses for all eight products. That 16/32
+result does not qualify the four-phone target or isolate the cache's CPU
+effect. See the [service-policy limitations](minimal-services.md).
 
 This patch modifies GPL-covered QEMU code; see [third-party notices](../THIRD_PARTY_NOTICES.md).
