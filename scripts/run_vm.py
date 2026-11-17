@@ -134,6 +134,9 @@ def main():
     parser.add_argument("--clock-interval-seconds", type=float,
                         default=os.environ.get('TTT_CLOCK_INTERVAL_SECONDS', '0'),
                         help="Native clock maintenance: 0 disables it; otherwise 10–3600 seconds")
+    parser.add_argument('--clock-startup-timeout-seconds', type=float,
+                        default=os.environ.get('TTT_CLOCK_STARTUP_TIMEOUT_SECONDS', '600'),
+                        help='Initial read-only guest/clock readiness budget: 30–3600 seconds')
     args = parser.parse_args()
     try:
         vm, source = args.vm.resolve(strict=True), args.source.resolve(strict=True)
@@ -145,6 +148,8 @@ def main():
         parser.error("Shutdown timeout must be between 1 and 110 seconds")
     if args.clock_interval_seconds != 0 and not 10 <= args.clock_interval_seconds <= 3600:
         parser.error("Clock interval must be 0 or between 10 and 3600 seconds")
+    if not 30 <= args.clock_startup_timeout_seconds <= 3600:
+        parser.error('Clock startup timeout must be between 30 and 3600 seconds')
     if ',' in str(vm) or ',' in str(source):
         parser.error("QEMU paths cannot contain commas")
     try:
@@ -202,6 +207,7 @@ def main():
                                          vm / ('clock-' + uuid.uuid4().hex + '.json'),
                                          args.clock_interval_seconds,
                                          launch_started_unix=start_wall,
+                                         startup_timeout=args.clock_startup_timeout_seconds,
                                          health_guest=Guest(args.cid, timeout=HEALTH_RPC_TIMEOUT_SECONDS))
             process = subprocess.Popen([str(source / 'run-vphone.sh'), str(vm),
                                         '-qmp', f'unix:{qmp},server=on,wait=off',
@@ -225,6 +231,7 @@ def main():
                        "clock_maintenance": {
                            "enabled": clock is not None,
                            "interval_seconds": args.clock_interval_seconds,
+                           "startup_timeout_seconds": args.clock_startup_timeout_seconds,
                            "health_timeout_seconds": HEALTH_RPC_TIMEOUT_SECONDS,
                            "offer_timeout_seconds": CLOCK_RPC_TIMEOUT_SECONDS,
                            "state_file": str(clock.path) if clock is not None else None},

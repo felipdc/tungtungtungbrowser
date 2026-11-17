@@ -1,17 +1,47 @@
 """Run the filesystem check against real mounts/files without a guest runtime."""
 import json
+import contextlib
+import io
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from scripts import run_vm
+from tungtungtungbrowser.guest import GuestError
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/run_vm.py'
 
 
 class VMAccessTest(unittest.TestCase):
+    def test_launcher_passes_and_records_explicit_clock_startup_budget(self):
+        class OfflineGuest:
+            def health(self):
+                raise GuestError('fixture has no guest')
+
+        # A real short-lived child exercises launcher/worker lifecycle without
+        # QEMU, firmware or a connection to an actual guest.
+        self.launcher.write_text('#!/bin/sh\nsleep 0.15\n')
+        (self.root/'leases').mkdir(mode=0o700)
+        argv = ['run_vm.py', str(self.vm), '--source', str(self.source),
+                '--cid', '55555', '--lease-dir', str(self.root/'leases'),
+                '--clock-interval-seconds', '10', '--clock-startup-timeout-seconds', '1500']
+        with patch.object(sys, 'argv', argv), patch.object(run_vm, 'Guest', return_value=OfflineGuest()), \
+                patch.object(run_vm, 'select_manifest', return_value=self.root/'unused-icd.json'), \
+                patch.object(run_vm.signal, 'signal'), patch.dict(os.environ, {'REIMS_VGPU_CENSUS_DIR': ''}), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            run_vm.main()
+        self.assertEqual(caught.exception.code, 0)
+        launch = json.loads((self.vm/'launch.json').read_text())
+        self.assertEqual(launch['clock_maintenance']['startup_timeout_seconds'], 1500)
+        state = json.loads(Path(launch['clock_maintenance']['state_file']).read_text())
+        self.assertEqual(state['startup_timeout_seconds'], 1500)
+        self.assertEqual(state['offers'], 0)
+        self.assertEqual(state['status'], 'stopped')
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

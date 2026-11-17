@@ -21,6 +21,13 @@ class ReadyClockGuest:
 
 
 class ClockMaintenanceTest(unittest.TestCase):
+    def test_invalid_startup_budget_does_not_create_state(self):
+        for timeout in (0, -1, float('nan'), float('inf'), 3601, True):
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                ClockMaintenance(ReadyClockGuest(), self.path, 10,
+                                 launch_started_unix=123, startup_timeout=timeout)
+            self.assertFalse(self.path.exists())
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

@@ -597,6 +597,20 @@ timeouts, explain every earlier failure, or establish faster cold startup.
 
 ## Reading the guest clock
 
+The launcher waits up to 600 seconds for initial guest and clock readiness by
+default. Slow cold boots can set `--clock-startup-timeout-seconds` (30–3600), or
+`TTT_CLOCK_STARTUP_TIMEOUT_SECONDS` in Compose. Registered phones can persist the
+same `clock_startup_timeout_seconds` resource setting. Choose it before launch
+to cover the intended cold-start window; the selected value is recorded in both
+`launch.json` and the clock-worker state.
+
+This budget covers the initial read-only readiness checks. It does not extend
+individual clock RPCs, change the periodic interval, retry a failed offer or
+restart a failed worker. Native readiness still rejects a failed managed clock
+before issuing input. A child-process regression verifies that the launcher's
+selected budget reaches the real worker and that shutdown sends no offer when
+no guest becomes ready.
+
 `Browser.clock_state()` and the `clock-state` CLI command send `time.clock`
 with empty parameters. The pinned daemon's
 [`executeClock`](https://github.com/Lakr233/vphone-cli/blob/2.14.2/VPhoneDaemon/Daemon/GuestAPI%2BClock.swift)

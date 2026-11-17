@@ -19,6 +19,13 @@ from tungtungtungbrowser.vm_lease import lease_vm
 
 
 class InstanceIsolationTests(unittest.TestCase):
+    def test_registered_clock_startup_budget_survives_environment_isolation(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
+                 resources={'clock_startup_timeout_seconds': 1500})
+        with patch.dict(os.environ, {'TTT_CLOCK_STARTUP_TIMEOUT_SECONDS': '600'}):
+            _, environment = compose_command(self.registry, 'a', 'config', [])
+        self.assertEqual(environment['TTT_CLOCK_STARTUP_TIMEOUT_SECONDS'], '1500')
+
     def test_resize_rejects_old_cpu_mask_before_any_docker_operation(self):
         register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, cpuset='8-11')
         argv = ['phone_instance.py', '--registry', str(self.registry), 'compose', 'a', 'up', '-d']

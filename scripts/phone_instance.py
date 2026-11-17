@@ -22,6 +22,7 @@ RESOURCE_OPTIONS = {
     'tcg_cache_mib': ('TTT_TCG_CACHE_MIB', int, 256, 2048, ''),
     'render_threads': ('TTT_RENDER_THREADS', int, 1, 4, ''),
     'shm_mib': ('TTT_SHM_SIZE', int, 1024, 65536, 'm'),
+    'clock_startup_timeout_seconds': ('TTT_CLOCK_STARTUP_TIMEOUT_SECONDS', int, 30, 3600, ''),
 }
 
 

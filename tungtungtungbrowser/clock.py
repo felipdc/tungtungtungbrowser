@@ -1,5 +1,6 @@
 """Native clock offers owned by one VM launcher, with explicit lifecycle state."""
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -26,6 +27,9 @@ class ClockMaintenance:
                  startup_timeout=600, health_interval=5, health_guest=None):
         if not 10 <= interval <= 3600:
             raise ValueError('Clock interval must be between 10 and 3600 seconds')
+        if (type(startup_timeout) not in (int, float) or not math.isfinite(startup_timeout)
+                or not 0 < startup_timeout <= 3600):
+            raise ValueError('Clock startup timeout must be finite, positive and at most 3600 seconds')
         self.guest = guest
         self.health_guest = guest if health_guest is None else health_guest
         self.path = Path(path)
@@ -37,6 +41,7 @@ class ClockMaintenance:
         self.state = {
             'status': 'prepared', 'launch_started_unix': launch_started_unix,
             'interval_seconds': interval, 'health_checks': 0, 'clock_checks': 0, 'offers': 0,
+            'startup_timeout_seconds': startup_timeout,
         }
         # Each launch chooses a new file, preserving earlier runs and mode 0600.
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
