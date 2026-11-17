@@ -10,7 +10,8 @@ A 15-second observation of a ready browser attributed about 17% of 689 host
 user-space samples to `tcg_flush_jmp_cache`, with no lost samples. The executable
 and its unstripped symbols had the same build ID. This was a startup observation
 while another phone booted, not a successful product workload or a CPU-saving
-result.
+result. The retained frame showed diagonal rendering artifacts over a language
+and cookie screen, so this profile does not qualify correct page rendering.
 
 The first candidate uses 14 bits: 16,384 entries instead of 131,072. At 48 bytes
 per entry, the entry array falls from 6 MiB to 768 KiB per virtual CPU. Full
