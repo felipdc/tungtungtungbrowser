@@ -84,6 +84,34 @@ class NativeHomeUnlockTests(unittest.TestCase):
         self.assertEqual(self.buttons, ['home'])
         self.assertEqual(self.reads, 2)
 
+    def test_observation_timeout_after_home_never_repeats_input(self):
+        failure = GuestTransportError('receive_headers', TimeoutError('timeout'))
+        result = self.run_unlock([state()] * 2 + [state(False), failure]
+                                 + [state(False)] * 2)
+        self.assertEqual(self.buttons, ['home'])
+        self.assertEqual(self.reads, 6)
+        self.assertEqual(result['notification_transport_failures'], 1)
+
+    def test_failed_observation_cannot_bridge_stability_before_input(self):
+        failure = GuestTransportError('read_body', TimeoutError('timeout'))
+        self.run_unlock([state(), failure, state(False), state(False)])
+        self.assertEqual(self.buttons, [])
+        self.assertEqual(self.reads, 4)
+
+    def test_notification_retry_budget_is_shared_across_input_stages(self):
+        failure = GuestTransportError('receive_headers', TimeoutError('timeout'))
+        with self.assertRaises(GuestTransportError):
+            self.run_unlock([failure, state(), state(), failure, failure])
+        self.assertEqual(self.buttons, ['home'])
+        self.assertEqual(self.reads, 5)
+
+    def test_observation_transport_failure_does_not_extend_deadline(self):
+        failure = GuestTransportError('receive_headers', TimeoutError('timeout'))
+        with self.assertRaises(TimeoutError):
+            self.run_unlock([failure], deadline=.75)
+        self.assertEqual(self.buttons, [])
+        self.assertEqual(self.now, .75)
+
     def test_missing_acknowledgement_is_terminal(self):
         with self.assertRaises(GuestError):
             self.run_unlock([state()] * 2, reply={'button': 'power'})

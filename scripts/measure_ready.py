@@ -62,12 +62,27 @@ def unlock_native_home(read_state, send_button, *, deadline,
 
     Notification reads do not prove visible readiness. Never repeat a button
     after a missing acknowledgement or an unmet postcondition; a passcode screen
-    therefore remains a failed unlock. The caller journals every original RPC.
+    therefore remains a failed unlock. Up to two failed notification reads may
+    be observed again within the original deadline; these reads neither send
+    input nor query UI. The caller journals every original RPC.
     """
+    read_failures = 0
+
     def observe_until(predicate):
+        nonlocal read_failures
         previous = None
         while clock() < deadline:
-            value = read_state()
+            try:
+                value = read_state()
+            except GuestTransportError:
+                read_failures += 1
+                if read_failures > 2:
+                    raise
+                # No partial snapshot, or observation from before a transport
+                # failure, can establish the two consecutive stable reads.
+                previous = None
+                sleep(min(0.5, max(0, deadline - clock())))
+                continue
             if (not isinstance(value, dict) or value.get('source') != 'darwin_notify'
                     or type(value.get('springboard_started')) is not bool):
                 raise GuestError('Invalid native startup notification state')
@@ -104,6 +119,7 @@ def unlock_native_home(read_state, send_button, *, deadline,
         state = observe_until(lambda value: not value['locked'] and not value['screen_off'])
     return {'locked': state['locked'], 'screen_off': state['screen_off'],
             'method': 'native_home', 'buttons': buttons,
+            'notification_transport_failures': read_failures,
             'source': 'darwin_notify', 'visual_readiness_verified': False}
 
 
