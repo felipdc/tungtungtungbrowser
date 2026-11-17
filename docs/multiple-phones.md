@@ -64,6 +64,12 @@ clears inherited `TTT_*` and `COMPOSE_*` settings before supplying the selected
 instance's paths and CID, so a shell configured for another phone cannot silently
 redirect it. Resource settings come from `runtime/api-experimental.env`.
 
+Before `up` or `run`, explicit CPU masks are checked against the CPUs available
+to the controller on the Linux Docker host. A registration copied from a larger
+host cannot start with unavailable CPU IDs after a resize. `config`, `stop` and
+`down` remain available for inspection and cleanup. Omit `--cpuset` to let the
+host scheduler share its available CPUs; a per-container CPU quota still applies.
+
 For measured resource experiments, record overrides when registering each phone:
 
 ```sh

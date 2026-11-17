@@ -19,6 +19,38 @@ from tungtungtungbrowser.vm_lease import lease_vm
 
 
 class InstanceIsolationTests(unittest.TestCase):
+    def test_resize_rejects_old_cpu_mask_before_any_docker_operation(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, cpuset='8-11')
+        argv = ['phone_instance.py', '--registry', str(self.registry), 'compose', 'a', 'up', '-d']
+        with patch('scripts.phone_instance.os.sched_getaffinity', return_value=set(range(8))), \
+                patch('scripts.phone_instance.subprocess.run') as run, \
+                patch('scripts.phone_instance.subprocess.call') as call, \
+                patch.object(sys, 'argv', argv), patch('sys.stderr'):
+            with self.assertRaises(SystemExit) as caught:
+                instance_main()
+        self.assertEqual(caught.exception.code, 1)
+        run.assert_not_called()
+        call.assert_not_called()
+
+    def test_valid_mask_uses_actual_available_ids_and_cleanup_stays_available(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41, cpuset='4-7')
+        with patch('scripts.phone_instance.os.sched_getaffinity', return_value={4, 5, 6, 7}):
+            compose_command(self.registry, 'a', 'up', [])
+            compose_command(self.registry, 'a', 'run', ['iphone', 'true'])
+        with patch('scripts.phone_instance.os.sched_getaffinity', return_value={0, 1}):
+            with self.assertRaisesRegex(ValueError, '4, 5, 6, 7'):
+                compose_command(self.registry, 'a', 'up', [])
+            for action in ('config', 'stop', 'down', 'logs'):
+                compose_command(self.registry, 'a', action, [])
+
+    def test_shared_cpu_scheduling_does_not_add_an_explicit_mask(self):
+        register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41)
+        with patch('scripts.phone_instance.os.sched_getaffinity') as affinity:
+            compose_command(self.registry, 'a', 'up', [])
+        affinity.assert_not_called()
+        layout = json.loads((self.registry/'a/image.json').read_text())
+        self.assertNotIn('cpuset', layout['services']['iphone'])
+
     def test_capture_profile_and_cpu_affinity_are_explicit_and_isolated(self):
         record = register(self.registry, 'a', vm=self.a, runtime=self.runtime, cid=41,
                           resource_profile='capture-experimental', cpuset='0-3')

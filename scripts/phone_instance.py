@@ -135,7 +135,15 @@ def compose_command(registry, name, action, arguments):
     profile = record.get('resource_profile', 'api-experimental')
     if profile not in RESOURCE_PROFILES:
         raise ValueError('Unknown registered resource profile')
-    cpu_set(record.get('cpuset'))
+    selected_cpus = cpu_set(record.get('cpuset'))
+    if action in ('up', 'run') and selected_cpus:
+        # This command runs on the Linux Docker host. Registrations can survive
+        # an instance resize; validate them before creating any Docker resources.
+        available_cpus = set(os.sched_getaffinity(0))
+        unavailable = selected_cpus - available_cpus
+        if unavailable:
+            raise ValueError('Registered CPU IDs unavailable on this host: ' +
+                             ', '.join(map(str, sorted(unavailable))))
     scope = record.get('proxy_scope', 'device')
     if scope not in {'device', 'browser'} or (scope == 'browser' and record['proxy'] is None):
         raise ValueError('Invalid registered proxy scope')
