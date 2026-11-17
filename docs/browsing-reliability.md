@@ -12,14 +12,31 @@ initialization, so a later commit cannot reuse stale readiness.
 Protocol fixtures reproduce the previous missing readiness notification and
 cover both event orders, delayed resume acknowledgement, target destruction and
 late initialization completion. The fix sends no additional native command and
-does not extend the attachment timeout or replay setup. Native browser validation
-is pending; this race has not been established as the cause of a retained live
-attachment failure or as a CPU improvement.
+does not extend the attachment timeout or replay setup. This race has not been
+established as the cause of a retained live attachment failure or as a CPU
+improvement.
 
 Failed attachment preserves its stage and target-readiness counts before cleanup
 in `attachment_failure` and an exception note. Cleanup can wake waiters without
 erasing that observation. It contains no URL or page content and retains the
 original exception and timeout.
+
+The combined readiness changes passed 839 local tests and a four-phone native
+startup and Inspector attachment trial on an eight-core, eight-vCPU AMD host.
+All four phones completed their four fixed warmups and eight scheduled normal
+Shopee product navigations. Two phones captured 8/8 validated products, with
+successful full-capture p95 times of 69.0 and 70.5 seconds; both original images
+for each successful capture were visually reviewed. The other two returned
+login-required responses for all eight products despite verified proxy changes.
+The overall result was 16/32, so the four-phone success goal remains unmet.
+
+All four guests exited cleanly with their clock workers stopped, and the host
+was shut down. The trial also used an experimental smaller translation cache
+and a reduced background-service configuration, so it does not isolate a CPU
+benefit from these readiness fixes. The bounded notification-read recovery has
+deterministic transport-failure tests; that fault path did not occur in this
+native trial. These results support a readiness reliability milestone, not
+adoption of the experimental performance configuration.
 
 ## Measurement boundaries
 
