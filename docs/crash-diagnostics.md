@@ -120,7 +120,51 @@ time can move backward independently of host observation time.
 
 The pinned runtime's
 [VSOCK ring reader](https://github.com/YahiaAngelo/vphone-linux/blob/888d17ca17268aaecd277c64f2d95385b184744b/tools/vsock-rings.py)
-shows the relevant QMP queue-layout and ring-index queries. A production
-collector still needs bounded reads, original-owner checks and retention of
-query errors. Log recovery alone establishes neither browser readiness nor
-a CPU saving.
+shows the relevant QMP queue-layout and ring-index queries. Log recovery alone
+establishes neither browser readiness nor a CPU saving.
+
+## Inspect the original VSOCK endpoint
+
+`tungtungtungbrowser.vsock_diagnostics.inspect_vsock` collects a bounded,
+read-only report through the running QEMU process's Unix QMP socket. It needs
+the expected CID and an ownership callback returning the same identity fields
+as `MinimalServicePolicy`. Here, `host_pid` and `host_start_ticks` must identify
+QEMU itself. The callback must freshly verify the original process, container,
+host boot and launch record; a saved dictionary alone is insufficient.
+
+Linux peer credentials must match that QEMU PID before any command is sent.
+The collector checks ownership before and after each query, verifies the CID,
+and records device status and three queue descriptions. It reads only four
+bytes at each initialized avail/used ring address, using fixed monitor syntax
+and validated integer addresses. Uninitialized queues produce no memory read.
+No guest RPC, descriptor payload read, native input or recovery is issued.
+
+The default three-second deadline bounds QMP I/O across the whole session.
+The caller must also bound its ownership callback and surrounding worker.
+Retain the returned report even when its status is `failed_observation`:
+completed queries, query errors and host timestamps remain available. An
+`observed` result means the queries completed, not that health or Safari is
+ready. Samples are sequential and do not form an atomic VM snapshot.
+
+Interpret the actual memory ring indices separately from QEMU's cached queue
+fields when the kernel vhost backend owns the queues. Queue activity alone
+does not prove that the daemon accepted a connection or that interrupts work.
+Diagnostic results must not extend the original startup deadline or trigger
+another boot, CID change or input attempt.
+
+In a subsequent eight-core AMD run, this collector completed both scheduled
+samples on the original two-CPU guest: one after 180 seconds without health
+and one at the 900-second deadline. Each made 13 queries in under 6 ms, with
+matching process ownership and CID. All three queues had 256 entries and
+page-separated rings. The first two queues' avail/used indices each advanced
+by 381 between samples; the event queue indices stayed unchanged. This rules
+out static rings across that interval, but does not identify the connection
+failure or prove correct packet contents, interrupts or listener binding.
+
+The guest returned no health response across 299 checks: 297 connection resets,
+one connection timeout and one early unavailable-device error. It required
+forced shutdown, the remaining three phones never booted, and all 32 scheduled
+products remain failures. No failure screenshot was retained in that run.
+Both hosts were verified stopped after archive export. This validates the
+collector on a failing native boot; it does not qualify a CPU configuration,
+browser workload or performance improvement.
