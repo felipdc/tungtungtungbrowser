@@ -12,10 +12,11 @@ logical display scale. The existing coordinate-touch calibration is for scale
 3; this path uses native keyboard navigation and does not qualify scale-1
 coordinate or selector clicks.
 
-The optional `--accessibility-scope navigation` candidate restores the saved
-accessibility switches between native navigations. It has host-side lifecycle
-and cancellation tests; its native Shopee behavior and CPU benefit are still
-unqualified. The default remains `--accessibility-scope session`.
+The optional `--accessibility-scope navigation` restores the saved accessibility
+switches between native navigations. Host tests and a four-phone native trial
+verified its lifecycle and restoration. The trial failed the product success
+target and does not establish CPU savings. The default remains
+`--accessibility-scope session`.
 
 ## Build and run
 
@@ -173,7 +174,7 @@ commands and keyboard ownership checks. Its verification is recorded separately
 from the prototype benchmark; the benchmark is not a performance guarantee for
 this package or another site, guest image or host.
 
-### Navigation scope candidate, 2026-11-18 UTC
+### Navigation scope validation, 2026-11-18 UTC
 
 The optional navigation scope was updated against the current runtime and passed
 885 local tests, including controller loss, restoration, uncertain transitions,
@@ -187,8 +188,25 @@ on a 16-core host. It failed that trial's strict 60-second gate; the original
 result remains rejected. Its lower CPU cost per successful capture also included
 fewer failures and a shorter measurement window, so it is not an isolated
 background-CPU reduction. The interrupted follow-up did not provide a paired
-comparison. A fresh four-phone, eight-core run is still needed before any
-capacity claim under the current 75-second target. The default scope remains
+comparison.
+
+A subsequent trial on eight physical AMD cores / eight vCPUs ran four fixed
+warmups and eight distinct normal Shopee product requests per phone. Original
+native/host image review accepted 9/32 captures: 2/8, 0/8, 7/8 and 0/8. Successful
+per-phone p95 values were 55.614 and 66.839 seconds. One machine-classified product
+was rejected because its main photo was blank. Login outcomes and a retained
+Safari timeout document caused failures; the latter phone's eight scored
+attempts failed before native input. The trial failed the required five of eight
+successes on every phone and does not qualify four-phone capacity.
+
+Across 62 native scopes, every acknowledged resume was followed by a pause
+verifying the original 0/0 accessibility switches. All four original helper,
+guardian and boot identities matched, with no uncertain transitions. Final
+closure restored the original switches; all VMs exited without force, their
+clock workers stopped, immutable parents remained unchanged and both test hosts
+were stopped. Actual helper binaries and all 314 SDK source hashes were checked.
+The scored window averaged 6.085 host cores, but included immediate failures and
+login-only work, so it cannot establish CPU savings. The default scope remains
 the whole session.
 
 ### Public package check, 2026-11-15 UTC
