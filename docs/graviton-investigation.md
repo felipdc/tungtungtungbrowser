@@ -108,3 +108,23 @@ remains a candidate, with these prerequisites:
 
 No ARM host FP acceleration is implemented by this investigation. The existing
 [native FP boundary experiment](native-fp.md) applies to the x86 backend.
+
+## Where CPU time went on AMD
+
+An eight-core AMD run captured eight rendered products on each of two phones.
+The two other phones reached a login wall on every scored request. On the 16
+successful captures, the longest mean interval ran from receipt of the normal
+document response to observation of the page's product-data request. The table
+uses host event times and each phone container's cumulative CPU counters.
+
+| Successful phone | Mean interval | Average cores used during the interval | CPU quota throttles |
+| --- | ---: | ---: | ---: |
+| First | 30.17 s | 1.67–2.19 | 0 |
+| Second | 32.75 s | 1.68–2.17 | 0 |
+
+The lower bounds count counter reads wholly inside each interval. The upper
+bounds include reads bracketing both edges. Bounds are rounded outward. Both
+phones had a four-core quota and shared the eight host cores. These measurements
+locate about half a minute of page startup worth profiling. They combine browser,
+renderer and other VM work and cannot identify time spent in FP helpers. A
+representative profile on ARM is still needed to estimate the benefit of a port.
