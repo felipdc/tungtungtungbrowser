@@ -67,4 +67,8 @@ captured eight products each under a 75-second p95; the other two returned
 login responses, leaving the four-phone success target unmet. That combined
 trial also changed translation-cache size, so it does not isolate a CPU saving
 from these four service overrides. This library port has focused lifecycle
-tests; its exact public interface still needs native validation before adoption.
+tests and passed an offline replay of those four phones' recorded lifecycle
+replies. The public `verify()` method also completed its six read-only service
+calls on a live prepared guest. Configuration and restoration through the
+public interface still need native validation before adoption; the replay
+and read-only check are not a new product or performance trial.
