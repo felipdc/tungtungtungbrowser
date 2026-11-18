@@ -93,3 +93,34 @@ a 6.5-GiB limit, with no container or host OOM kills. These counters do not prov
 the absence of guest memory pressure, and no resource reduction was established.
 Keep the experimental controller unadopted until repeated transitions pass
 with native process identity, transport records and rendered-page evidence.
+
+## A listening daemon can still be unreachable
+
+In a later eight-core AMD trial, one phone returned no health response during
+900 seconds: all 299 observations failed, with connection resets reported
+during connection establishment. A host screenshot showed the lock screen;
+the guest console did not contain the daemon's startup log.
+
+A separate forensic overlay subsequently recovered `/var/log/vphoned.log`
+from that stopped failed image. The inherited failed-boot records included the
+daemon reporting a listener on VSOCK port 1339 and later watchdog activity.
+The original image stayed read-only, with every source file hash unchanged.
+The diagnostic clone reached health and shut down cleanly; its different CPU
+count, CID, host boot and concurrency prevent attributing that success to one
+change. No browser or product request ran, and the original failed trial
+remains failed.
+
+This evidence directs the next measurement toward endpoint binding and VSOCK
+queue state. It does not establish a transport root cause. Preserve the exact
+transport-error phase and original process identity, and collect read-only
+queue observations during the original boot. A guest-side listening message
+does not prove host reachability; a connection reset does not prove the daemon
+never started. Keep inherited log order and boot provenance, since guest wall
+time can move backward independently of host observation time.
+
+The pinned runtime's
+[VSOCK ring reader](https://github.com/YahiaAngelo/vphone-linux/blob/888d17ca17268aaecd277c64f2d95385b184744b/tools/vsock-rings.py)
+shows the relevant QMP queue-layout and ring-index queries. A production
+collector still needs bounded reads, original-owner checks and retention of
+query errors. Log recovery alone establishes neither browser readiness nor
+a CPU saving.
