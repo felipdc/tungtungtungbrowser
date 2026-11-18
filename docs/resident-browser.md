@@ -173,6 +173,24 @@ commands and keyboard ownership checks. Its verification is recorded separately
 from the prototype benchmark; the benchmark is not a performance guarantee for
 this package or another site, guest image or host.
 
+### Navigation scope candidate, 2026-11-18 UTC
+
+The optional navigation scope was updated against the current runtime and passed
+885 local tests, including controller loss, restoration, uncertain transitions,
+concurrent ownership and the existing browser behavior. All 25 resident native
+source files match the previously tested navigation-scope build. This source
+comparison does not replace verifying the executable hashes before deployment.
+
+The earlier [four-phone accessibility pilot](cpu-scheduling.md#navigation-scoped-accessibility-pilot-2026-11-16)
+completed 16/16 candidate captures with a worst per-phone p95 of 60.078 seconds
+on a 16-core host. It failed that trial's strict 60-second gate; the original
+result remains rejected. Its lower CPU cost per successful capture also included
+fewer failures and a shorter measurement window, so it is not an isolated
+background-CPU reduction. The interrupted follow-up did not provide a paired
+comparison. A fresh four-phone, eight-core run is still needed before any
+capacity claim under the current 75-second target. The default scope remains
+the whole session.
+
 ### Public package check, 2026-11-15 UTC
 
 All 765 tests passed, including native guard lifecycle, transport failure,
