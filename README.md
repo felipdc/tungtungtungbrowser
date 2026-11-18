@@ -560,11 +560,18 @@ docker compose -f runtime/compose.yaml exec iphone \
 
 `services none` restores jobs changed by that profile. Readiness and resource
 measurement tools are described in [diagnostics](diagnostics/README.md).
+For owned disposable browser VMs, the optional [minimal service
+policy](docs/minimal-services.md) journals four specific overrides, verifies a
+distinct clean boot and restores their enablement before final shutdown. Its
+four-phone native lifecycle passed; product-capacity qualification remains open.
 Cold boot and in-memory pause/resume must be reported separately. The pinned
 virtual display does not support durable QEMU saved-state migration.
 The [native FP evaluation](docs/native-fp.md) documents the optional upstream
 CPU experiment, its numerical correctness gate and the boundary correction
 required by the tested candidate.
+The optional [jump-cache size experiment](docs/jump-cache-size.md) supplies a
+build-time QEMU patch and instruction-update checks. It preserves the default
+cache size and has not established an isolated CPU saving.
 
 ## Development and licensing
 

@@ -70,4 +70,9 @@ the other two returned login responses for all eight products. That 16/32
 result does not qualify the four-phone target or isolate the cache's CPU
 effect. See the [service-policy limitations](minimal-services.md).
 
+A follow-up cohort using the same binary also reached Safari and Inspector on
+all four phones and closed cleanly. A separate site-state readback failure
+stopped it during warmup, leaving all 32 scored requests unattempted. It adds
+no product-performance qualification or measured cache saving.
+
 This patch modifies GPL-covered QEMU code; see [third-party notices](../THIRD_PARTY_NOTICES.md).

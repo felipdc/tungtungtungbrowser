@@ -68,7 +68,19 @@ login responses, leaving the four-phone success target unmet. That combined
 trial also changed translation-cache size, so it does not isolate a CPU saving
 from these four service overrides. This library port has focused lifecycle
 tests and passed an offline replay of those four phones' recorded lifecycle
-replies. The public `verify()` method also completed its six read-only service
-calls on a live prepared guest. Configuration and restoration through the
-public interface still need native validation before adoption; the replay
-and read-only check are not a new product or performance trial.
+replies.
+
+The public interface subsequently completed configuration, post-boot verification
+and enablement restoration on four native phones on an eight-physical-core,
+eight-vCPU AMD host. Two waves of configuration boots took 567.247 seconds from
+first launch to final preparation completion; subsequent browser startup was
+serial. Independent records verified original process ownership, accepted clean
+shutdowns, stopped clocks and restored CPU weights. Every final guest also
+closed cleanly, parent hashes were unchanged and the host was stopped.
+
+That cohort stopped during fixed warmups because a separate site-state experiment
+required storage to remain empty across consecutive reads. It completed no scored
+products and remains 0/32. These results validate the public service lifecycle,
+not the four-phone success target or a CPU saving. The combined candidate passed
+858 local tests. The policy remains opt-in, and a complete product qualification
+is still required before adopting the performance configuration.
