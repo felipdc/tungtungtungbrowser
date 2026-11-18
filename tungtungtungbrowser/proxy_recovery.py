@@ -34,12 +34,13 @@ class LoginProxyRecovery:
     """
     REQUIRED_PROOF = ('session_changed', 'upstream_verified', 'browser_verified',
                       'non_browser_direct_verified', 'identities_preserved')
+    MAX_RESETS = 32
 
     def __init__(self, directory, *, cid, reset_and_verify, max_resets=3, timeout_seconds=120):
         if type(cid) is not int or not 3 <= cid < 2**32 - 1:
             raise ValueError('A valid phone CID is required')
-        if type(max_resets) is not int or not 1 <= max_resets <= 10:
-            raise ValueError('max_resets must be between 1 and 10')
+        if type(max_resets) is not int or not 1 <= max_resets <= self.MAX_RESETS:
+            raise ValueError(f'max_resets must be between 1 and {self.MAX_RESETS}')
         if not callable(reset_and_verify):
             raise ValueError('An async reset_and_verify callback is required')
         if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)

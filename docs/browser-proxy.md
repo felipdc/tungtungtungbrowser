@@ -130,7 +130,7 @@ the adapter because provider session syntax and phone deployment differ. A new
 provider session does not itself guarantee a different IP or product success.
 
 Use a separate persistent directory and opaque attempt IDs for each phone. The
-policy permits three resets by default, configurable from one to ten. The budget
+policy permits three resets by default, configurable from one to 32. The budget
 belongs to a persistent record for a bounded worker job, survives Python restarts,
 and never repeats a reset for the same attempt. A missing verification,
 callback failure, cancellation or interrupted process blocks further work until

@@ -150,3 +150,35 @@ class ProxyRecoveryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(attempt=attempt, login=login), self.assertRaises(ValueError):
                 await self.policy.after_capture(attempt, login_required=login)
         self.reset.assert_not_awaited()
+
+    async def test_longer_fixed_job_keeps_durable_budget_and_record_size_bound(self):
+        # Twelve covers four fixed warmups and eight captures, even if each
+        # request returns login. The maximum must still fit the journal limit.
+        for budget in (12, LoginProxyRecovery.MAX_RESETS):
+            with self.subTest(budget=budget):
+                directory = Path(self.temporary.name) / f'budget-{budget}'
+                reset = AsyncMock(return_value=self.proof)
+                for index in range(budget):
+                    policy = LoginProxyRecovery(directory, cid=41, reset_and_verify=reset,
+                                                max_resets=budget)
+                    attempt = f'{index:02d}' + 'x' * 78
+                    result = await policy.after_capture(attempt, login_required=True)
+                    self.assertEqual(result['reset_count'], index + 1)
+                policy.check_ready()
+                duplicate = await policy.after_capture(attempt, login_required=True)
+                self.assertEqual(duplicate['status'], 'already_verified')
+                self.assertLess((directory/'state.json').stat().st_size, 65536)
+                with self.assertRaises(ProxyRecoveryExhausted):
+                    await policy.after_capture('next-request', login_required=True)
+                self.assertEqual(reset.await_count, budget)
+                with self.assertRaises(ProxyRecoveryExhausted):
+                    LoginProxyRecovery(directory, cid=41, reset_and_verify=reset,
+                                       max_resets=budget)
+
+    async def test_invalid_budgets_fail_without_provider_or_journal(self):
+        for budget in (0, -1, True, 1.5, '12', LoginProxyRecovery.MAX_RESETS + 1):
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                LoginProxyRecovery(self.directory, cid=41, reset_and_verify=self.reset,
+                                   max_resets=budget)
+        self.reset.assert_not_awaited()
+        self.assertFalse(self.directory.exists())
