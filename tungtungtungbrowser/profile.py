@@ -80,10 +80,12 @@ class BrowserProfile:
                            guest, self.focus_path, max_read_attempts=focus_read_attempts,
                            pid_query=pid_query))
 
-    def session(self, *, browser, url=None, new_tab_url=None, new_tab=False, retain_tab=False):
+    def session(self, *, browser, url=None, new_tab_url=None, new_tab=False, retain_tab=False,
+                timeout=300, attachment_timeout=None):
         """Attach a tab or create one, optionally retaining it for later sessions."""
         if browser.guest.cid != self.cid:
             raise ValueError('Browser and deployment profile target different guest CIDs')
-        return InspectorSession(browser=browser, url=url, new_tab_url=new_tab_url, new_tab=new_tab, retain_tab=retain_tab, timeout=300,
+        return InspectorSession(browser=browser, url=url, new_tab_url=new_tab_url, new_tab=new_tab,
+                                retain_tab=retain_tab, timeout=timeout, attachment_timeout=attachment_timeout,
                                 transport=InspectorTransport(cid=self.cid, timeout=240,
                                                              max_open_attempts=4))

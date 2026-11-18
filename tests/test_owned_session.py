@@ -120,6 +120,21 @@ def fixture(**options):
 
 
 class OwnedSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_separate_attachment_budget_keeps_commands_bounded(self):
+        session, native, _ = fixture(attachment_timeout=1, retain_tab=True)
+        session.timeout = 0.04
+        async def delayed_connect():
+            await asyncio.sleep(0.08)
+        native.connect.side_effect = delayed_connect
+        with patch('tungtungtungbrowser.inspector._direct_inspector', return_value=native):
+            async with session:
+                self.assertEqual(native.events.count('open'), 1)
+                self.assertIn('Target.setPauseOnStart', native.commands)
+                native.silent = True
+                with self.assertRaises(TimeoutError):
+                    await session.content()
+                native.silent = False
+
     async def test_attachment_timeout_preserves_precleanup_target_state_without_replay(self):
         session, native, guest = fixture(retain_tab=True)
         async def attach(session_id, app_id, page_id, **options):

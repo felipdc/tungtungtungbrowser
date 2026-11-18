@@ -59,6 +59,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(BrowserProfile(self.directory).browser().address_focus, 'auto')
         self.assertEqual(InspectorSession().timeout, 30)
 
+    def test_profile_passes_separate_attachment_and_command_budgets(self):
+        profile = BrowserProfile(self.directory)
+        session = profile.session(browser=profile.browser(), timeout=90, attachment_timeout=180)
+        self.assertEqual((session.timeout, session.attachment_timeout), (90, 180))
+        for invalid in (0, float('nan'), 301, True):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                profile.session(browser=profile.browser(), attachment_timeout=invalid)
+
     def test_input_settle_override_is_bounded_without_native_work(self):
         with patch.object(Guest, '_rpc', side_effect=AssertionError('Unexpected native call')):
             profile = BrowserProfile(self.directory)

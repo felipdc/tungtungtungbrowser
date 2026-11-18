@@ -182,8 +182,9 @@ class InspectorSession:
     WebKit's DOM and Network domains, with no Runtime.evaluate calls.
     """
     def __init__(self, *, transport=None, browser=None, url=None, new_tab_url=None, new_tab=False, retain_tab=False, timeout=30,
-                 max_requests=512, max_events=128, max_metadata_bytes=4 * 1024**2):
+                 attachment_timeout=None, max_requests=512, max_events=128, max_metadata_bytes=4 * 1024**2):
         self.timeout = _timeout(timeout)
+        self.attachment_timeout = None if attachment_timeout is None else _timeout(attachment_timeout)
         for limit in (max_requests, max_events):
             if type(limit) is not int or not 1 <= limit <= 4096:
                 raise ValueError('Retention limits must be integers between 1 and 4096')
@@ -314,7 +315,8 @@ class InspectorSession:
             raise InspectorError('Inspector session is single-use')
         stage = 'transport'
         try:
-            async with asyncio.timeout(self.timeout):
+            budget = self.timeout if self.attachment_timeout is None else self.attachment_timeout
+            async with asyncio.timeout(budget):
                 service = await self.transport.open()
                 while True:
                     stage = 'native_connection'

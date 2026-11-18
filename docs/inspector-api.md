@@ -145,6 +145,13 @@ Run the controller on the VM host. Set `TTT_PAGE_URL` to the exact URL of an
 already open Safari tab. If `url` is omitted, exactly one inspectable Safari tab
 must exist. Another Inspector connection must not already own that tab.
 
+On a busy host, opening a tab and connecting the Inspector can take several
+successful protocol exchanges. Use `profile.session(browser=browser, timeout=90,
+attachment_timeout=180)` to allow up to 180 seconds for that entire sequence
+while limiting each Inspector command to 90 seconds. Both values are in seconds
+and accept positive values up to 300. By default, attachment uses the session's
+current `timeout`. The attachment budget ends when the session context opens.
+
 Tab listings are requested after subscribing for updates. If no matching listing
 arrives within two seconds, the SDK refreshes that read within the original
 session timeout. `listing_refreshes` counts these extra read requests. Creation,
