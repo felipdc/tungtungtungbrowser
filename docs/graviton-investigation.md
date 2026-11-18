@@ -79,3 +79,32 @@ The public capture profile continues to use three application CPUs per phone.
 The prospective two-CPU experiment on AMD has not yet qualified a default
 change. Native ARM driver discovery is covered by public tests; full Graviton
 browser support remains unqualified.
+
+## Later unlock result and floating-point decision
+
+A later fresh-child trial on the eight-core `m8g.2xlarge` acknowledged one
+normalized, 11-event swipe in 0.613 seconds. The phone remained locked through
+163 notification observations until the 90-second unlock deadline. The original
+failure image showed the lock screen and a right-edge rendering artifact.
+Safari was never launched; the other three guests never booted. All 32 scheduled
+products therefore remain failures. The guest shut down cleanly, parent images
+were unchanged, and the host was stopped after evidence export.
+
+This result does not establish an FP bottleneck. An ARM scalar FP implementation
+remains a candidate, with these prerequisites:
+
+1. Qualify unlock, normal Safari navigation and original rendered images on ARM.
+2. Profile successful product loading and estimate the maximum saving from time
+   spent in software FP helpers. Separate translated code, rendering and other
+   emulator work; an unmapped sample is not evidence of FP work.
+3. If the possible saving warrants a port, implement ARM host FPCR/FPSR handling
+   with guest rounding and exception semantics, retaining software fallbacks.
+   Restore the host FP state around translation, normal returns and nonlocal
+   exits. Require the retained 644-form, 22-FPCR golden fixture with the feature
+   both disabled and enabled before browser testing.
+4. Compare equivalent successful browser workloads, then rerun the full
+   four-phone, 32-product success and latency gate. Native fixture correctness
+   alone cannot qualify CPU savings or Graviton browser support.
+
+No ARM host FP acceleration is implemented by this investigation. The existing
+[native FP boundary experiment](native-fp.md) applies to the x86 backend.
