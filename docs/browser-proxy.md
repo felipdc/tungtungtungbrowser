@@ -67,6 +67,10 @@ direct route. The device-wide `check_proxy_route.py` requires a TUN/firewall set
 and is not the check for this mode. Test normal product pages after routing is
 verified.
 
+For the 32 GiB Shopee recovery run, see the [validated recovery procedure](shopee-recovery.md).
+It covers native display checks, a Safari data reset on a disposable guest, one
+reused tab, and a new verified Brazilian proxy session for each product.
+
 ## Reload a browser proxy session
 
 The existing relay can reload credentials without replacing its container or
